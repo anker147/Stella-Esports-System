@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "timer": {
+    "durationSeconds": 30,
+    "zeroPulseMs": 600,
+    "phaseDurations": {
+      "hunter-ban-1": 30,
+      "escape-ban-1": 30,
+      "hunter-ban-2": 30,
+      "hunter-pick-1": 30,
+      "escape-pick-1-4": 40,
+      "hunter-pick-2": 30,
+      "escape-pick-5-8": 40
+    }
+  },
+  "overlay": {
+    "animationStyle": "luminance"
+  },
+  "commentator": {
+    "imageId": "蛋炒饭组合.png",
+    "logoImageId": "code:3摸金炼出大神证.png"
+  },
+  "assets": {
+    "characterRoot": "角色",
+    "resultUploadRoot": "场景底图/本场赛果/结果图",
+    "bracketUploadRoot": "场景底图/晋级图",
+    "resultOverlayRoot": "场景底图/本场赛果",
+    "scheduleRoot": "场景底图/赛前/今日赛程",
+    "stageRoot": "场景底图/BP",
+    "commentatorRoot": "场景底图/解说席",
+    "commentatorLogo": "场景底图/解说席/解说席LOGO.png",
+    "commentatorCodeRoot": "场景底图/解说席/兑换码"
+  },
+  "characters": {
+    "escape": [
+      "失忆者",
+      "小学妹",
+      "魔术师",
+      "战斗少女",
+      "小狐狸",
+      "水之忍者",
+      "星辰圣女",
+      "黎明盾卫",
+      "命石者",
+      "小骇客",
+      "灵膳子",
+      "指绘师",
+      "夜翎",
+      "茶气郎",
+      "龙小侠",
+      "小师姐",
+      "偶像歌手"
+    ],
+    "hunter": [
+      "雇佣兵",
+      "女特工",
+      "机器人",
+      "发明家",
+      "小梦魇",
+      "影之忍者",
+      "小狮子",
+      "机械之心",
+      "劲凯",
+      "淘气云",
+      "幻术师",
+      "疾风刃"
+    ]
+  },
+  "slots": {
+    "hunter-ban-1": {
+      "label": "追捕 Ban 1",
+      "kind": "ban",
+      "role": "escape",
+      "imageSource": "追捕Ban1",
+      "group": "Ban位"
+    },
+    "escape-ban-1": {
+      "label": "逃生 Ban 1",
+      "kind": "ban",
+      "role": "hunter",
+      "imageSource": "逃生Ban1",
+      "group": "Ban位"
+    },
+    "hunter-ban-2": {
+      "label": "追捕 Ban 2",
+      "kind": "ban",
+      "role": "escape",
+      "imageSource": "追捕Ban2",
+      "group": "Ban位"
+    },
+    "hunter-pick-1": {
+      "label": "追捕 Pick 1",
+      "kind": "pick",
+      "role": "hunter",
+      "imageSource": "追捕Pick1立绘",
+      "textSource": "追捕Pick1昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "hunter-pick-2": {
+      "label": "追捕 Pick 2",
+      "kind": "pick",
+      "role": "hunter",
+      "imageSource": "追捕Pick2立绘",
+      "textSource": "追捕Pick2昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-1": {
+      "label": "逃生 Pick 1",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick1立绘",
+      "textSource": "逃生Pick1昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-2": {
+      "label": "逃生 Pick 2",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick2立绘",
+      "textSource": "逃生Pick2昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-3": {
+      "label": "逃生 Pick 3",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick3立绘",
+      "textSource": "逃生Pick3昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-4": {
+      "label": "逃生 Pick 4",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick4立绘",
+      "textSource": "逃生Pick4昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-5": {
+      "label": "逃生 Pick 5",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick5立绘",
+      "textSource": "逃生Pick5昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-6": {
+      "label": "逃生 Pick 6",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick6立绘",
+      "textSource": "逃生Pick6昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-7": {
+      "label": "逃生 Pick 7",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick7立绘",
+      "textSource": "逃生Pick7昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    },
+    "escape-pick-8": {
+      "label": "逃生 Pick 8",
+      "kind": "pick",
+      "role": "escape",
+      "imageSource": "逃生Pick8立绘",
+      "textSource": "逃生Pick8昵称",
+      "imageGroup": "Pick立绘",
+      "textGroup": "Pick昵称"
+    }
+  },
+  "phases": [
+    {
+      "id": "hunter-ban-1",
+      "label": "追捕方禁用逃生角色",
+      "slots": [
+        "hunter-ban-1"
+      ]
+    },
+    {
+      "id": "escape-ban-1",
+      "label": "逃生方禁用追捕角色",
+      "slots": [
+        "escape-ban-1"
+      ]
+    },
+    {
+      "id": "hunter-ban-2",
+      "label": "追捕方禁用逃生角色",
+      "slots": [
+        "hunter-ban-2"
+      ]
+    },
+    {
+      "id": "hunter-pick-1",
+      "label": "追捕方选择1号角色",
+      "slots": [
+        "hunter-pick-1"
+      ]
+    },
+    {
+      "id": "escape-pick-1-4",
+      "label": "逃生方选择1-4号角色",
+      "slots": [
+        "escape-pick-1",
+        "escape-pick-2",
+        "escape-pick-3",
+        "escape-pick-4"
+      ]
+    },
+    {
+      "id": "hunter-pick-2",
+      "label": "追捕方选择2号角色",
+      "slots": [
+        "hunter-pick-2"
+      ]
+    },
+    {
+      "id": "escape-pick-5-8",
+      "label": "逃生方选择5-8号角色",
+      "slots": [
+        "escape-pick-5",
+        "escape-pick-6",
+        "escape-pick-7",
+        "escape-pick-8"
+      ]
+    }
+  ],
+  "ui": {
+    "sections": {
+      "ban": [
+        "hunter-ban-1",
+        "escape-ban-1",
+        "hunter-ban-2"
+      ],
+      "hunterPick": [
+        "hunter-pick-1",
+        "hunter-pick-2"
+      ],
+      "escapePick": [
+        "escape-pick-1",
+        "escape-pick-2",
+        "escape-pick-3",
+        "escape-pick-4",
+        "escape-pick-5",
+        "escape-pick-6",
+        "escape-pick-7",
+        "escape-pick-8"
+      ]
+    }
+  },
+  "obsScenes": {
+    "transition": "2026追风杯",
+    "bp": "BP",
+    "matchup": "本场对决.重构",
+    "result": "本场赛果",
+    "bracket": "晋级榜",
+    "commentator": "解说席/CDK",
+    "safe": "动画_暗"
+  },
+  "obsGroups": {
+    "commentator": "解说席底板"
+  },
+  "obsInputs": {
+    "textStaging": "暗",
+    "imageStaging": "暗T",
+    "timer": "BanPick倒计时",
+    "countdownBrowser": "倒计时",
+    "score": {
+      "escape": "逃生方比分",
+      "hunter": "追捕方比分"
+    },
+    "matchData": {
+      "escapeTeamName": "逃生阵营队伍名",
+      "hunterTeamName": "追捕阵营队伍名",
+      "escapeTeamLogo": "逃生方队徽",
+      "hunterTeamLogo": "追捕方队徽",
+      "division": "本场赛区",
+      "matchInfo": "对局信息",
+      "currentRound": "当前轮次",
+      "currentGame": "当前回合"
+    },
+    "result": {
+      "image": "本场赛果结果图",
+      "escapeLayer": "逃生方战果",
+      "hunterLayer": "追捕方战果",
+      "textLayer": "战果文字"
+    },
+    "bracketImage": "晋级榜单底图（切换这个）",
+    "scheduleImage": "今日对战图",
+    "scheduleTableImage": "今日赛程表",
+    "matchStage": "比赛阶段",
+    "commentatorImage": "解说头像",
+    "commentatorLogo": "解说LOGO",
+    "bpOverlay": "BP动态底板",
+    "slideshows": {
+      "matchStage": "比赛阶段",
+      "matchProgress": "赛事进程",
+      "broadcastMode": "直重播字样",
+      "division": "赛区"
+    }
+  }
+}

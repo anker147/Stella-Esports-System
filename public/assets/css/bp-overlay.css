@@ -1,0 +1,467 @@
+@import url("/assets/css/bp-animation-design.css?v=11");
+
+html,
+body,
+.bp-stage {
+  background: transparent;
+}
+
+.bp-stage {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.overlay-valid .bp-stage {
+  visibility: visible;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* The shell enters first. BP choices only animate when their legacy slot is complete. */
+.playing .base-video {
+  animation: overlay-background-enter 1.2s ease-out both;
+}
+
+.playing .pick-board-layer {
+  animation: overlay-board-wipe 1.45s cubic-bezier(.18,.82,.2,1) both;
+}
+
+.playing .pick-frames-layer {
+  animation: overlay-board-wipe 1.35s cubic-bezier(.18,.82,.2,1) .08s both;
+}
+
+.playing .team-lockup-left {
+  animation: overlay-team-left 1.05s cubic-bezier(.16,.86,.22,1) .34s both;
+}
+
+.playing .team-lockup-right {
+  animation: overlay-team-right 1.05s cubic-bezier(.16,.86,.22,1) .34s both;
+}
+
+.playing .team-score,
+.playing .versus-layer {
+  animation: overlay-core-enter .68s ease-out .82s both;
+}
+
+.pick-card {
+  --frame-delay: .96s;
+  background: none;
+}
+
+.pick-card strong {
+  z-index: 4;
+}
+
+.pick-frames-layer {
+  z-index: 2;
+  opacity: 0;
+}
+
+.pick-card::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  background-image: url("/assets/match-intro/bp-layout/pick-frame-foreground.png?v=1");
+  background-position: var(--frame-x) var(--frame-y);
+  background-size: 100cqw 56.25cqw;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.escape-card {
+  --name-height: 16.8269%;
+  --name-size: 1.6146cqw;
+  --portrait-left: 1.17%;
+  --portrait-top: 18.2692%;
+  --portrait-width: 97.66%;
+  --portrait-height: 71.6346%;
+}
+
+.hunter-card {
+  --name-width: 99.3958%;
+  --name-height: 17.7057%;
+  --name-size: 2.8646cqw;
+  --portrait-left: .61%;
+  --portrait-top: 17.5309%;
+  --portrait-width: 98.78%;
+  --portrait-height: 71.8519%;
+  width: 17.2396%;
+  height: 37.1296%;
+}
+
+.pick-card img {
+  max-width: var(--portrait-width);
+  max-height: var(--portrait-height);
+  object-fit: fill;
+}
+
+.escape-card img,
+.hunter-card img { clip-path: inset(0); }
+
+.escape-card-two,
+.escape-card-six { --frame-delay: 1.02s; }
+.escape-card-three,
+.escape-card-seven,
+.hunter-card-one { --frame-delay: 1.08s; }
+.escape-card-four,
+.escape-card-eight,
+.hunter-card-two { --frame-delay: 1.14s; }
+
+.playing .pick-card {
+  animation: overlay-frame-enter .64s cubic-bezier(.16,.86,.22,1) var(--frame-delay) both;
+}
+
+.playing .ban-frame {
+  animation: overlay-ban-frame-enter .62s cubic-bezier(.16,.86,.22,1) 1.02s both;
+}
+
+.playing .countdown-track-reveal {
+  animation: overlay-track-enter .72s cubic-bezier(.18,.82,.2,1) 1.06s both;
+}
+
+.playing .countdown-track-progress {
+  animation: none !important;
+}
+
+.playing .division-layer,
+.playing .bracket-layer,
+.playing .division-copy,
+.playing .round-copy,
+.playing .game-copy,
+.playing .countdown-digits {
+  animation: overlay-metadata-enter .58s ease-out 1.18s both;
+}
+
+.division-copy {
+  left: 47.1875%;
+  top: 56.7593%;
+  width: 5.7292%;
+  height: 3.2407%;
+  font-size: 1.25cqw;
+}
+
+.round-copy,
+.game-copy {
+  position: absolute;
+  z-index: 7;
+  top: 69.9074%;
+  display: grid;
+  height: 4.4444%;
+  align-items: start;
+  color: #fff;
+  font-size: 2.448cqw;
+  line-height: 1;
+  opacity: 0;
+  white-space: nowrap;
+}
+
+.round-copy {
+  left: 42.2917%;
+  width: 6.5104%;
+  justify-items: end;
+}
+
+.game-copy {
+  left: 50.2604%;
+  width: 8.3333%;
+  justify-items: start;
+}
+
+.countdown-digits {
+  scale: 1.16;
+  translate: .18cqw -2.24cqw;
+  transform-origin: 50% 87.3%;
+}
+
+.division-layer,
+.bracket-layer {
+  translate: -1px 0;
+}
+
+.countdown-digits img {
+  transform-origin: 50% 87.3%;
+  transform: none;
+}
+
+.countdown-digits img:last-child {
+  transform: translateX(6.25cqw);
+}
+
+.countdown-digits.narrow-tens img:first-child {
+  transform: translateX(1cqw);
+}
+
+.countdown-digits.narrow-tens img:last-child {
+  transform: translateX(5.25cqw);
+}
+
+.pick-card img,
+.pick-card strong {
+  opacity: 0;
+}
+
+[data-slot="hunter-pick-1"] { --content-delay: 2.68s; }
+[data-slot="escape-pick-1"] { --content-delay: 2.92s; }
+[data-slot="escape-pick-2"] { --content-delay: 3.04s; }
+[data-slot="escape-pick-3"] { --content-delay: 3.16s; }
+[data-slot="escape-pick-4"] { --content-delay: 3.28s; }
+[data-slot="hunter-pick-2"] { --content-delay: 3.52s; }
+[data-slot="escape-pick-5"] { --content-delay: 3.76s; }
+[data-slot="escape-pick-6"] { --content-delay: 3.88s; }
+[data-slot="escape-pick-7"] { --content-delay: 4s; }
+[data-slot="escape-pick-8"] { --content-delay: 4.12s; }
+
+.playing .pick-card.is-filled img {
+  animation: overlay-pick-portrait .66s cubic-bezier(.16,.86,.22,1) var(--content-delay) both;
+}
+
+.playing .pick-card.is-filled strong {
+  animation: overlay-pick-name .42s ease-out calc(var(--content-delay) + .18s) both;
+}
+
+.pick-card.slot-reveal img {
+  animation: overlay-pick-portrait .66s cubic-bezier(.16,.86,.22,1) both !important;
+}
+
+.pick-card.slot-reveal strong {
+  animation: overlay-pick-name .42s ease-out .18s both !important;
+}
+
+.playing .pick-card.is-filled.settled img {
+  opacity: 1;
+  animation: none !important;
+  clip-path: inset(0);
+  transform: none;
+  filter: none;
+}
+
+.playing .pick-card.is-filled.settled strong {
+  opacity: 1;
+  animation: none !important;
+  transform: none;
+  filter: none;
+}
+
+.pick-card.slot-clear {
+  animation: overlay-slot-cleared .42s ease-out both !important;
+}
+
+.ban-token {
+  --ban-delay: 1.84s;
+  opacity: 0;
+  transform: none;
+  clip-path: inset(0 100% 0 0);
+}
+
+.ban-token-two { --ban-delay: 2.08s; }
+.ban-token-three { --ban-delay: 2.32s; }
+
+.ban-token img {
+  opacity: 0;
+  filter: grayscale(1) contrast(.94) brightness(.74);
+}
+
+.ban-token::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: -20% auto -20% -48%;
+  width: 42%;
+  opacity: 0;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 0 .8cqw .34cqw rgba(255, 255, 255, .72);
+  transform: skewX(-12deg);
+  pointer-events: none;
+}
+
+.playing .ban-token.is-filled {
+  animation: overlay-ban-wipe .72s cubic-bezier(.2,.78,.2,1) var(--ban-delay) both;
+}
+
+.playing .ban-token.is-filled img {
+  animation: overlay-ban-desaturate .72s ease-out var(--ban-delay) both;
+}
+
+.playing .ban-token.is-filled::after {
+  animation: overlay-ban-light .72s ease-in-out var(--ban-delay) both;
+}
+
+.ban-token.slot-reveal {
+  animation: overlay-ban-wipe .72s cubic-bezier(.2,.78,.2,1) both !important;
+}
+
+.ban-token.slot-reveal img {
+  animation: overlay-ban-desaturate .72s ease-out both !important;
+}
+
+.ban-token.slot-reveal::after {
+  animation: overlay-ban-light .72s ease-in-out both !important;
+}
+
+.playing .ban-token.is-filled.settled {
+  opacity: 1;
+  clip-path: inset(0);
+  animation: none !important;
+  filter: none;
+}
+
+.playing .ban-token.is-filled.settled img {
+  opacity: 1;
+  animation: none !important;
+  filter: grayscale(1) contrast(.94) brightness(.74);
+  transform: none;
+}
+
+.playing .ban-token.is-filled.settled::after {
+  opacity: 0;
+  animation: none !important;
+}
+
+.ban-token.slot-clear {
+  animation: overlay-ban-clear .38s ease-in both !important;
+}
+
+@keyframes overlay-background-enter {
+  from { opacity: 0; filter: brightness(1.45); }
+  to { opacity: 1; filter: none; }
+}
+
+@keyframes overlay-board-wipe {
+  0% { opacity: 0; clip-path: inset(48% 50%); filter: brightness(3) saturate(.4); transform: none; }
+  42% { opacity: 1; clip-path: inset(0 46%); filter: brightness(2.15) saturate(.7); }
+  78% { opacity: 1; clip-path: inset(0); filter: brightness(1.28) saturate(1.08); }
+  100% { opacity: 1; clip-path: inset(0); filter: none; transform: none; }
+}
+
+@keyframes overlay-team-left {
+  0% { opacity: 0; transform: translateX(-42%) scale(.9); filter: brightness(1.8) blur(.12cqw); }
+  72% { opacity: 1; transform: translateX(1.5%) scale(1.01); filter: none; }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes overlay-team-right {
+  0% { opacity: 0; transform: translateX(42%) scale(.9); filter: brightness(1.8) blur(.12cqw); }
+  72% { opacity: 1; transform: translateX(-1.5%) scale(1.01); filter: none; }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes overlay-core-enter {
+  0% { opacity: 0; transform: scale(.82); filter: brightness(2); }
+  74% { opacity: 1; transform: scale(1.04); filter: none; }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes overlay-frame-enter {
+  0% { opacity: 0; transform: translateY(22%); clip-path: inset(100% 0 0); filter: brightness(2.4); }
+  76% { opacity: 1; transform: translateY(-1.5%); clip-path: inset(0); filter: brightness(1.12); }
+  100% { opacity: 1; transform: none; clip-path: inset(0); filter: none; }
+}
+
+@keyframes overlay-ban-frame-enter {
+  0% { opacity: 0; transform: translateY(12%); filter: brightness(2.2); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes overlay-track-enter {
+  0% { opacity: 0; clip-path: inset(0 50%); filter: brightness(2.5); }
+  100% { opacity: 1; clip-path: inset(0); filter: none; }
+}
+
+@keyframes overlay-metadata-enter {
+  0% { opacity: 0; transform: translateY(.52cqw); filter: brightness(1.8); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes overlay-pick-portrait {
+  0% { opacity: 0; clip-path: inset(100% 0 0); transform: translateY(9%); filter: brightness(2.8) saturate(.55); }
+  64% { opacity: 1; clip-path: inset(0); transform: translateY(-1.5%); filter: brightness(1.26) saturate(1.08); }
+  100% { opacity: 1; clip-path: inset(0); transform: none; filter: none; }
+}
+
+@keyframes overlay-pick-name {
+  0% { opacity: 0; transform: translateY(-32%); filter: brightness(2); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+@keyframes overlay-slot-cleared {
+  0% { opacity: 1; filter: brightness(1.45); }
+  100% { opacity: .72; filter: none; }
+}
+
+@keyframes overlay-ban-wipe {
+  0% { opacity: 0; clip-path: inset(0 100% 0 0); filter: brightness(3); }
+  58% { opacity: 1; clip-path: inset(0); filter: brightness(1.85); }
+  100% { opacity: 1; clip-path: inset(0); filter: none; }
+}
+
+@keyframes overlay-ban-desaturate {
+  0% { opacity: 0; filter: grayscale(0) saturate(1.65) brightness(3.2); transform: scale(.9); }
+  54% { opacity: 1; filter: grayscale(0) saturate(1.2) brightness(1.65); transform: scale(1.04); }
+  100% { opacity: 1; filter: grayscale(1) contrast(.94) brightness(.74); transform: none; }
+}
+
+@keyframes overlay-ban-light {
+  0% { left: -48%; opacity: 0; }
+  28% { opacity: 1; }
+  72% { opacity: .92; }
+  100% { left: 112%; opacity: 0; }
+}
+
+@keyframes overlay-ban-clear {
+  from { opacity: 1; clip-path: inset(0); filter: grayscale(1); }
+  to { opacity: 0; clip-path: inset(0 0 0 100%); filter: brightness(1.8); }
+}
+
+@keyframes overlay-watchdog {
+  0%, 99.8% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Previous production entrance, retained as an operator-selectable fallback. */
+.animation-classic.playing .pick-board-layer,
+.animation-classic.playing .pick-frames-layer {
+  animation: panel-rise 6.8s cubic-bezier(.18,.86,.22,1) both;
+}
+
+.animation-classic.playing .countdown-track-reveal {
+  animation: track-reveal 6.8s cubic-bezier(.18,.82,.2,1) both;
+}
+
+.animation-classic.playing .team-lockup-left {
+  animation: team-enter-left 6.8s cubic-bezier(.16,.84,.2,1) both;
+}
+
+.animation-classic.playing .team-lockup-right {
+  animation: team-enter-right 6.8s cubic-bezier(.16,.84,.2,1) both;
+}
+
+.animation-classic.playing .team-score,
+.animation-classic.playing .versus-layer {
+  animation: score-enter 6.8s ease-out both;
+}
+
+.animation-classic.playing .pick-card {
+  animation: slot-rise 520ms cubic-bezier(.16,.86,.22,1) var(--slot-delay) both;
+}
+
+.animation-classic.playing .ban-frame {
+  animation: ban-rise 520ms cubic-bezier(.16,.86,.22,1) 1.58s both;
+}
+
+.animation-classic.playing .division-layer,
+.animation-classic.playing .bracket-layer,
+.animation-classic.playing .division-copy,
+.animation-classic.playing .round-copy,
+.animation-classic.playing .game-copy,
+.animation-classic.playing .countdown-digits {
+  animation: metadata-enter 6.8s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playing *,
+  .slot-reveal,
+  .slot-clear { animation-duration: 1ms !important; animation-delay: 0ms !important; }
+}

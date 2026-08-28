@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "event": {
+    "id": "2026-zhuifeng-cup-pc-2026-08-01-sf-winner",
+    "name": "2026追风杯",
+    "division": "pc",
+    "stage": "semifinals-upper-rounds-1-2",
+    "stageLabel": "四强胜者组第一二轮",
+    "scheduleImage": "场景底图/赛前/今日赛程/2026-08-01-upper-rounds-1-2.png",
+    "stageImage": "场景底图/BP/胜者组.png",
+    "date": "2026-08-01",
+    "mode": "8v2逃生赛",
+    "format": "BO3"
+  },
+  "source": {
+    "workbook": "E:/下载/2026追风杯赛事推进表 (2).xlsx",
+    "workbookSha256": "8c4313bfb0097fc8b854be6fcf88f5ed6c1add06ed5173eb5d7361a865d0feff",
+    "matches": {
+      "sheet": "赛事对战表",
+      "range": "Z7:AI12"
+    },
+    "rosters": {
+      "sheet": "端游横版id名单",
+      "range": "A1:Q95",
+      "nicknameField": "比赛服昵称",
+      "idField": "比赛服ID"
+    }
+  },
+  "teamIds": [
+    "pc-xiaojiejiedeyangfang",
+    "pc-jimegame",
+    "pc-chunxin",
+    "pc-shuihuaxiaopu"
+  ],
+  "integrity": {
+    "teamCount": 4,
+    "matchCount": 2,
+    "registeredPlayerCount": 59,
+    "logoCount": 8,
+    "checks": [
+      "all teams reference verified PC rosters",
+      "all matches have exact A/B room role reversal"
+    ]
+  },
+  "matches": [
+    {
+      "id": "pc-2026-08-01-sf-winner-1",
+      "sourceRow": 11,
+      "date": "2026-08-01",
+      "startTime": "19:00",
+      "endTime": "19:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "小姐姐的洋房",
+        "吉美game"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "pc-xiaojiejiedeyangfang",
+          "hunterTeamId": "pc-jimegame"
+        },
+        "B": {
+          "escapeTeamId": "pc-jimegame",
+          "hunterTeamId": "pc-xiaojiejiedeyangfang"
+        }
+      },
+      "winnerTeamId": null
+    },
+    {
+      "id": "pc-2026-08-01-sf-winner-2",
+      "sourceRow": 12,
+      "date": "2026-08-01",
+      "startTime": "20:00",
+      "endTime": "20:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "春信",
+        "水花小铺"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "pc-chunxin",
+          "hunterTeamId": "pc-shuihuaxiaopu"
+        },
+        "B": {
+          "escapeTeamId": "pc-shuihuaxiaopu",
+          "hunterTeamId": "pc-chunxin"
+        }
+      },
+      "winnerTeamId": null
+    }
+  ]
+}

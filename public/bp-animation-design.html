@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BP 动画设计稿</title>
+  <link rel="stylesheet" href="/assets/css/bp-animation-design.css?v=11">
+</head>
+<body>
+  <main class="viewport">
+    <section class="bp-stage" id="bpStage" aria-label="BP 面板动画设计稿">
+      <video class="base-video" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+        <source src="/assets/match-intro/zhuifeng-base.mp4" type="video/mp4">
+      </video>
+
+      <div class="board" aria-hidden="true">
+        <img class="stage-layer pick-board-layer" src="/assets/match-intro/bp-layout/pick-board.png" alt="">
+
+        <div class="team-lockup team-lockup-left">
+          <div class="team-logo-shell"><img src="/assets/teams/2026-07-25/mobile/feitongfanxiang-escape.png" alt=""></div>
+          <strong>非同凡想</strong>
+        </div>
+        <div class="team-lockup team-lockup-right">
+          <div class="team-logo-shell"><img src="/assets/teams/2026-07-25/mobile/jingchengxiaoxue-hunter.png" alt=""></div>
+          <strong>京城小雪</strong>
+        </div>
+        <b class="team-score team-score-left">0</b>
+        <b class="team-score team-score-right">0</b>
+        <img class="stage-layer versus-layer" src="/assets/match-intro/bp-layout/vs.png" alt="VS">
+
+        <div class="pick-card escape-card escape-card-one"><strong>失忆者</strong><img src="/assets/characters/pick/失忆者.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-two"><strong>女特工</strong><img src="/assets/characters/pick/女特工.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-three"><strong>小骇客</strong><img src="/assets/characters/pick/小骇客.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-four"><strong>星辰圣女</strong><img src="/assets/characters/pick/星辰圣女.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-five"><strong>偶像歌手</strong><img src="/assets/characters/pick/偶像歌手.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-six"><strong>水之忍者</strong><img src="/assets/characters/pick/水之忍者.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-seven"><strong>发明家</strong><img src="/assets/characters/pick/发明家.png" alt=""></div>
+        <div class="pick-card escape-card escape-card-eight"><strong>茶气郎</strong><img src="/assets/characters/pick/茶气郎.png" alt=""></div>
+        <div class="pick-card hunter-card hunter-card-one"><strong>雇佣兵</strong><img src="/assets/characters/pick/雇佣兵.png" alt=""></div>
+        <div class="pick-card hunter-card hunter-card-two"><strong>影之忍者</strong><img src="/assets/characters/pick/影之忍者.png" alt=""></div>
+
+        <div class="countdown-track-reveal">
+          <div class="countdown-track-progress">
+            <img class="stage-layer" src="/assets/match-intro/bp-layout/countdown-track.png" alt="">
+          </div>
+        </div>
+
+        <div class="ban-token ban-token-one"><img src="/assets/characters/ban/机械之心.png" alt=""><span></span></div>
+        <div class="ban-token ban-token-two"><img src="/assets/characters/ban/小狐狸.png" alt=""><span></span></div>
+        <div class="ban-token ban-token-three"><img src="/assets/characters/ban/夜翎.png" alt=""><span></span></div>
+        <img class="stage-layer ban-frame ban-frame-one" src="/assets/match-intro/bp-layout/ban-1.png" alt="">
+        <img class="stage-layer ban-frame ban-frame-two" src="/assets/match-intro/bp-layout/ban-2.png" alt="">
+        <img class="stage-layer ban-frame ban-frame-three" src="/assets/match-intro/bp-layout/ban-3.png" alt="">
+
+        <img class="stage-layer division-layer" src="/assets/match-intro/bp-layout/division.png" alt="">
+        <img class="stage-layer bracket-layer" src="/assets/match-intro/bp-layout/stage-winners.png" alt="">
+        <span class="division-copy">手游赛区</span>
+        <div class="match-copy"><span>第一轮</span><span>MATCH 1</span></div>
+
+        <div class="countdown-digits" id="countdown" aria-label="30">
+          <img id="countdownTens" src="/assets/match-intro/bp-countdown/3.png" alt="">
+          <img id="countdownOnes" src="/assets/match-intro/bp-countdown/0.png" alt="">
+        </div>
+      </div>
+
+      <div class="review-ui">
+        <span>BP 动画设计稿 03 · 独立素材层</span>
+        <button id="replay" type="button" title="重新播放" aria-label="重新播放">&#8635;</button>
+      </div>
+    </section>
+  </main>
+  <script src="/assets/js/bp-animation-design.js?v=8"></script>
+</body>
+</html>

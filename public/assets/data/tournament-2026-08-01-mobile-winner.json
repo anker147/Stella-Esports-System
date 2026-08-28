@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "event": {
+    "id": "2026-zhuifeng-cup-mobile-2026-08-01-sf-winner",
+    "name": "2026追风杯",
+    "division": "mobile",
+    "stage": "semifinals-upper-rounds-1-2",
+    "stageLabel": "四强胜者组第一二轮",
+    "scheduleImage": "场景底图/赛前/今日赛程/2026-08-01-upper-rounds-1-2.png",
+    "stageImage": "场景底图/BP/胜者组.png",
+    "date": "2026-08-01",
+    "mode": "8v2逃生赛",
+    "format": "BO3"
+  },
+  "source": {
+    "workbook": "E:/下载/2026追风杯赛事推进表 (2).xlsx",
+    "workbookSha256": "8c4313bfb0097fc8b854be6fcf88f5ed6c1add06ed5173eb5d7361a865d0feff",
+    "matches": {
+      "sheet": "赛事对战表",
+      "range": "Z1:AI6"
+    },
+    "rosters": {
+      "sheet": "手游横版id名单",
+      "range": "A1:Q63"
+    }
+  },
+  "teamIds": [
+    "feitongfanxiang",
+    "jingchengxiaoxue",
+    "hualai2026",
+    "jimegame"
+  ],
+  "integrity": {
+    "teamCount": 4,
+    "matchCount": 2,
+    "registeredPlayerCount": 59,
+    "logoCount": 8,
+    "checks": [
+      "all teams reference verified mobile rosters",
+      "all matches have exact A/B room role reversal"
+    ]
+  },
+  "matches": [
+    {
+      "id": "mobile-2026-08-01-sf-winner-1",
+      "sourceRow": 5,
+      "date": "2026-08-01",
+      "startTime": "15:10",
+      "endTime": "16:00",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "非同凡想",
+        "京城小雪๓"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "feitongfanxiang",
+          "hunterTeamId": "jingchengxiaoxue"
+        },
+        "B": {
+          "escapeTeamId": "jingchengxiaoxue",
+          "hunterTeamId": "feitongfanxiang"
+        }
+      },
+      "winnerTeamId": null
+    },
+    {
+      "id": "mobile-2026-08-01-sf-winner-2",
+      "sourceRow": 6,
+      "date": "2026-08-01",
+      "startTime": "16:10",
+      "endTime": "17:00",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "花来2026",
+        "吉美game"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "hualai2026",
+          "hunterTeamId": "jimegame"
+        },
+        "B": {
+          "escapeTeamId": "jimegame",
+          "hunterTeamId": "hualai2026"
+        }
+      },
+      "winnerTeamId": null
+    }
+  ]
+}

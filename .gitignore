@@ -1,0 +1,33 @@
+# Local/runtime state
+data/runtime-config.json
+data/server.stdout.log
+data/server.stderr.log
+data/update-log.json.tmp
+data/bp-state.json
+data/bp-state.json.*
+data/bp-presentation.json
+data/material-library.json
+data/obs-path-migration.json
+
+# Local logs and temporary files
+*.log
+*.tmp
+.screenshots/
+.chrome-countdown-test/
+.edge-test/
+.codex-artifacts/
+.codex-spreadsheet/
+.packaging-test/
+
+# Build outputs and dependency caches
+dist/
+desktop/**/bin/
+desktop/**/obj/
+.nuget-packages/
+desktop/**/Payload/
+
+# Editor/OS files
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini

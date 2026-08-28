@@ -1,0 +1,63 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+}
+
+.time {
+  position: absolute;
+  left: 97px;
+  top: 89px;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  height: 177px;
+}
+
+.time img {
+  display: block;
+  width: auto;
+  height: auto;
+  user-select: none;
+  pointer-events: none;
+}
+
+.time .colon {
+  position: relative;
+  display: block;
+  flex: 0 0 47px;
+  width: 47px;
+  height: 108px;
+  margin-top: 68px;
+}
+
+.time .colon::before,
+.time .colon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 31px;
+  height: 31px;
+  background: #fff;
+}
+
+.time .colon::before {
+  top: 1px;
+}
+
+.time .colon::after {
+  top: 62px;
+}

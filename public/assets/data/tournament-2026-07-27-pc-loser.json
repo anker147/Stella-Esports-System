@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "event": {
+    "id": "2026-zhuifeng-cup-pc-2026-07-27-qf-loser",
+    "name": "2026追风杯",
+    "division": "pc",
+    "stage": "quarterfinals-lower-rounds-1-2",
+    "stageLabel": "八强败者组第一二轮",
+    "scheduleImage": "场景底图/赛前/今日赛程/2026-07-27-lower-rounds-1-2.png",
+    "stageImage": "场景底图/BP/败者组.png",
+    "date": "2026-07-27",
+    "mode": "8v2逃生赛",
+    "format": "BO3"
+  },
+  "source": {
+    "workbook": "E:/下载/2026追风杯赛事推进表 (2).xlsx",
+    "workbookSha256": "8c4313bfb0097fc8b854be6fcf88f5ed6c1add06ed5173eb5d7361a865d0feff",
+    "matches": {
+      "sheet": "赛事对战表",
+      "range": "N26:W31"
+    },
+    "rosters": {
+      "sheet": "端游横版id名单",
+      "range": "A1:Q95",
+      "nicknameField": "比赛服昵称",
+      "idField": "比赛服ID"
+    }
+  },
+  "teamIds": [
+    "pc-365days",
+    "pc-qinghejie",
+    "pc-youfeng",
+    "pc-youshiyinianxia"
+  ],
+  "integrity": {
+    "teamCount": 4,
+    "matchCount": 2,
+    "registeredPlayerCount": 60,
+    "logoCount": 8,
+    "checks": [
+      "all teams reference verified PC rosters",
+      "all matches have exact A/B room role reversal"
+    ]
+  },
+  "matches": [
+    {
+      "id": "pc-2026-07-27-qf-loser-1",
+      "sourceRow": 30,
+      "date": "2026-07-27",
+      "startTime": "16:00",
+      "endTime": "16:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "365Days",
+        "情何解"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "pc-365days",
+          "hunterTeamId": "pc-qinghejie"
+        },
+        "B": {
+          "escapeTeamId": "pc-qinghejie",
+          "hunterTeamId": "pc-365days"
+        }
+      },
+      "winnerTeamId": "pc-365days"
+    },
+    {
+      "id": "pc-2026-07-27-qf-loser-2",
+      "sourceRow": 31,
+      "date": "2026-07-27",
+      "startTime": "17:00",
+      "endTime": "17:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "有风",
+        "又是一年夏"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "pc-youfeng",
+          "hunterTeamId": "pc-youshiyinianxia"
+        },
+        "B": {
+          "escapeTeamId": "pc-youshiyinianxia",
+          "hunterTeamId": "pc-youfeng"
+        }
+      },
+      "winnerTeamId": "pc-youshiyinianxia"
+    }
+  ]
+}

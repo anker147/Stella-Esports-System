@@ -1,0 +1,1315 @@
+{
+  "schemaVersion": 1,
+  "event": {
+    "id": "2026-zhuifeng-cup-mobile-2026-07-25",
+    "name": "2026追风杯",
+    "division": "mobile",
+    "stage": "quarterfinals",
+    "scheduleImage": "场景底图/赛前/今日赛程/2026-07-25-mobile-quarterfinals.png",
+    "stageImage": "场景底图/BP/八强赛.png",
+    "date": "2026-07-25",
+    "mode": "8v2逃生赛",
+    "format": "BO3"
+  },
+  "source": {
+    "workbook": "E:/下载/2026追风杯赛事推进表 (2).xlsx",
+    "workbookSha256": "8c4313bfb0097fc8b854be6fcf88f5ed6c1add06ed5173eb5d7361a865d0feff",
+    "matches": {
+      "sheet": "赛事对战表",
+      "range": "N1:W8"
+    },
+    "rosters": {
+      "sheet": "手游横版id名单",
+      "range": "A1:Q63"
+    }
+  },
+  "roleRules": {
+    "escapeSlots": 8,
+    "hunterSlots": 2,
+    "substituteSlots": 5,
+    "substituteEligibleRoles": [
+      "escape",
+      "hunter"
+    ]
+  },
+  "teams": {
+    "juyi": {
+      "id": "juyi",
+      "displayName": "聚义",
+      "aliases": {
+        "schedule": "聚义",
+        "roster": "聚义",
+        "logo": "聚义"
+      },
+      "sourceRows": "2:3",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-聚义-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/juyi-hunter.png",
+          "sha256": "fc8307810fc7471211e3e9289ecd9316ef95fff305898894b53fca740a46773f"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-聚义-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/juyi-escape.png",
+          "sha256": "625b8589b51ab174084a00e57e37763316510c8f50bd001d79b23a218f022a74"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "juyi:escape1",
+            "nickname": "JY丶脾气",
+            "officialId": "102981908"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "juyi:escape2",
+            "nickname": "羽雫and七音",
+            "officialId": "109730209"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "juyi:escape3",
+            "nickname": "鬓上霜",
+            "officialId": "152795601"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "juyi:escape4",
+            "nickname": "ㅤㅤ一出好戏",
+            "officialId": "179786933"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "juyi:escape5",
+            "nickname": "ಎ为傲雪而战",
+            "officialId": "7649087"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "juyi:escape6",
+            "nickname": "story丶橙",
+            "officialId": "68560566"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "juyi:escape7",
+            "nickname": "倘若回忆有声",
+            "officialId": "128960727"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "juyi:escape8",
+            "nickname": "芊穗",
+            "officialId": "171909211"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "juyi:hunter1",
+            "nickname": "ಎ为聚义而战",
+            "officialId": "226926719"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "juyi:hunter2",
+            "nickname": "煩沂情",
+            "officialId": "105708562"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "juyi:substitute1",
+            "nickname": "为乱金柝而战",
+            "officialId": "83982909"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "juyi:substitute2",
+            "nickname": "520°的爱",
+            "officialId": "33103178"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "juyi:substitute3",
+            "nickname": "🐯忆白",
+            "officialId": "58362696"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "juyi:substitute4",
+            "nickname": "JY丶小鲨",
+            "officialId": "99849271"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "juyi:substitute5",
+            "nickname": "ㅤ路鸣泽．",
+            "officialId": "162244819"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "juyi:escape1",
+          "juyi:escape2",
+          "juyi:escape3",
+          "juyi:escape4",
+          "juyi:escape5",
+          "juyi:escape6",
+          "juyi:escape7",
+          "juyi:escape8",
+          "juyi:substitute1",
+          "juyi:substitute2",
+          "juyi:substitute3",
+          "juyi:substitute4",
+          "juyi:substitute5"
+        ],
+        "hunter": [
+          "juyi:hunter1",
+          "juyi:hunter2",
+          "juyi:substitute1",
+          "juyi:substitute2",
+          "juyi:substitute3",
+          "juyi:substitute4",
+          "juyi:substitute5"
+        ]
+      }
+    },
+    "feitongfanxiang": {
+      "id": "feitongfanxiang",
+      "displayName": "非同凡想",
+      "aliases": {
+        "schedule": "非同凡想",
+        "roster": "非同凡想",
+        "logo": "非同凡响"
+      },
+      "sourceRows": "10:11",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-非同凡响-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/feitongfanxiang-hunter.png",
+          "sha256": "2ed0e728ba7a92c22e0c90bfcb340d221d38db4c8eb7c2a578d24599bbced715"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-非同凡响-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/feitongfanxiang-escape.png",
+          "sha256": "9a838c81b5604e1a994f6a5dd7e1cf8ab25eb002aebde8d1ad40f39bb05fa5d5"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "feitongfanxiang:escape1",
+            "nickname": "慧慧永爱元元",
+            "officialId": "50640694"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "feitongfanxiang:escape2",
+            "nickname": "春和景明",
+            "officialId": "3248487"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "feitongfanxiang:escape3",
+            "nickname": "怀疑",
+            "officialId": "72691276"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "feitongfanxiang:escape4",
+            "nickname": "瞎浪˚",
+            "officialId": "91386738"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "feitongfanxiang:escape5",
+            "nickname": "隐匿",
+            "officialId": "84719569"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "feitongfanxiang:escape6",
+            "nickname": "约翰、史密斯",
+            "officialId": "8726061"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "feitongfanxiang:escape7",
+            "nickname": "诀别书☀️",
+            "officialId": "39034787"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "feitongfanxiang:escape8",
+            "nickname": "🪂疯小疯",
+            "officialId": "32955138"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "feitongfanxiang:hunter1",
+            "nickname": "Z9HPpirP",
+            "officialId": "39546987"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "feitongfanxiang:hunter2",
+            "nickname": "传说💚",
+            "officialId": "15912161"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "feitongfanxiang:substitute1",
+            "nickname": "为孔雀而战 k",
+            "officialId": "98716302"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "feitongfanxiang:substitute2",
+            "nickname": "晚风凉我心",
+            "officialId": "79049818"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "feitongfanxiang:substitute3",
+            "nickname": "氵",
+            "officialId": "46251962"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "feitongfanxiang:substitute4",
+            "nickname": "♡为凌迟而战",
+            "officialId": "126418113"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "feitongfanxiang:substitute5",
+            "nickname": "游拍念带粉",
+            "officialId": "11869867"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "feitongfanxiang:escape1",
+          "feitongfanxiang:escape2",
+          "feitongfanxiang:escape3",
+          "feitongfanxiang:escape4",
+          "feitongfanxiang:escape5",
+          "feitongfanxiang:escape6",
+          "feitongfanxiang:escape7",
+          "feitongfanxiang:escape8",
+          "feitongfanxiang:substitute1",
+          "feitongfanxiang:substitute2",
+          "feitongfanxiang:substitute3",
+          "feitongfanxiang:substitute4",
+          "feitongfanxiang:substitute5"
+        ],
+        "hunter": [
+          "feitongfanxiang:hunter1",
+          "feitongfanxiang:hunter2",
+          "feitongfanxiang:substitute1",
+          "feitongfanxiang:substitute2",
+          "feitongfanxiang:substitute3",
+          "feitongfanxiang:substitute4",
+          "feitongfanxiang:substitute5"
+        ]
+      }
+    },
+    "jingchengxiaoxue": {
+      "id": "jingchengxiaoxue",
+      "displayName": "京城小雪๓",
+      "aliases": {
+        "schedule": "京城小雪๓",
+        "roster": "京城小雪๓",
+        "logo": "京城小雪"
+      },
+      "sourceRows": "18:19",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-京城小雪-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/jingchengxiaoxue-hunter.png",
+          "sha256": "81a357b5f0a31d69e945207d68b6c8815647561060126f88d892a2edde98d68b"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-京城小雪-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/jingchengxiaoxue-escape.png",
+          "sha256": "6d6ea92711d7b656043d6ad4f27b66df2479f47fd3d404ccc54d56510e6db2ea"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "jingchengxiaoxue:escape1",
+            "nickname": "ಎ记号",
+            "officialId": "137895068"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "jingchengxiaoxue:escape2",
+            "nickname": "ಎ修罗",
+            "officialId": "124043640"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "jingchengxiaoxue:escape3",
+            "nickname": "ಎ暴风",
+            "officialId": "62078885"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "jingchengxiaoxue:escape4",
+            "nickname": "ಎ春",
+            "officialId": "128800720"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "jingchengxiaoxue:escape5",
+            "nickname": "海与山゛",
+            "officialId": "202753947"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "jingchengxiaoxue:escape6",
+            "nickname": "ಎ叛逆",
+            "officialId": "173205894"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "jingchengxiaoxue:escape7",
+            "nickname": "ಎ小北",
+            "officialId": "182029015"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "jingchengxiaoxue:escape8",
+            "nickname": "ಎ弓乐",
+            "officialId": "15910185"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "jingchengxiaoxue:hunter1",
+            "nickname": "向阳而生​",
+            "officialId": "148785827"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "jingchengxiaoxue:hunter2",
+            "nickname": "Nivora",
+            "officialId": "192620114"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "jingchengxiaoxue:substitute1",
+            "nickname": "ಎ为小何而战",
+            "officialId": "109639445"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "jingchengxiaoxue:substitute2",
+            "nickname": "ಎ情外劫",
+            "officialId": "96630258"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "jingchengxiaoxue:substitute3",
+            "nickname": "黑曼巴蟒蛇",
+            "officialId": "180748722"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "jingchengxiaoxue:substitute4",
+            "nickname": "ಎ浴室",
+            "officialId": "21806553"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "jingchengxiaoxue:substitute5",
+            "nickname": "EE尘少°",
+            "officialId": "144233765"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "jingchengxiaoxue:escape1",
+          "jingchengxiaoxue:escape2",
+          "jingchengxiaoxue:escape3",
+          "jingchengxiaoxue:escape4",
+          "jingchengxiaoxue:escape5",
+          "jingchengxiaoxue:escape6",
+          "jingchengxiaoxue:escape7",
+          "jingchengxiaoxue:escape8",
+          "jingchengxiaoxue:substitute1",
+          "jingchengxiaoxue:substitute2",
+          "jingchengxiaoxue:substitute3",
+          "jingchengxiaoxue:substitute4",
+          "jingchengxiaoxue:substitute5"
+        ],
+        "hunter": [
+          "jingchengxiaoxue:hunter1",
+          "jingchengxiaoxue:hunter2",
+          "jingchengxiaoxue:substitute1",
+          "jingchengxiaoxue:substitute2",
+          "jingchengxiaoxue:substitute3",
+          "jingchengxiaoxue:substitute4",
+          "jingchengxiaoxue:substitute5"
+        ]
+      }
+    },
+    "sishijiaxing": {
+      "id": "sishijiaxing",
+      "displayName": "四时佳兴",
+      "aliases": {
+        "schedule": "四时佳兴",
+        "roster": "四时佳兴",
+        "logo": "四时佳兴"
+      },
+      "sourceRows": "30:31",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-四时佳兴-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/sishijiaxing-hunter.png",
+          "sha256": "bf64d35413685b4d5e75766f92959660b5b6faf1ad23703fbf9a2fd61040febb"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-四时佳兴-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/sishijiaxing-escape.png",
+          "sha256": "46f0cb7acf800ee4ed032de8c5fd6ac4fba2a67642c2a21950b7a760e63f1bdc"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "sishijiaxing:escape1",
+            "nickname": "〝清茶﹒",
+            "officialId": "114525846"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "sishijiaxing:escape2",
+            "nickname": "萧 炎⁣",
+            "officialId": "176233534"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "sishijiaxing:escape3",
+            "nickname": "从地狱归来",
+            "officialId": "23626112"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "sishijiaxing:escape4",
+            "nickname": "〝花茶﹒",
+            "officialId": "181767966"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "sishijiaxing:escape5",
+            "nickname": "四时佳兴nb",
+            "officialId": "48637549"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "sishijiaxing:escape6",
+            "nickname": "始于17年冬",
+            "officialId": "247441513"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "sishijiaxing:escape7",
+            "nickname": "烟控",
+            "officialId": "174453022"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "sishijiaxing:escape8",
+            "nickname": "莫甜o",
+            "officialId": "86105143"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "sishijiaxing:hunter1",
+            "nickname": "ㅤ为无奈而战",
+            "officialId": "240975606"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "sishijiaxing:hunter2",
+            "nickname": "为无奈而战ㅤ",
+            "officialId": "185638255"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "sishijiaxing:substitute1",
+            "nickname": "春乏",
+            "officialId": "162886026"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "sishijiaxing:substitute2",
+            "nickname": "为无奈而战",
+            "officialId": "157249725"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "sishijiaxing:substitute3",
+            "nickname": "有点小无奈呀\n",
+            "officialId": "187390225"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "sishijiaxing:substitute4",
+            "nickname": "ovo🐔🐟\n",
+            "officialId": "129461657"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "sishijiaxing:substitute5",
+            "nickname": "⁡",
+            "officialId": "20388164"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "sishijiaxing:escape1",
+          "sishijiaxing:escape2",
+          "sishijiaxing:escape3",
+          "sishijiaxing:escape4",
+          "sishijiaxing:escape5",
+          "sishijiaxing:escape6",
+          "sishijiaxing:escape7",
+          "sishijiaxing:escape8",
+          "sishijiaxing:substitute1",
+          "sishijiaxing:substitute2",
+          "sishijiaxing:substitute3",
+          "sishijiaxing:substitute4",
+          "sishijiaxing:substitute5"
+        ],
+        "hunter": [
+          "sishijiaxing:hunter1",
+          "sishijiaxing:hunter2",
+          "sishijiaxing:substitute1",
+          "sishijiaxing:substitute2",
+          "sishijiaxing:substitute3",
+          "sishijiaxing:substitute4",
+          "sishijiaxing:substitute5"
+        ]
+      }
+    },
+    "hualai2026": {
+      "id": "hualai2026",
+      "displayName": "花来2026",
+      "aliases": {
+        "schedule": "花来2026",
+        "roster": "花来2026",
+        "logo": "花来2026"
+      },
+      "sourceRows": "34:35",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-花来2026-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/hualai2026-hunter.png",
+          "sha256": "043ab559fd6eab37beac7f19da79982674b65df78def5e4c25c212c687c657d3"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-花来2026-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/hualai2026-escape.png",
+          "sha256": "4ebfcd0a8ea05994c3e8d907294501e9214ff7ff7ebb4936cee66f3e6444c553"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "hualai2026:escape1",
+            "nickname": "⁤名分",
+            "officialId": "2706165"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "hualai2026:escape2",
+            "nickname": "❧深思者",
+            "officialId": "16248662"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "hualai2026:escape3",
+            "nickname": "单曲曲曲",
+            "officialId": "131851089"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "hualai2026:escape4",
+            "nickname": "蜜桃甜酱👻",
+            "officialId": "104236110"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "hualai2026:escape5",
+            "nickname": "落雪相思亦难",
+            "officialId": "66939366"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "hualai2026:escape6",
+            "nickname": "天地无锋",
+            "officialId": "65028658"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "hualai2026:escape7",
+            "nickname": "为花来而战",
+            "officialId": "2775906"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "hualai2026:escape8",
+            "nickname": "情随残花落尽",
+            "officialId": "255420312"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "hualai2026:hunter1",
+            "nickname": "不绝泪雨",
+            "officialId": "110755375"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "hualai2026:hunter2",
+            "nickname": "一只大呱呱￰",
+            "officialId": "241186216"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "hualai2026:substitute1",
+            "nickname": "吉米ovo",
+            "officialId": "127238528"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "hualai2026:substitute2",
+            "nickname": "东方月初🍀",
+            "officialId": "5047824"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "hualai2026:substitute3",
+            "nickname": "一隅偏安⁡",
+            "officialId": "73751271"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "hualai2026:substitute4",
+            "nickname": "⁢⁢打晕泥",
+            "officialId": "26972624"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "hualai2026:substitute5",
+            "nickname": "小猫伸爪罢了",
+            "officialId": "163020633"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "hualai2026:escape1",
+          "hualai2026:escape2",
+          "hualai2026:escape3",
+          "hualai2026:escape4",
+          "hualai2026:escape5",
+          "hualai2026:escape6",
+          "hualai2026:escape7",
+          "hualai2026:escape8",
+          "hualai2026:substitute1",
+          "hualai2026:substitute2",
+          "hualai2026:substitute3",
+          "hualai2026:substitute4",
+          "hualai2026:substitute5"
+        ],
+        "hunter": [
+          "hualai2026:hunter1",
+          "hualai2026:hunter2",
+          "hualai2026:substitute1",
+          "hualai2026:substitute2",
+          "hualai2026:substitute3",
+          "hualai2026:substitute4",
+          "hualai2026:substitute5"
+        ]
+      }
+    },
+    "renjiantan": {
+      "id": "renjiantan",
+      "displayName": "人间叹",
+      "aliases": {
+        "schedule": "人间叹",
+        "roster": "人间叹",
+        "logo": "人间叹"
+      },
+      "sourceRows": "42:43",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-人间叹-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/renjiantan-hunter.png",
+          "sha256": "0b1df002f7894cfbb6136a3e0072bd51e7aa01a0334f2e35e2f520cf2155a63f"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-人间叹-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/renjiantan-escape.png",
+          "sha256": "b012dcf3dfc96c3eea842168643a621dd69c5d997ac9a5621d6269df02eacc9e"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "renjiantan:escape1",
+            "nickname": "且听风吟",
+            "officialId": "103468273"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "renjiantan:escape2",
+            "nickname": "问花何处零落",
+            "officialId": "58249100"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "renjiantan:escape3",
+            "nickname": "可口可贺",
+            "officialId": "40440098"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "renjiantan:escape4",
+            "nickname": "潇湘雨",
+            "officialId": "30798425"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "renjiantan:escape5",
+            "nickname": "无关风与月",
+            "officialId": "165762282"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "renjiantan:escape6",
+            "nickname": "暮舟辞别故里",
+            "officialId": "33302387"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "renjiantan:escape7",
+            "nickname": "山风不解海情",
+            "officialId": "238501739"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "renjiantan:escape8",
+            "nickname": "Resign .",
+            "officialId": "147202943"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "renjiantan:hunter1",
+            "nickname": "清晨隐喻难眠",
+            "officialId": "38563320"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "renjiantan:hunter2",
+            "nickname": "云外",
+            "officialId": "25267307"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "renjiantan:substitute1",
+            "nickname": "月枕孤枝🦂",
+            "officialId": "28057794"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "renjiantan:substitute2",
+            "nickname": "落径晚雨时",
+            "officialId": "228389626"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "renjiantan:substitute3",
+            "nickname": "清歌与风歌",
+            "officialId": "51212244"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "renjiantan:substitute4",
+            "nickname": "泪绪似羽",
+            "officialId": "140165365"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "renjiantan:substitute5",
+            "nickname": "皖安业",
+            "officialId": "11626562"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "renjiantan:escape1",
+          "renjiantan:escape2",
+          "renjiantan:escape3",
+          "renjiantan:escape4",
+          "renjiantan:escape5",
+          "renjiantan:escape6",
+          "renjiantan:escape7",
+          "renjiantan:escape8",
+          "renjiantan:substitute1",
+          "renjiantan:substitute2",
+          "renjiantan:substitute3",
+          "renjiantan:substitute4",
+          "renjiantan:substitute5"
+        ],
+        "hunter": [
+          "renjiantan:hunter1",
+          "renjiantan:hunter2",
+          "renjiantan:substitute1",
+          "renjiantan:substitute2",
+          "renjiantan:substitute3",
+          "renjiantan:substitute4",
+          "renjiantan:substitute5"
+        ]
+      }
+    },
+    "dongyuezishi": {
+      "id": "dongyuezishi",
+      "displayName": "冬月子时",
+      "aliases": {
+        "schedule": "冬月子时",
+        "roster": "冬月子时",
+        "logo": "冬月子时"
+      },
+      "sourceRows": "50:51",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-冬月子时-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/dongyuezishi-hunter.png",
+          "sha256": "4f39db11a9a7ceb5f98828ad648e79593b9e0ca5a9106c8517da84dd8e1cbc6e"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-冬月子时-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/dongyuezishi-escape.png",
+          "sha256": "702d9a31da0e3bd18ae11f7774897d72a3fb0998af0541493447163e6b4ed18f"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "dongyuezishi:escape1",
+            "nickname": "造极",
+            "officialId": "109369192"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "dongyuezishi:escape2",
+            "nickname": "为黑少而战",
+            "officialId": "214314312"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "dongyuezishi:escape3",
+            "nickname": "为 H 黑蛋而战",
+            "officialId": "98983160"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "dongyuezishi:escape4",
+            "nickname": "你萌到窝了",
+            "officialId": "14623563"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "dongyuezishi:escape5",
+            "nickname": "秋迹可寻”",
+            "officialId": "2977618"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "dongyuezishi:escape6",
+            "nickname": "章鱼˚",
+            "officialId": "162555826"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "dongyuezishi:escape7",
+            "nickname": "安魂曲˚",
+            "officialId": "211862726"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "dongyuezishi:escape8",
+            "nickname": "呆呆の小狗",
+            "officialId": "86598644"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "dongyuezishi:hunter1",
+            "nickname": "良田满穗",
+            "officialId": "45420903"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "dongyuezishi:hunter2",
+            "nickname": "音",
+            "officialId": "21909405"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "dongyuezishi:substitute1",
+            "nickname": "来世相逢",
+            "officialId": "163122027"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "dongyuezishi:substitute2",
+            "nickname": "鹤望兰の花语",
+            "officialId": "59803690"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "dongyuezishi:substitute3",
+            "nickname": "时光羽衣",
+            "officialId": "103828841"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "dongyuezishi:substitute4",
+            "nickname": "夏天的风",
+            "officialId": "242719379"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": "dongyuezishi:substitute5",
+            "nickname": "心静如水就好",
+            "officialId": "129200876"
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "dongyuezishi:escape1",
+          "dongyuezishi:escape2",
+          "dongyuezishi:escape3",
+          "dongyuezishi:escape4",
+          "dongyuezishi:escape5",
+          "dongyuezishi:escape6",
+          "dongyuezishi:escape7",
+          "dongyuezishi:escape8",
+          "dongyuezishi:substitute1",
+          "dongyuezishi:substitute2",
+          "dongyuezishi:substitute3",
+          "dongyuezishi:substitute4",
+          "dongyuezishi:substitute5"
+        ],
+        "hunter": [
+          "dongyuezishi:hunter1",
+          "dongyuezishi:hunter2",
+          "dongyuezishi:substitute1",
+          "dongyuezishi:substitute2",
+          "dongyuezishi:substitute3",
+          "dongyuezishi:substitute4",
+          "dongyuezishi:substitute5"
+        ]
+      }
+    },
+    "jimegame": {
+      "id": "jimegame",
+      "displayName": "吉美game",
+      "aliases": {
+        "schedule": "吉美game",
+        "roster": "吉美2026",
+        "logo": "吉美game"
+      },
+      "sourceRows": "62:63",
+      "logos": {
+        "hunter": {
+          "obsFile": "队徽/手游赛区/手游赛区-吉美game-追捕.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/jimegame-hunter.png",
+          "sha256": "e876ae59a4d4cbe3b8551ad560d9bba162339ab69b62aaf4e53c9d6ec91fc9ad"
+        },
+        "escape": {
+          "obsFile": "队徽/手游赛区/手游赛区-吉美game-逃生.png",
+          "webFile": "/assets/teams/2026-07-25/mobile/jimegame-escape.png",
+          "sha256": "05a85a77d0ec4af7d6909b687d6c853fdd096239d664743083b68cb3ba997479"
+        }
+      },
+      "roster": {
+        "escape": [
+          {
+            "slot": "escape1",
+            "playerId": "jimegame:escape1",
+            "nickname": "JM丶暴君",
+            "officialId": "21522348"
+          },
+          {
+            "slot": "escape2",
+            "playerId": "jimegame:escape2",
+            "nickname": "JM丶看不见",
+            "officialId": "70708662"
+          },
+          {
+            "slot": "escape3",
+            "playerId": "jimegame:escape3",
+            "nickname": "JM丶统治者",
+            "officialId": "28781728"
+          },
+          {
+            "slot": "escape4",
+            "playerId": "jimegame:escape4",
+            "nickname": "JM丶运气好",
+            "officialId": "27796802"
+          },
+          {
+            "slot": "escape5",
+            "playerId": "jimegame:escape5",
+            "nickname": "JM丶忧郁哥",
+            "officialId": "88144858"
+          },
+          {
+            "slot": "escape6",
+            "playerId": "jimegame:escape6",
+            "nickname": "JM丶猫将军",
+            "officialId": "37782754"
+          },
+          {
+            "slot": "escape7",
+            "playerId": "jimegame:escape7",
+            "nickname": "JM丶宇将军",
+            "officialId": "27907581"
+          },
+          {
+            "slot": "escape8",
+            "playerId": "jimegame:escape8",
+            "nickname": "JM丶万家惠",
+            "officialId": "14385074"
+          }
+        ],
+        "hunter": [
+          {
+            "slot": "hunter1",
+            "playerId": "jimegame:hunter1",
+            "nickname": "JM丶喷子侠",
+            "officialId": "4267076"
+          },
+          {
+            "slot": "hunter2",
+            "playerId": "jimegame:hunter2",
+            "nickname": "JM丶拱门",
+            "officialId": "8533902"
+          }
+        ],
+        "substitutes": [
+          {
+            "slot": "substitute1",
+            "playerId": "jimegame:substitute1",
+            "nickname": "鹤凌云￴",
+            "officialId": "97552822"
+          },
+          {
+            "slot": "substitute2",
+            "playerId": "jimegame:substitute2",
+            "nickname": "春吟雾情",
+            "officialId": "262798102"
+          },
+          {
+            "slot": "substitute3",
+            "playerId": "jimegame:substitute3",
+            "nickname": "我要两顆西柚",
+            "officialId": "33043612"
+          },
+          {
+            "slot": "substitute4",
+            "playerId": "jimegame:substitute4",
+            "nickname": "修小可",
+            "officialId": "31913717"
+          },
+          {
+            "slot": "substitute5",
+            "playerId": null,
+            "nickname": null,
+            "officialId": null
+          }
+        ]
+      },
+      "candidatePools": {
+        "escape": [
+          "jimegame:escape1",
+          "jimegame:escape2",
+          "jimegame:escape3",
+          "jimegame:escape4",
+          "jimegame:escape5",
+          "jimegame:escape6",
+          "jimegame:escape7",
+          "jimegame:escape8",
+          "jimegame:substitute1",
+          "jimegame:substitute2",
+          "jimegame:substitute3",
+          "jimegame:substitute4"
+        ],
+        "hunter": [
+          "jimegame:hunter1",
+          "jimegame:hunter2",
+          "jimegame:substitute1",
+          "jimegame:substitute2",
+          "jimegame:substitute3",
+          "jimegame:substitute4"
+        ]
+      }
+    }
+  },
+  "matches": [
+    {
+      "id": "mobile-2026-07-25-qf-1",
+      "sourceRow": 5,
+      "date": "2026-07-25",
+      "startTime": "14:00",
+      "endTime": "14:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "聚义",
+        "非同凡想"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "juyi",
+          "hunterTeamId": "feitongfanxiang"
+        },
+        "B": {
+          "escapeTeamId": "feitongfanxiang",
+          "hunterTeamId": "juyi"
+        }
+      },
+      "winnerTeamId": null
+    },
+    {
+      "id": "mobile-2026-07-25-qf-2",
+      "sourceRow": 6,
+      "date": "2026-07-25",
+      "startTime": "15:00",
+      "endTime": "15:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "京城小雪๓",
+        "四时佳兴"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "jingchengxiaoxue",
+          "hunterTeamId": "sishijiaxing"
+        },
+        "B": {
+          "escapeTeamId": "sishijiaxing",
+          "hunterTeamId": "jingchengxiaoxue"
+        }
+      },
+      "winnerTeamId": null
+    },
+    {
+      "id": "mobile-2026-07-25-qf-3",
+      "sourceRow": 7,
+      "date": "2026-07-25",
+      "startTime": "16:00",
+      "endTime": "16:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "花来2026",
+        "人间叹"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "hualai2026",
+          "hunterTeamId": "renjiantan"
+        },
+        "B": {
+          "escapeTeamId": "renjiantan",
+          "hunterTeamId": "hualai2026"
+        }
+      },
+      "winnerTeamId": null
+    },
+    {
+      "id": "mobile-2026-07-25-qf-4",
+      "sourceRow": 8,
+      "date": "2026-07-25",
+      "startTime": "17:00",
+      "endTime": "17:50",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "matchup": [
+        "冬月子时",
+        "吉美game"
+      ],
+      "rooms": {
+        "A": {
+          "escapeTeamId": "dongyuezishi",
+          "hunterTeamId": "jimegame"
+        },
+        "B": {
+          "escapeTeamId": "jimegame",
+          "hunterTeamId": "dongyuezishi"
+        }
+      },
+      "winnerTeamId": null
+    }
+  ],
+  "integrity": {
+    "teamCount": 8,
+    "matchCount": 4,
+    "registeredPlayerCount": 119,
+    "logoCount": 16,
+    "checks": [
+      "all scheduled teams mapped to exactly one roster",
+      "all scheduled teams mapped to hunter and escape logos",
+      "all matches have exact A/B room role reversal",
+      "all starter nicknames have matching official IDs",
+      "all substitutes with nicknames have matching official IDs",
+      "all substitutes are eligible for both candidate pools"
+    ]
+  }
+}

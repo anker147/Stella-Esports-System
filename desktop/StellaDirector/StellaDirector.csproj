@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>StellaDirector</AssemblyName>
+    <RootNamespace>StellaDirector</RootNamespace>
+    <ApplicationIcon>Assets\Stella.ico</ApplicationIcon>
+    <Version>1.7.0</Version>
+  </PropertyGroup>
+</Project>

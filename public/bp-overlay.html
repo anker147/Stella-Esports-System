@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BP Dynamic Overlay</title>
+  <link rel="stylesheet" href="/assets/css/bp-overlay.css?v=6">
+</head>
+<body>
+  <main class="viewport">
+    <section class="bp-stage" id="bpStage" aria-label="动态 BP">
+      <video class="base-video" id="bpBaseVideo" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+        <source src="/assets/match-intro/zhuifeng-base.mp4" type="video/mp4">
+      </video>
+
+      <div class="board" aria-hidden="true">
+        <img class="stage-layer pick-board-layer" src="/assets/match-intro/bp-layout/pick-board.png?v=3" alt="">
+        <img class="stage-layer pick-frames-layer" src="/assets/match-intro/bp-layout/pick-frames.png?v=3" alt="">
+
+        <div class="team-lockup team-lockup-left">
+          <div class="team-logo-shell"><img id="overlayEscapeLogo" alt=""></div>
+          <strong id="overlayEscapeName"></strong>
+        </div>
+        <div class="team-lockup team-lockup-right">
+          <div class="team-logo-shell"><img id="overlayHunterLogo" alt=""></div>
+          <strong id="overlayHunterName"></strong>
+        </div>
+        <b class="team-score team-score-left" id="overlayEscapeScore">0</b>
+        <b class="team-score team-score-right" id="overlayHunterScore">0</b>
+        <img class="stage-layer versus-layer" src="/assets/match-intro/bp-layout/vs.png" alt="VS">
+
+        <div class="pick-card escape-card escape-card-one" data-slot="escape-pick-1"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-two" data-slot="escape-pick-2"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-three" data-slot="escape-pick-3"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-four" data-slot="escape-pick-4"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-five" data-slot="escape-pick-5"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-six" data-slot="escape-pick-6"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-seven" data-slot="escape-pick-7"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card escape-card escape-card-eight" data-slot="escape-pick-8"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card hunter-card hunter-card-one" data-slot="hunter-pick-1"><strong></strong><img alt="" hidden></div>
+        <div class="pick-card hunter-card hunter-card-two" data-slot="hunter-pick-2"><strong></strong><img alt="" hidden></div>
+
+        <div class="countdown-track-reveal">
+          <div class="countdown-track-progress" id="overlayTimerProgress">
+            <img class="stage-layer" src="/assets/match-intro/bp-layout/countdown-track.png" alt="">
+          </div>
+        </div>
+
+        <div class="ban-token ban-token-one" data-slot="hunter-ban-1"><img alt="" hidden></div>
+        <div class="ban-token ban-token-two" data-slot="escape-ban-1"><img alt="" hidden></div>
+        <div class="ban-token ban-token-three" data-slot="hunter-ban-2"><img alt="" hidden></div>
+        <img class="stage-layer ban-frame ban-frame-one" src="/assets/match-intro/bp-layout/ban-1.png" alt="">
+        <img class="stage-layer ban-frame ban-frame-two" src="/assets/match-intro/bp-layout/ban-2.png" alt="">
+        <img class="stage-layer ban-frame ban-frame-three" src="/assets/match-intro/bp-layout/ban-3.png" alt="">
+
+        <img class="stage-layer division-layer" src="/assets/match-intro/bp-layout/division.png" alt="">
+        <img class="stage-layer bracket-layer" id="overlayStageImage" src="/assets/match-intro/bp-layout/stage-quarterfinals.png" alt="">
+        <span class="division-copy" id="overlayDivision"></span>
+        <span class="round-copy" id="overlayRound"></span>
+        <span class="game-copy" id="overlayGame"></span>
+
+        <div class="countdown-digits" id="overlayCountdown" aria-label="00">
+          <img id="overlayCountdownTens" src="/assets/match-intro/bp-countdown/0.png" alt="">
+          <img id="overlayCountdownOnes" src="/assets/match-intro/bp-countdown/0.png" alt="">
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/assets/js/bp-overlay.js?v=3"></script>
+</body>
+</html>

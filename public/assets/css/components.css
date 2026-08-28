@@ -1,0 +1,119 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: radial-gradient(ellipse at 30% 0%, #e8f0f8 0%, var(--f2-bg-page) 60%);
+  color: var(--f2-text-primary);
+  font-family: var(--f2-font-family);
+  line-height: 1.5;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--f2-space-2);
+  min-height: 36px;
+  padding: var(--f2-space-2) var(--f2-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--f2-radius-sm);
+  font-weight: var(--f2-weight-semi);
+  cursor: pointer;
+  transition: background var(--f2-transition-fast), border-color var(--f2-transition-fast), transform 0.08s ease;
+  white-space: nowrap;
+}
+
+.btn[hidden] {
+  display: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--f2-blue);
+  color: var(--f2-text-on-accent);
+}
+
+.btn-primary:hover {
+  background: var(--f2-blue-hover);
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--f2-border);
+  color: var(--f2-text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--f2-bg-hover);
+}
+
+.btn-danger {
+  border-color: var(--f2-red);
+  background: #fff;
+  color: var(--f2-red);
+}
+
+.btn-danger:hover {
+  background: rgba(209, 52, 56, 0.08);
+}
+
+.input {
+  width: 100%;
+  height: 38px;
+  padding: 0 var(--f2-space-3);
+  border: 1px solid var(--f2-border);
+  border-radius: var(--f2-radius-sm);
+  background: var(--f2-bg-card);
+  color: var(--f2-text-primary);
+  outline: none;
+  transition: border-color var(--f2-transition-fast), box-shadow var(--f2-transition-fast);
+}
+
+.input:focus {
+  border-color: var(--f2-blue);
+  box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.12);
+}
+
+.card {
+  padding: var(--f2-space-6);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: var(--f2-radius-md);
+  background: var(--f2-bg-card);
+  box-shadow: var(--f2-shadow-sm);
+}
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--f2-space-4);
+  margin-bottom: var(--f2-space-5);
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.card-header p {
+  margin: 4px 0 0;
+  color: var(--f2-text-secondary);
+  font-size: var(--f2-font-caption);
+}

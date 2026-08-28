@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ban/Pick 入场动画修改稿</title>
+  <link rel="stylesheet" href="/assets/css/match-intro-concept.css?v=25">
+</head>
+<body>
+  <main class="viewport">
+    <section class="stage" id="stage" aria-label="Ban/Pick 入场动画修改稿">
+      <div class="bp-destination" aria-hidden="true">
+        <img class="bp-background" src="/assets/match-intro/bp-background.png" alt="">
+        <img class="bp-stage-label" src="/assets/match-intro/bp-stage-quarterfinals.png" alt="">
+        <div class="bp-ready">BAN / PICK READY</div>
+      </div>
+
+      <div class="intro-scene">
+        <video class="solo-base-video" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+          <source src="/assets/match-intro/zhuifeng-base.mp4" type="video/mp4">
+        </video>
+        <div class="matchup-background" aria-hidden="true"></div>
+        <div class="color-field field-red" aria-hidden="true"></div>
+        <div class="color-field field-blue" aria-hidden="true"></div>
+        <div class="texture" aria-hidden="true"></div>
+        <div class="axis axis-shadow" aria-hidden="true"></div>
+        <div class="axis axis-light" aria-hidden="true"></div>
+        <img class="solo-character solo-character-left" src="/assets/characters/pick/%E5%A4%B1%E5%BF%86%E8%80%85.png" alt="">
+        <img class="solo-character solo-character-right" src="/assets/characters/pick/%E9%9B%87%E4%BD%A3%E5%85%B5.png" alt="">
+        <div class="solo-dimmer" aria-hidden="true"></div>
+
+        <div class="solo-team solo-left">
+          <div class="solo-word" id="leftSoloWord">365DAYS</div>
+          <div class="solo-lockup">
+            <div class="solo-logo-frame">
+              <img id="leftSoloLogo" src="/assets/teams/2026-07-26/pc/pc-365days-escape.png" alt="365Days 战队队徽">
+            </div>
+            <div class="solo-accent"></div>
+            <div class="solo-copy">
+              <strong id="leftSoloName">365DAYS</strong>
+              <span>逃生方 / ESCAPE</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="solo-team solo-right">
+          <div class="solo-word" id="rightSoloWord">小姐姐的洋房</div>
+          <div class="solo-lockup">
+            <div class="solo-copy">
+              <strong id="rightSoloName">小姐姐的洋房</strong>
+              <span>追捕方 / HUNTER</span>
+            </div>
+            <div class="solo-accent"></div>
+            <div class="solo-logo-frame">
+              <img id="rightSoloLogo" src="/assets/teams/2026-07-26/pc/pc-xiaojiejiedeyangfang-hunter.png" alt="小姐姐的洋房战队队徽">
+            </div>
+          </div>
+        </div>
+
+        <div class="team team-left">
+          <div class="team-word" id="leftWord">365DAYS</div>
+          <div class="logo-shell">
+            <div class="logo-echo"></div>
+            <img id="leftLogo" src="/assets/teams/2026-07-26/pc/pc-365days-escape.png" alt="365Days 战队队徽">
+          </div>
+          <div class="team-name" id="leftName">365DAYS</div>
+        </div>
+
+        <div class="team team-right">
+          <div class="team-word" id="rightWord">洋房</div>
+          <div class="logo-shell">
+            <div class="logo-echo"></div>
+            <img id="rightLogo" src="/assets/teams/2026-07-26/pc/pc-xiaojiejiedeyangfang-hunter.png" alt="小姐姐的洋房战队队徽">
+          </div>
+          <div class="team-name" id="rightName">小姐姐的洋房</div>
+        </div>
+
+        <div class="impact" aria-hidden="true">
+          <div class="impact-ring ring-one"></div>
+          <div class="impact-ring ring-two"></div>
+          <div class="impact-flare"></div>
+        </div>
+
+        <div class="cup-lockup">
+          <img src="/assets/match-intro/2026-zhuifeng-cup-logo.png" alt="2026追风杯">
+          <div class="phase-label">进入 BAN / PICK</div>
+        </div>
+
+        <div class="broadcast-frame" aria-hidden="true">
+          <div class="frame-top"><span>2026 追风杯</span><span>QUARTERFINALS · GAME 01</span></div>
+          <div class="frame-bottom"><span>ESCAPE</span><span>HUNTER</span></div>
+        </div>
+      </div>
+
+      <div class="outro" aria-hidden="true">
+        <div class="outro-blade blade-red"></div>
+        <div class="outro-blade blade-blue"></div>
+        <div class="outro-line"></div>
+      </div>
+
+      <button class="replay" id="replay" type="button" title="重新播放" aria-label="重新播放">↻</button>
+    </section>
+  </main>
+  <script src="/assets/js/match-intro-concept.js?v=4"></script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "event": {
+    "id": "2026-zhuifeng-cup-mobile-2026-08-02-sf-loser",
+    "name": "2026追风杯",
+    "division": "mobile",
+    "stage": "semifinals-lower-rounds-1-2",
+    "stageLabel": "四强败者组第一二轮",
+    "scheduleImage": "场景底图/赛前/今日赛程/2026-08-02-lower-rounds-1-2.png",
+    "scheduleTableImage": "场景底图/今日赛程/今日赛程82.png",
+    "stageImage": "场景底图/BP/败者组.png",
+    "date": "2026-08-02",
+    "mode": "8v2逃生赛",
+    "format": "BO3"
+  },
+  "source": {
+    "workbook": "E:/下载/2026追风杯赛事推进表 (3).xlsx",
+    "workbookSha256": "f9480cac75e12fa70a0a0c0fc6007c5005d5fadb06bd0eafc4c4f026fe823a35",
+    "matches": {
+      "sheet": "赛事对战表",
+      "range": "Z18:AI23"
+    },
+    "rosters": {
+      "sheet": "手游横版id名单",
+      "range": "A1:Q63"
+    }
+  },
+  "teamIds": [
+    "juyi",
+    "dongyuezishi",
+    "feitongfanxiang",
+    "jingchengxiaoxue",
+    "hualai2026",
+    "jimegame"
+  ],
+  "integrity": {
+    "teamCount": 6,
+    "matchCount": 2,
+    "registeredPlayerCount": 89,
+    "logoCount": 12,
+    "checks": [
+      "fixed lower-bracket teams verified",
+      "pending teams resolve from the corresponding August 1 loser"
+    ]
+  },
+  "matches": [
+    {
+      "id": "mobile-2026-08-02-sf-loser-1",
+      "sourceRow": 22,
+      "date": "2026-08-02",
+      "startTime": "15:10",
+      "endTime": "16:00",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "participantRefs": [
+        {
+          "teamId": "juyi"
+        },
+        {
+          "fromMatchId": "mobile-2026-08-01-sf-winner-1",
+          "outcome": "loser"
+        }
+      ],
+      "winnerTeamId": null
+    },
+    {
+      "id": "mobile-2026-08-02-sf-loser-2",
+      "sourceRow": 23,
+      "date": "2026-08-02",
+      "startTime": "16:10",
+      "endTime": "17:00",
+      "mode": "8v2逃生赛",
+      "format": "BO3",
+      "participantRefs": [
+        {
+          "teamId": "dongyuezishi"
+        },
+        {
+          "fromMatchId": "mobile-2026-08-01-sf-winner-2",
+          "outcome": "loser"
+        }
+      ],
+      "winnerTeamId": null
+    }
+  ]
+}
