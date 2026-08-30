@@ -13,8 +13,6 @@ const cases = [
   { page: 'bp', width: 1366, height: 768 },
   { page: 'bp', width: 1024, height: 768 },
   { page: 'bp', width: 800, height: 700 },
-  { page: 'console', width: 1440, height: 900 },
-  { page: 'console', width: 800, height: 700 },
 ];
 
 (async () => {
@@ -42,14 +40,11 @@ const cases = [
           bodyHorizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
           activeWidth: rect(active)?.width,
           commentatorVisible: pageName !== 'bp' || Boolean(document.querySelector('#bpCommentatorImage')?.offsetParent),
-          transitionControls: document.querySelectorAll('#consoleTransition, [data-console-transition]').length,
           actionButtonCount: actionBar
             ? [...actionBar.querySelectorAll('button')].filter(button => button.offsetParent).length
             : 0,
           actionBarDisplay: actionBar ? getComputedStyle(actionBar).display : null,
           contextFieldRows: new Set(contextSelects.map(select => Math.round(select.getBoundingClientRect().top))).size,
-          consoleFitsViewport: pageName !== 'console'
-            || document.documentElement.scrollHeight <= window.innerHeight,
         };
       }, item.page);
 
@@ -59,10 +54,6 @@ const cases = [
         assert.equal(metrics.actionButtonCount, 11);
         assert.notEqual(metrics.actionBarDisplay, 'none');
         if (item.width > 900) assert.equal(metrics.contextFieldRows, 1);
-      }
-      if (item.page === 'console') {
-        assert.equal(metrics.transitionControls, 0);
-        assert.equal(metrics.consoleFitsViewport, true);
       }
 
       const name = `${item.page}-${item.width}x${item.height}.png`;

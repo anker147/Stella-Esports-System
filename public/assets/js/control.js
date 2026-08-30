@@ -1,27 +1,23 @@
 (function () {
   const pageCopy = {
-    console: {
-      title: '导播控制台',
-      description: '快速切换 OBS 场景，并控制网易云音乐播放。'
-    },
     countdown: {
-      title: '倒计时 HUB',
+      title: '计时中心',
       description: '生成透明 OBS Browser Source 链接，并从这里控制倒计时。'
     },
     bp: {
-      title: '赛事 BP 控制',
+      title: 'BP 控制台',
       description: '按比赛、BO3 局数和房间管理 BP，并通过唯一中转源串行同步到 OBS。'
     },
     bracket: {
-      title: '晋级榜控制',
+      title: '晋级榜推送',
       description: '保存带时间标识的晋级榜图片，并同步推送到 OBS。'
     },
     materials: {
-      title: '素材库',
+      title: '素材中心',
       description: '索引并管理本机文件与文件夹。'
     },
     logs: {
-      title: '系统日志',
+      title: '日志面板',
       description: '查看 BP 历史与本次服务运行期间的 OBS 操作记录。'
     },
     updates: {
@@ -30,10 +26,133 @@
     }
   };
 
+  const NAV_STATE_KEY = 'zfb.nav-state';
+  const navState = (() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(NAV_STATE_KEY));
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  })();
+  if (!navState.openGroups || typeof navState.openGroups !== 'object') navState.openGroups = {};
+
+  function saveNavState() {
+    try {
+      localStorage.setItem(NAV_STATE_KEY, JSON.stringify(navState));
+    } catch {}
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'nav-toast';
+  document.body.appendChild(toast);
+  let toastTimer = null;
+  function showToast(text) {
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  function isSidebarCollapsed() {
+    return document.body.classList.contains('sidebar-collapsed');
+  }
+
+  function setSidebarCollapsed(collapsed, persist = true) {
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
+    const toggleButton = document.getElementById('sidebarToggle');
+    toggleButton.title = collapsed ? '展开侧边栏' : '收起侧边栏';
+    toggleButton.setAttribute('aria-label', toggleButton.title);
+    closeNavFlyout();
+    if (persist) {
+      navState.collapsed = collapsed;
+      saveNavState();
+    }
+  }
+
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    setSidebarCollapsed(!isSidebarCollapsed());
+  });
+
+  document.querySelector('.sidebar').addEventListener('dblclick', event => {
+    if (event.target.closest('.sidebar-collapse')) return;
+    if (isSidebarCollapsed()) setSidebarCollapsed(false);
+  });
+
+  const flyout = document.createElement('div');
+  flyout.className = 'nav-flyout';
+  document.body.appendChild(flyout);
+  let flyoutToggle = null;
+
+  function closeNavFlyout() {
+    if (!flyoutToggle) return;
+    flyoutToggle.classList.remove('flyout-open');
+    flyoutToggle = null;
+    flyout.classList.remove('show');
+  }
+
+  function openNavFlyout(group, toggle) {
+    if (flyoutToggle === toggle) {
+      closeNavFlyout();
+      return;
+    }
+    if (flyoutToggle) flyoutToggle.classList.remove('flyout-open');
+    flyoutToggle = toggle;
+    toggle.classList.add('flyout-open');
+    flyout.replaceChildren(...Array.from(group.querySelectorAll('.nav-group-items .nav-btn')).map(button => {
+      const clone = button.cloneNode(true);
+      clone.addEventListener('click', () => {
+        button.click();
+        closeNavFlyout();
+      });
+      return clone;
+    }));
+    const rect = toggle.getBoundingClientRect();
+    flyout.style.left = 'var(--nav-flyout-left)';
+    flyout.style.top = `${Math.round(rect.top)}px`;
+    flyout.classList.add('show');
+    const flyoutRect = flyout.getBoundingClientRect();
+    flyout.style.top = `${Math.round(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutRect.height - 12)))}px`;
+  }
+
+  document.addEventListener('click', event => {
+    if (flyoutToggle && !flyout.contains(event.target) && !flyoutToggle.contains(event.target)) {
+      closeNavFlyout();
+    }
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeNavFlyout();
+  });
+
+  document.querySelectorAll('[data-nav-group]').forEach(group => {
+    const key = group.dataset.navGroup;
+    const toggle = group.querySelector('.nav-group-toggle');
+    group.dataset.open = navState.openGroups[key] ? 'true' : 'false';
+    toggle.addEventListener('click', event => {
+      event.stopPropagation();
+      if (isSidebarCollapsed()) {
+        openNavFlyout(group, toggle);
+        return;
+      }
+      const open = group.dataset.open !== 'true';
+      group.dataset.open = String(open);
+      navState.openGroups[key] = open;
+      saveNavState();
+    });
+  });
+
+  const SOON_MARK = '<svg class="nav-soon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.4L14.4 13H1.6L8 2.4z"/><path d="M8 6.9v2.7M8 11.4v.01"/></svg>';
+  document.querySelectorAll('[data-soon]').forEach(button => {
+    button.insertAdjacentHTML('beforeend', SOON_MARK);
+  });
+
+  document.querySelectorAll('[data-soon]').forEach(button => {
+    button.addEventListener('click', () => showToast(`「${button.dataset.soon}」功能建设中`));
+  });
+
   document.querySelectorAll('[data-page]').forEach(button => {
     button.addEventListener('click', () => {
       const page = button.dataset.page;
-      document.body.classList.toggle('console-mode', page === 'console');
       document.body.classList.toggle('updates-mode', page === 'updates');
       if (page === 'bp') {
         try {
@@ -50,15 +169,29 @@
       });
       document.getElementById('pageTitle').textContent = pageCopy[page].title;
       document.getElementById('pageDescription').textContent = pageCopy[page].description;
+      document.querySelectorAll('[data-nav-group]').forEach(group => {
+        group.classList.toggle('has-active', Boolean(group.querySelector('[data-page].active')));
+      });
     });
   });
 
-  document.body.classList.add('console-mode');
-
   const initialPage = new URLSearchParams(window.location.search).get('page');
-  if (initialPage && pageCopy[initialPage]) {
-    document.querySelector(`[data-page="${initialPage}"]`)?.click();
+  const activeButton = (initialPage && pageCopy[initialPage])
+    ? document.querySelector(`[data-page="${initialPage}"]`)
+    : document.querySelector('[data-page].active');
+  if (activeButton) {
+    const activeGroup = activeButton.closest('[data-nav-group]');
+    if (activeGroup) {
+      activeGroup.dataset.open = 'true';
+      navState.openGroups[activeGroup.dataset.navGroup] = true;
+      saveNavState();
+    }
+    if (initialPage && pageCopy[initialPage]) activeButton.click();
   }
+  document.querySelectorAll('[data-nav-group]').forEach(group => {
+    group.classList.toggle('has-active', Boolean(group.querySelector('[data-page].active')));
+  });
+  if (navState.collapsed) setSidebarCollapsed(true, false);
 
   const params = new URLSearchParams(window.location.search);
   let hubId = 'countdown';

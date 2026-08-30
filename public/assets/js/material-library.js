@@ -469,6 +469,7 @@
     elements.empty.textContent = entries.length === 0 ? '素材库为空' : (searching ? '没有匹配的素材' : '此文件夹为空');
     elements.empty.hidden = visible.length > 0;
     elements.grid.replaceChildren(...visible.map(makeCard));
+    window.PageFX.stagger(elements.grid.children, { step: 30, cap: 12 });
     renderBreadcrumbs();
     syncSelection();
   }

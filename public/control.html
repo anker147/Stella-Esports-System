@@ -6,33 +6,113 @@
   <title>星澜赛事导播系统</title>
   <link rel="stylesheet" href="assets/css/tokens.css">
   <link rel="stylesheet" href="assets/css/components.css">
-  <link rel="stylesheet" href="assets/css/control.css?v=18">
+  <link rel="stylesheet" href="assets/css/control.css?v=33">
 </head>
 <body>
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-mark"><img src="assets/brand/stella-logo.png" alt=""></div>
-      <div>
+      <div class="sidebar-heading">
         <div class="sidebar-title">星澜赛事导播系统</div>
         <div class="sidebar-subtitle">OBS WebSocket 控制台 <span class="sidebar-version" id="systemVersion">v--</span></div>
       </div>
     </div>
     <nav class="sidebar-nav">
-      <button class="nav-btn active" type="button" data-page="console">控制台</button>
-      <button class="nav-btn" type="button" data-page="countdown">倒计时</button>
-      <button class="nav-btn" type="button" data-page="bp">BP 控制</button>
-      <button class="nav-btn" type="button" data-page="bracket">晋级榜</button>
-      <button class="nav-btn" type="button" data-page="materials">素材库</button>
-      <button class="nav-btn" type="button" data-page="logs">日志</button>
-      <button class="nav-btn" type="button" data-page="updates">更新日志</button>
+      <button class="nav-btn nav-leaf" type="button" data-page="updates">
+        <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5.5L13 5.5V14H4z"/><path d="M9.5 2v3.5H13"/><path d="M6.2 8.5h3.6M6.2 11h3.6"/></svg>
+        <span class="nav-label">更新日志</span>
+      </button>
+
+      <div class="nav-group" data-nav-group="tournament">
+        <button class="nav-group-toggle" type="button">
+          <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2h5v3.2a2.5 2.5 0 0 1-5 0V2z"/><path d="M5.5 3H3.4a2.1 2.1 0 0 0 2.2 2.6M10.5 3h2.1a2.1 2.1 0 0 1-2.2 2.6"/><path d="M8 7.7v2.8M5.5 13.5h5M6.8 10.5h2.4"/></svg>
+          <span class="nav-label">赛事中心</span>
+          <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <div class="nav-group-items">
+            <button class="nav-btn nav-sub" type="button" data-soon="赛事管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 14V2.5"/><path d="M3.5 3h8.5l-1.8 2.5L12 8H3.5"/></svg><span class="nav-label">赛事管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="赛程管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><span class="nav-label">赛程管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="战队管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l4.8 1.9v3.8c0 3.2-2.3 5.2-4.8 6.7-2.5-1.5-4.8-3.5-4.8-6.7V3.7L8 1.8z"/></svg><span class="nav-label">战队管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="选手管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5.2" r="2.4"/><path d="M3.2 13.5c.5-2.9 2.4-3.9 4.8-3.9s4.3 1 4.8 3.9"/></svg><span class="nav-label">选手管理</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group" data-nav-group="control">
+        <button class="nav-group-toggle" type="button">
+          <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.5v9l7-4.5-7-4.5z"/></svg>
+          <span class="nav-label">赛事控制</span>
+          <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <div class="nav-group-items">
+            <button class="nav-btn nav-sub active" type="button" data-page="countdown"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.4 1.5"/></svg><span class="nav-label">计时中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="bp"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/></svg><span class="nav-label">BP 控制台</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="bracket"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5h11"/><rect x="3.5" y="8.5" width="3" height="5"/><rect x="9.5" y="4" width="3" height="9.5"/></svg><span class="nav-label">晋级榜推送</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group" data-nav-group="data">
+        <button class="nav-group-toggle" type="button">
+          <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.6" rx="5" ry="1.7"/><path d="M3 3.6v8.8c0 .95 2.2 1.7 5 1.7s5-.75 5-1.7V3.6"/><path d="M3 8c0 .95 2.2 1.7 5 1.7S13 8.95 13 8"/></svg>
+          <span class="nav-label">赛事数据</span>
+          <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <div class="nav-group-items">
+            <button class="nav-btn nav-sub" type="button" data-page="materials"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="5.6" cy="6.1" r="1.1"/><path d="M2.5 11.2l3.2-3.2 2.6 2.6 2.2-2.2 3 3"/></svg><span class="nav-label">素材中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="比赛记录"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="2.8" width="9" height="11" rx="1.5"/><path d="M6 2.8h4v2.2H6z"/><path d="M6 8h4M6 10.6h4"/></svg><span class="nav-label">比赛记录</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="角色数据"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.3"/><path d="M2.2 13.4c.4-2.6 2-3.6 3.8-3.6s3.4 1 3.8 3.6"/><path d="M10.4 3.7a2.3 2.3 0 0 1 0 3.6M11.6 10.2c1.3.5 2.1 1.5 2.4 3.2"/></svg><span class="nav-label">角色数据</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group" data-nav-group="system">
+        <button class="nav-group-toggle" type="button">
+          <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v2.2M8 12v2.2M1.8 8H4M12 8h2.2M3.5 3.5L5 5M11 11l1.5 1.5M12.5 3.5L11 5M5 11l-1.5 1.5"/></svg>
+          <span class="nav-label">系统中心</span>
+          <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <div class="nav-group-items">
+            <button class="nav-btn nav-sub" type="button" data-soon="数据配置"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.6" rx="5" ry="1.7"/><path d="M3 3.6v8.8c0 .95 2.2 1.7 5 1.7s5-.75 5-1.7V3.6"/><path d="M3 8c0 .95 2.2 1.7 5 1.7S13 8.95 13 8"/></svg><span class="nav-label">数据配置</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="终端状态"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="8.2" rx="1.5"/><path d="M6 13.7h4M8 11.2v2.5"/></svg><span class="nav-label">终端状态</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="系统设置"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11M6.2 2.9v3.2M10.6 6.4v3.2M5 9.9v3.2"/></svg><span class="nav-label">系统设置</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="HUD 中心"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.3h11M6.3 6.3v7.2"/></svg><span class="nav-label">HUD 中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="个人中心"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="6.4" r="1.8"/><path d="M4.6 12.1c.7-1.7 2-2.5 3.4-2.5s2.7.8 3.4 2.5"/></svg><span class="nav-label">个人中心</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group" data-nav-group="respond">
+        <button class="nav-group-toggle" type="button">
+          <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2a3.8 3.8 0 0 1 3.8 3.8v2.8l1.3 2.4H2.9l1.3-2.4V6A3.8 3.8 0 0 1 8 2.2z"/><path d="M6.6 13.2a1.4 1.4 0 0 0 2.8 0"/></svg>
+          <span class="nav-label">响应中心</span>
+          <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <div class="nav-group-items">
+            <button class="nav-btn nav-sub" type="button" data-soon="高危响应"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.6l5.8 10H2.2l5.8-10z"/><path d="M8 6.6v2.6M8 11.4v.01"/></svg><span class="nav-label">高危响应</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="logs"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M4.6 6.2l1.9 1.8-1.9 1.8M8.2 10.4h3.2"/></svg><span class="nav-label">日志面板</span></button>
+          </div>
+        </div>
+      </div>
     </nav>
+    <div class="sidebar-footer">
+      <button class="sidebar-collapse" id="sidebarToggle" type="button" title="收起侧边栏" aria-label="收起侧边栏">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4L5.5 8l4 4M13 4L9 8l4 4"/></svg>
+        <span class="nav-label">收起侧边栏</span>
+      </button>
+    </div>
   </aside>
 
   <main class="app-main">
     <header class="app-header">
       <div>
-        <h1 id="pageTitle">导播控制台</h1>
-        <p id="pageDescription">快速切换 OBS 场景，并控制网易云音乐播放。</p>
+        <h1 id="pageTitle">计时中心</h1>
+        <p id="pageDescription">生成透明 OBS Browser Source 链接，并从这里控制倒计时。</p>
       </div>
       <div class="header-statuses">
         <div class="status-pill status-muted" id="obsStatus">OBS 未连接</div>
@@ -40,49 +120,7 @@
       </div>
     </header>
 
-    <section class="page-view active" id="consolePage" data-page-panel="console">
-      <div class="console-page">
-        <section class="card scene-console">
-          <div class="card-header">
-            <div><h2>OBS 场景切换</h2><p id="consoleObsSummary">正在读取 OBS 场景...</p></div>
-            <button class="btn btn-secondary" id="refreshScenes" type="button">刷新</button>
-          </div>
-          <div class="current-scene-band">
-            <span>当前节目场景</span>
-            <strong id="currentObsScene">-</strong>
-          </div>
-          <div class="scene-button-grid" id="consoleSceneButtons"></div>
-          <div class="console-message" id="sceneConsoleMessage"></div>
-        </section>
-
-        <section class="card music-console">
-          <div class="music-heading">
-            <div class="music-art" aria-hidden="true"><span>♪</span></div>
-            <div class="music-copy">
-              <span class="music-source">网易云音乐</span>
-              <strong id="musicTitle">等待网易云播放</strong>
-              <small id="musicArtist">未检测到媒体会话</small>
-            </div>
-            <span class="music-state" id="musicState">未播放</span>
-          </div>
-          <div class="music-progress" aria-hidden="true"><span id="musicProgress"></span></div>
-          <div class="music-time"><span id="musicPosition">00:00</span><span id="musicDuration">00:00</span></div>
-          <div class="music-controls">
-            <button class="music-icon" id="musicPrevious" type="button" title="上一曲" aria-label="上一曲">|◀</button>
-            <button class="music-icon music-toggle" id="musicToggle" type="button" title="播放" aria-label="播放">▶</button>
-            <button class="music-icon" id="musicNext" type="button" title="下一曲" aria-label="下一曲">▶|</button>
-          </div>
-          <label class="music-volume">
-            <span>音量</span>
-            <input id="musicVolume" type="range" min="0" max="100" step="1" value="50">
-            <output id="musicVolumeValue">--</output>
-          </label>
-          <div class="console-message" id="musicConsoleMessage"></div>
-        </section>
-      </div>
-    </section>
-
-    <section class="page-view" id="countdownPage" data-page-panel="countdown" hidden>
+    <section class="page-view active" id="countdownPage" data-page-panel="countdown">
       <div class="content-grid">
       <article class="card hub-card">
         <div class="card-header">
@@ -428,8 +466,14 @@
             <span id="releaseCount">-- 个版本</span>
           </div>
         </section>
-        <div class="release-list" id="releaseList">
-          <div class="release-loading">正在读取更新日志...</div>
+        <div class="release-layout">
+          <div class="release-list" id="releaseList">
+            <div class="release-loading">正在读取更新日志...</div>
+          </div>
+          <nav class="release-locator" id="releaseLocator" aria-label="版本定位"></nav>
+          <button class="release-top" id="releaseTop" type="button" title="返回顶部" aria-label="返回顶部">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10L8 5.5L12.5 10"/><path d="M3.5 14h9"/></svg>
+          </button>
         </div>
       </div>
     </section>
@@ -584,14 +628,14 @@
   </dialog>
 
   <script src="assets/vendor/pinyin-pro.js?v=3.28.2"></script>
+  <script src="assets/js/fx.js?v=1"></script>
   <script src="assets/js/search.js?v=1"></script>
   <script src="assets/js/countdown.js?v=4"></script>
-  <script src="assets/js/control.js?v=12"></script>
-  <script src="assets/js/console-control.js?v=6"></script>
+  <script src="assets/js/control.js?v=17"></script>
   <script src="assets/js/bracket-control.js?v=3"></script>
   <script src="assets/js/bp-control.js?v=12"></script>
-  <script src="assets/js/material-library.js?v=4"></script>
-  <script src="assets/js/logs-control.js?v=4"></script>
-  <script src="assets/js/update-log.js?v=2"></script>
+  <script src="assets/js/material-library.js?v=5"></script>
+  <script src="assets/js/logs-control.js?v=7"></script>
+  <script src="assets/js/update-log.js?v=14"></script>
 </body>
 </html>

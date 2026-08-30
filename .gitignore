@@ -18,6 +18,8 @@ data/obs-path-migration.json
 .codex-artifacts/
 .codex-spreadsheet/
 .packaging-test/
+.zcode/
+.dotnet-home/
 
 # Build outputs and dependency caches
 dist/

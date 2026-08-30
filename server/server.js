@@ -358,7 +358,8 @@ bpService.on('score', ({ score }) => {
 });
 obsClient.on('status', status => broadcastBp('obs-status', obsController.status(status)));
 obsClient.on('CurrentProgramSceneChanged', event => {
-  sceneMusicController.setScene(event.sceneName).catch(() => {});
+  // 音乐联动内部钩子，暂不激活
+  // sceneMusicController.setScene(event.sceneName).catch(() => {});
   if (event.sceneName !== CONFIG.obsScenes.bp && bpPresentation.state.visibility !== 'hidden') {
     bpPresentation.hide('scene-left-bp');
   }
@@ -690,33 +691,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && pathname === '/api/console/bootstrap') {
-    const music = await musicController.status();
-    try {
-      const scenes = await obsController.sceneCatalog();
-      sendJson(res, 200, { obs: { ...obsController.status(), ...scenes }, music });
-    } catch (error) {
-      sendJson(res, 200, { obs: { ...obsController.status(), scenes: [], transitions: [], error: error.message }, music });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/console/scene') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      await obsController.pushScene(body.sceneName);
-      sendJson(res, 200, await obsController.sceneCatalog());
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/music/status') {
-    sendJson(res, 200, await musicController.status({ force: url.searchParams.get('force') === '1' }));
-    return;
-  }
-
   if (req.method === 'POST' && pathname === '/api/window/maximize') {
     execFile('powershell.exe', [
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WINDOW_CONTROL_SCRIPT
@@ -724,16 +698,6 @@ const server = http.createServer(async (req, res) => {
       if (error) sendJson(res, 500, { error: error.message });
       else sendJson(res, 200, { maximized: true });
     });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/music/actions') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 200, await musicController.action(body.type, body.value));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
     return;
   }
 
@@ -1105,8 +1069,9 @@ server.listen(PORT, () => {
         url: BP_OVERLAY_URL,
         enabled: bpPresentation.state.dynamicEnabled
       }).catch(() => {});
-      const scenes = await obsController.sceneCatalog();
-      await sceneMusicController.setScene(scenes.currentScene);
+      // 音乐联动内部钩子，暂不激活
+      // const scenes = await obsController.sceneCatalog();
+      // await sceneMusicController.setScene(scenes.currentScene);
     })
     .catch(() => {});
 });
