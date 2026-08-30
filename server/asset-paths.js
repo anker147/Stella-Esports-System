@@ -1,8 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { mutableDataPath, parseJsonFile } = require('./data-paths');
+const { db } = require('./db');
 
-const MIGRATION_STORE = mutableDataPath('obs-path-migration.json');
 const LEGACY_CANONICAL_ROOT = 'E:\\2026追风杯';
 
 function inside(candidate, root) {
@@ -10,9 +9,30 @@ function inside(candidate, root) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+let cachedState = null;
+
+function invalidateAssetRootCache() {
+  cachedState = null;
+}
+
+function readSetting(key) {
+  const row = db.prepare('SELECT value_json FROM app_settings WHERE key = ?').get(key);
+  if (!row) return null;
+  try { return JSON.parse(row.value_json); } catch { return null; }
+}
+
 function migrationState() {
-  try { return parseJsonFile(MIGRATION_STORE); }
-  catch { return {}; }
+  if (cachedState) return cachedState;
+  const sync = db.prepare(
+    'SELECT id, target_root, canonical_root, synced_at, rolled_back_at FROM asset_path_syncs ORDER BY rowid DESC LIMIT 1'
+  ).get();
+  cachedState = {
+    canonicalRoot: readSetting('assetPaths.canonicalRoot'),
+    lastSuccessfulSync: sync
+      ? { id: sync.id, targetRoot: sync.target_root, canonicalRoot: sync.canonical_root, rolledBackAt: sync.rolled_back_at }
+      : null
+  };
+  return cachedState;
 }
 
 function activeAssetRoot() {
@@ -64,6 +84,7 @@ module.exports = {
   activeAssetRoot,
   assertAssetDirectory,
   inside,
+  invalidateAssetRootCache,
   normalizedRelative,
   relativeAssetPath,
   resolveAssetPath

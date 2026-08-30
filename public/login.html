@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-text="login.title">登录 · 星澜赛事导播系统</title>
+  <link rel="stylesheet" href="assets/css/tokens.css">
+  <link rel="stylesheet" href="assets/css/login.css?v=13">
+</head>
+<body>
+  <img class="login-kv" src="assets/brand/kv-board.jpg" alt="" aria-hidden="true">
+  <div class="login-kv-tint" aria-hidden="true"></div>
+  <script src="assets/js/particles.js?v=1"></script>
+
+  <main class="login-page">
+    <section class="login-brand">
+      <header class="brand-head">
+        <img class="brand-logo" src="assets/brand/stella-logo.png" alt="">
+        <span class="brand-name" data-text="login.brandName">星澜赛事导播系统</span>
+      </header>
+      <div class="brand-core">
+        <h1 class="brand-hero" data-text="login.heroTitle">稳住每一秒<br>直播现场</h1>
+        <p class="brand-hero-desc" data-text="login.heroDesc">从 BP 推送到赛果图形，一站式掌控赛事直播的每个瞬间。</p>
+        <ul class="brand-highlights">
+          <li class="brand-chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 5"/></svg><span data-text="login.highlight.1">七阶段 BP 流程与实时 OBS 同步</span></li>
+          <li class="brand-chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 5"/></svg><span data-text="login.highlight.2">动态 BP 动画双轨保障，故障自动降级</span></li>
+          <li class="brand-chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 5"/></svg><span data-text="login.highlight.3">素材中心统一管理本地赛事资产</span></li>
+          <li class="brand-chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 5"/></svg><span data-text="login.highlight.4">赛果、晋级榜与今日对战图自动推送</span></li>
+          <li class="brand-chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.5 3.5L13 5"/></svg><span data-text="login.highlight.5">全本地运行，断网环境照常工作</span></li>
+        </ul>
+      </div>
+      <footer class="brand-foot" data-text="login.brandFoot">2026 追风杯 · 星澜赛事导播系统</footer>
+    </section>
+
+    <section class="login-panel">
+      <div class="login-card">
+        <div class="brand-compact">
+          <img src="assets/brand/stella-logo.png" alt="">
+          <span data-text="login.brandName">星澜赛事导播系统</span>
+        </div>
+        <h2 class="login-card-title" data-text="login.cardTitle">登录控制台</h2>
+        <div class="login-tabs" role="tablist" aria-label="登录身份">
+          <button type="button" class="active" data-login-tab="user" data-text="login.tabUser">用户</button>
+          <button type="button" data-login-tab="developer" data-text="login.tabDeveloper">开发者</button>
+        </div>
+        <p class="login-tab-hint" data-text="login.tabHint">按 Tab 键快速切换身份</p>
+
+        <div class="login-forms" id="loginForms" data-dir="fwd">
+          <form id="loginFormUser" class="login-form is-active" autocomplete="on">
+            <label class="login-field">
+              <svg class="field-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5.2" r="2.4"/><path d="M3.2 13.5c.5-2.9 2.4-3.9 4.8-3.9s4.3 1 4.8 3.9"/></svg>
+              <input class="input" name="account" type="text" required data-text-placeholder="login.accountPlaceholder" placeholder="手机号 / 用户名">
+            </label>
+            <label class="login-field">
+              <svg class="field-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6.5" width="10" height="7" rx="1.5"/><path d="M5.5 6.5V5a2.5 2.5 0 0 1 5 0v1.5"/></svg>
+              <input class="input" name="password" type="password" required>
+            </label>
+            <label class="login-remember">
+              <input type="checkbox" name="remember">
+              <span data-text="login.remember">记住登录</span>
+            </label>
+            <button class="login-submit" type="submit" data-text="login.submit">登录</button>
+          </form>
+
+          <form id="loginFormDeveloper" class="login-form" autocomplete="off">
+            <label class="login-field">
+              <svg class="field-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5.2" r="2.4"/><path d="M3.2 13.5c.5-2.9 2.4-3.9 4.8-3.9s4.3 1 4.8 3.9"/></svg>
+              <input class="input" name="account" type="text" required data-text-placeholder="login.developerAccountPlaceholder" placeholder="administrator">
+            </label>
+            <label class="login-field">
+              <svg class="field-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6.5" width="10" height="7" rx="1.5"/><path d="M5.5 6.5V5a2.5 2.5 0 0 1 5 0v1.5"/></svg>
+              <input class="input" name="password" type="password" required>
+            </label>
+            <button class="login-submit" type="submit" data-text="login.submit">登录</button>
+          </form>
+        </div>
+
+        <p class="login-status" id="loginStatus"></p>
+        <p class="login-hint" data-text="login.hint">登录即代表同意本机数据仅用于赛事导播。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="login-declaration" data-text="login.declaration">本系统仅用于赛事导播，全部数据保存在本机。</footer>
+
+  <script src="assets/js/text.js?v=1"></script>
+  <script src="assets/js/login.js?v=7"></script>
+</body>
+</html>

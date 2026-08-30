@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BP 动画设计稿</title>
+  <title data-text="design.bpTitle">BP 动画设计稿</title>
   <link rel="stylesheet" href="/assets/css/bp-animation-design.css?v=11">
 </head>
 <body>
   <main class="viewport">
-    <section class="bp-stage" id="bpStage" aria-label="BP 面板动画设计稿">
+    <section class="bp-stage" id="bpStage" aria-label="BP 面板动画设计稿" data-text-aria="design.bpStageAria">
       <video class="base-video" autoplay muted loop playsinline preload="auto" aria-hidden="true">
         <source src="/assets/match-intro/zhuifeng-base.mp4" type="video/mp4">
       </video>
@@ -64,11 +64,12 @@
       </div>
 
       <div class="review-ui">
-        <span>BP 动画设计稿 03 · 独立素材层</span>
-        <button id="replay" type="button" title="重新播放" aria-label="重新播放">&#8635;</button>
+        <span data-text="design.reviewLabel">BP 动画设计稿 03 · 独立素材层</span>
+        <button id="replay" type="button" data-text-title="design.replay" title="重新播放" aria-label="重新播放">&#8635;</button>
       </div>
     </section>
   </main>
+  <script src="/assets/js/text.js?v=1"></script>
   <script src="/assets/js/bp-animation-design.js?v=8"></script>
 </body>
 </html>

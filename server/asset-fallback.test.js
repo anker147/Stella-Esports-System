@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+process.env.STELLA_DB_PATH = ':memory:';
 const { createAssetResolver, indexedCommentatorImages, indexedMatch } = require('./asset-fallback');
 
 function fixture(t) {

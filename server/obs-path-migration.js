@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { mutableDataPath, parseJsonFile } = require('./data-paths');
+const { db, withTransaction } = require('./db');
+const { invalidateAssetRootCache } = require('./asset-paths');
 
-const DEFAULT_STORE = mutableDataPath('obs-path-migration.json', '{"schemaVersion":1,"canonicalRoot":"E:\\\\2026追风杯","lastSelectedFolderId":null,"lastValidation":null,"lastSuccessfulSync":null,"lastRollback":null,"updatedAt":null}\n');
 const DEFAULT_CANONICAL_ROOT = 'E:\\2026追风杯';
 
 function assert(condition, message) {
@@ -11,6 +11,17 @@ function assert(condition, message) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function readSetting(key, fallback = null) {
+  const row = db.prepare('SELECT value_json FROM app_settings WHERE key = ?').get(key);
+  if (!row) return fallback;
+  try { return JSON.parse(row.value_json); } catch { return fallback; }
+}
+
+function writeSetting(key, value) {
+  db.prepare('INSERT INTO app_settings (key, value_json) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json')
+    .run(key, JSON.stringify(value));
 }
 
 function pathKey(value) {
@@ -76,14 +87,13 @@ async function mapLimit(items, limit, task) {
 }
 
 class ObsPathMigration {
-  constructor({ client, obsController, materialLibrary, storePath = DEFAULT_STORE, canonicalRoot = DEFAULT_CANONICAL_ROOT } = {}) {
+  constructor({ client, obsController, materialLibrary, canonicalRoot = DEFAULT_CANONICAL_ROOT } = {}) {
     assert(client && obsController && materialLibrary, 'OBS 路径迁移服务缺少依赖');
     this.client = client;
     this.obsController = obsController;
     this.materialLibrary = materialLibrary;
-    this.storePath = storePath;
     this.canonicalRoot = path.win32.resolve(canonicalRoot);
-    this.state = this.readState();
+    this.state = this.loadState();
   }
 
   emptyState() {
@@ -98,21 +108,96 @@ class ObsPathMigration {
     };
   }
 
-  readState() {
-    if (!fs.existsSync(this.storePath)) return this.emptyState();
-    try {
-      const state = parseJsonFile(this.storePath);
-      assert(state.schemaVersion === 1, 'OBS 路径迁移记录版本无效');
-      return { ...this.emptyState(), ...state, canonicalRoot: this.canonicalRoot };
-    } catch (error) {
-      throw new Error(`OBS 路径迁移记录读取失败: ${error.message}`);
+  loadState() {
+    const state = this.emptyState();
+    state.lastSelectedFolderId = readSetting('assetPaths.lastSelectedFolderId');
+    state.lastRollback = readSetting('assetPaths.lastRollback');
+    const validationRow = db.prepare(
+      'SELECT * FROM asset_path_validation WHERE id = 1'
+    ).get();
+    if (validationRow) {
+      state.lastValidation = {
+        valid: Boolean(validationRow.valid),
+        folderId: validationRow.folder_id,
+        targetRoot: validationRow.target_root,
+        canonicalRoot: validationRow.canonical_root,
+        referenceCount: validationRow.reference_count,
+        objectCount: validationRow.object_count,
+        missingCount: validationRow.missing_count,
+        records: JSON.parse(validationRow.records_json || '[]'),
+        missing: JSON.parse(validationRow.missing_json || '[]'),
+        checkedAt: validationRow.checked_at
+      };
     }
+    const syncRow = db.prepare(
+      'SELECT * FROM asset_path_syncs ORDER BY rowid DESC LIMIT 1'
+    ).get();
+    if (syncRow) {
+      const records = db.prepare(
+        'SELECT * FROM asset_path_sync_records WHERE sync_id = ? ORDER BY rowid'
+      ).all(syncRow.id).map(row => ({
+        objectType: row.object_type,
+        sourceName: row.source_name,
+        ...(row.filter_name ? { filterName: row.filter_name } : {}),
+        settingPath: row.setting_path,
+        settingTokens: JSON.parse(row.setting_tokens_json || '[]'),
+        before: row.before,
+        after: row.after
+      }));
+      state.lastSuccessfulSync = {
+        id: syncRow.id,
+        folderId: syncRow.folder_id,
+        targetRoot: syncRow.target_root,
+        canonicalRoot: syncRow.canonical_root,
+        records,
+        syncedAt: syncRow.synced_at,
+        rolledBackAt: syncRow.rolled_back_at
+      };
+    }
+    return state;
   }
 
   persist() {
     this.state.updatedAt = new Date().toISOString();
-    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
-    fs.writeFileSync(this.storePath, `${JSON.stringify(this.state, null, 2)}\n`, 'utf8');
+    withTransaction(() => {
+      writeSetting('assetPaths.canonicalRoot', this.canonicalRoot);
+      writeSetting('assetPaths.lastSelectedFolderId', this.state.lastSelectedFolderId);
+      writeSetting('assetPaths.lastRollback', this.state.lastRollback);
+      db.prepare('DELETE FROM asset_path_validation').run();
+      const validation = this.state.lastValidation;
+      if (validation) {
+        db.prepare(`INSERT INTO asset_path_validation
+          (id, valid, folder_id, target_root, canonical_root, reference_count, object_count, missing_count, records_json, missing_json, checked_at)
+          VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(validation.valid ? 1 : 0, validation.folderId || null, validation.targetRoot || null,
+            validation.canonicalRoot || null, validation.referenceCount ?? 0, validation.objectCount ?? 0,
+            validation.missingCount ?? 0, JSON.stringify(validation.records || []),
+            JSON.stringify(validation.missing || []), validation.checkedAt || null);
+      }
+      const transaction = this.state.lastSuccessfulSync;
+      if (transaction) {
+        db.prepare(`INSERT INTO asset_path_syncs
+          (id, folder_id, target_root, canonical_root, synced_at, rolled_back_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET
+            folder_id = excluded.folder_id, target_root = excluded.target_root,
+            canonical_root = excluded.canonical_root, synced_at = excluded.synced_at,
+            rolled_back_at = excluded.rolled_back_at`)
+          .run(transaction.id, transaction.folderId || null, transaction.targetRoot || '',
+            transaction.canonicalRoot || '', transaction.syncedAt || new Date().toISOString(),
+            transaction.rolledBackAt || null);
+        db.prepare('DELETE FROM asset_path_sync_records WHERE sync_id = ?').run(transaction.id);
+        const insertRecord = db.prepare(`INSERT INTO asset_path_sync_records
+          (sync_id, object_type, source_name, filter_name, setting_path, setting_tokens_json, before, after)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        for (const record of transaction.records || []) {
+          insertRecord.run(transaction.id, record.objectType, record.sourceName,
+            record.filterName || null, record.settingPath, JSON.stringify(record.settingTokens || []),
+            record.before ?? null, record.after ?? null);
+        }
+      }
+    });
+    invalidateAssetRootCache();
   }
 
   indexedFolders() {
@@ -372,7 +457,6 @@ class ObsPathMigration {
 
 module.exports = {
   DEFAULT_CANONICAL_ROOT,
-  DEFAULT_STORE,
   ObsPathMigration,
   findRootedPaths,
   pathEqual,

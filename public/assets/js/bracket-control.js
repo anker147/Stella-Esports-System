@@ -10,7 +10,7 @@
 
   function selectFile(next) {
     if (!next?.type?.startsWith('image/')) {
-      status.textContent = '请选择 PNG、JPG 或 WebP 图片';
+      status.textContent = t('bk.badType');
       return;
     }
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -20,7 +20,7 @@
     preview.hidden = false;
     dropZone.classList.add('has-image');
     upload.disabled = false;
-    status.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+    status.textContent = t('bk.fileInfo', { name: file.name, size: (file.size / 1024 / 1024).toFixed(2) });
   }
 
   function reset() {
@@ -32,7 +32,7 @@
     preview.hidden = true;
     dropZone.classList.remove('has-image');
     upload.disabled = true;
-    status.textContent = '等待选择图片';
+    status.textContent = t('bk.waiting');
   }
 
   input.addEventListener('change', () => selectFile(input.files[0]));
@@ -59,17 +59,17 @@
   upload.addEventListener('click', async () => {
     if (!file) return;
     upload.disabled = true;
-    status.textContent = '正在保存并推送到 OBS...';
+    status.textContent = t('bk.saving');
     try {
       const response = await fetch('/api/bracket-image', {
         method: 'POST', headers: { 'Content-Type': file.type }, body: file
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || '上传失败');
+      if (!response.ok) throw new Error(payload.error || t('common.uploadFailed'));
       reset();
       status.textContent = payload.obsSynced
-        ? `已保存并切换到晋级榜：${payload.fileName}`
-        : `已保存：${payload.fileName}；OBS 同步或场景切换失败`;
+        ? t('bk.savedSwitched', { name: payload.fileName })
+        : t('bk.savedNoSync', { name: payload.fileName });
     } catch (error) {
       status.textContent = error.message;
       upload.disabled = false;

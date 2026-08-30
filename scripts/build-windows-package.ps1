@@ -4,6 +4,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
 $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist 'stage'
 $trayOutput = Join-Path $dist 'tray'
@@ -21,8 +22,8 @@ $releaseData = Get-Content (Join-Path $root 'data\update-log.json') -Raw -Encodi
 $version = [string]$releaseData.currentVersion
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid release version: $version" }
 
-function Reset-Directory([string]$path) {
-  $full = [System.IO.Path]::GetFullPath($path)
+function Reset-Directory([string]$targetPath) {
+  $full = [System.IO.Path]::GetFullPath($targetPath)
   $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd('\') + '\'
   if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe output path: $full" }
   if (Test-Path -LiteralPath $full) { Remove-Item -LiteralPath $full -Recurse -Force }
@@ -59,27 +60,47 @@ Copy-Item (Join-Path $root 'runtime\node.exe') (Join-Path $stage 'runtime\node.e
 Get-ChildItem (Join-Path $root 'server') -File | Where-Object { $_.Name -notlike '*.test.js' } | Copy-Item -Destination (Join-Path $stage 'server')
 Copy-Item (Join-Path $root 'public\*') (Join-Path $stage 'public') -Recurse
 Copy-Item (Join-Path $root 'data\update-log.json') (Join-Path $stage 'data\update-log.json')
-Copy-Item (Join-Path $root 'data\bp-config.json') (Join-Path $stage 'defaults\data\bp-config.json')
-Write-Utf8NoBom (Join-Path $stage 'defaults\data\bp-state.json') '{"schemaVersion":1,"sessions":{},"forfeits":{}}'
-Write-Utf8NoBom (Join-Path $stage 'defaults\data\material-library.json') '{"schemaVersion":2,"entries":{},"watchedFolders":[],"excludedPaths":[]}'
-$canonicalRoot = 'E:\2026' + [char]0x8FFD + [char]0x98CE + [char]0x676F
-$migrationDefaults = [ordered]@{
-  schemaVersion = 1
-  canonicalRoot = $canonicalRoot
-  lastSelectedFolderId = $null
-  lastValidation = $null
-  lastSuccessfulSync = $null
-  lastRollback = $null
-  updatedAt = $null
+Copy-Item (Join-Path $root 'defaults\data\bp-config.json') (Join-Path $stage 'defaults\data\bp-config.json')
+$requiredPublicFiles = @(
+  'login.html',
+  'assets\brand\kv-board.jpg',
+  'assets\css\login.css',
+  'assets\data\ui-text.json',
+  'assets\js\login.js',
+  'assets\js\particles.js',
+  'assets\js\text.js'
+)
+foreach ($relative in $requiredPublicFiles) {
+  if (-not (Test-Path -LiteralPath (Join-Path $stage "public\$relative"))) { throw "Packaged public asset missing: $relative" }
 }
-Write-Utf8NoBom (Join-Path $stage 'defaults\data\obs-path-migration.json') ($migrationDefaults | ConvertTo-Json)
-Write-Utf8NoBom (Join-Path $stage 'defaults\data\runtime-config.json') '{}'
+if (Get-ChildItem $stage -Recurse -File | Where-Object { $_.Name -match '^(app\.db|.*\.migrated-.*|runtime-config\.json|bp-state\.json)$' }) {
+  throw 'Packaged payload contains runtime or migrated user data'
+}
 Write-Utf8NoBom (Join-Path $stage 'version.json') (@{ product='stella-director'; version=$version; builtAt=(Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json)
 
 & (Join-Path $root 'runtime\node.exe') (Join-Path $root 'scripts\sanitize-package-data.js') $stage
 if ($LASTEXITCODE -ne 0) { throw 'Packaged data sanitization failed' }
 & (Join-Path $root 'runtime\node.exe') (Join-Path $root 'scripts\validate-package-json.js') (Join-Path $stage 'defaults\data')
 if ($LASTEXITCODE -ne 0) { throw 'Generated default JSON validation failed' }
+# SQLite 建库与真实 stage 首启烟测：仅设置 STELLA_DATA_DIR，覆盖正式托盘启动路径
+$smokeBase = [System.IO.Path]::GetFullPath((Join-Path $root 'dist'))
+$smokeRoot = [System.IO.Path]::GetFullPath((Join-Path $smokeBase 'smoke-first-run'))
+if (-not $smokeRoot.StartsWith($smokeBase, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe smoke path: $smokeRoot" }
+if (Test-Path -LiteralPath $smokeRoot) { Remove-Item -LiteralPath $smokeRoot -Recurse -Force }
+New-Item -ItemType Directory -Path $smokeRoot -Force | Out-Null
+$env:STELLA_DATA_DIR = Join-Path $smokeRoot 'data'
+$env:STELLA_DEFAULTS_DIR = Join-Path $stage 'defaults\data'
+Push-Location $stage
+try {
+  & (Join-Path $stage 'runtime\node.exe') -e "require('./server/db'); require('./server/db-migrate').migrateLegacyData(); console.log('first-run sqlite ok')"
+} finally {
+  Pop-Location
+  Remove-Item Env:STELLA_DATA_DIR
+  Remove-Item Env:STELLA_DEFAULTS_DIR
+}
+if ($LASTEXITCODE -ne 0) { throw 'SQLite first-run smoke test failed' }
+if (-not (Test-Path -LiteralPath (Join-Path $smokeRoot 'data\app.db'))) { throw 'SQLite first-run database was not created' }
+Remove-Item -LiteralPath $smokeRoot -Recurse -Force
 
 $files = Get-ChildItem $stage -Recurse -File | Where-Object { $_.Name -ne 'payload-manifest.json' } | ForEach-Object {
   $relative = $_.FullName.Substring($stage.Length + 1).Replace('\','/')

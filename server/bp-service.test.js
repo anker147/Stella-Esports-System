@@ -3,18 +3,25 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-db-bp-service-'));
+process.env.STELLA_DB_PATH = path.join(dbDir, 'test.db');
 const { BpService } = require('./bp-service');
+const { db } = require('./db');
 const { createTournamentResolver } = require('./tournament-data');
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function clearBpTables() {
+  db.exec('DELETE FROM bp_session_history; DELETE FROM bp_session_results; DELETE FROM bp_session_slots; DELETE FROM bp_sessions; DELETE FROM bp_forfeit_events; DELETE FROM bp_forfeits;');
+}
+
 function fixture(options = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-bp-test-'));
+  clearBpTables();
   const service = new BpService({
     resolver: createTournamentResolver(),
-    storePath: path.join(directory, 'state.json'),
     zeroPulseMs: 5,
     tickMs: 20,
     ...options
@@ -68,19 +75,16 @@ test('new BP sessions inherit the configured global commentator image', t => {
   assert.deepEqual(session.commentatorImage, image);
 });
 
-test('corrupt BP state is isolated and rebuilt during startup', t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-bp-corrupt-test-'));
-  const storePath = path.join(directory, 'state.json');
-  fs.writeFileSync(storePath, '', 'utf8');
-  const service = new BpService({ resolver: createTournamentResolver(), storePath });
-  t.after(() => {
-    service.close();
-    fs.rmSync(directory, { recursive: true, force: true });
-  });
+test('BP domain starts empty after being cleared, isolating past records', t => {
+  const service = new BpService({ resolver: createTournamentResolver() });
+  t.after(() => service.close());
+  clearBpTables();
+  const fresh = new BpService({ resolver: createTournamentResolver() });
+  t.after(() => fresh.close());
 
-  assert.deepEqual(service.listSessions(), []);
-  assert.deepEqual(JSON.parse(fs.readFileSync(storePath, 'utf8')), { schemaVersion: 1, sessions: {}, forfeits: {} });
-  assert.equal(fs.readdirSync(directory).some(name => name.startsWith('state.json.corrupt-')), true);
+  assert.deepEqual(fresh.listSessions(), []);
+  assert.deepEqual(Object.values(fresh.forfeits), []);
+  assert.equal(fs.readdirSync(dbDir).some(name => name.startsWith('test.db')), true);
 });
 
 test('escape picks push independently and phase advances only after all four', async t => {

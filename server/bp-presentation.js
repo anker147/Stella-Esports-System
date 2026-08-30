@@ -1,9 +1,7 @@
 const { EventEmitter } = require('node:events');
-const fs = require('node:fs');
-const path = require('node:path');
 const { SLOT_CONFIG, animationStyle } = require('./bp-config');
+const { db } = require('./db');
 
-const DEFAULT_STORE = path.resolve(__dirname, '..', 'data', 'bp-presentation.json');
 const STAGE_ASSETS = {
   quarterfinals: '/assets/match-intro/bp-layout/stage-quarterfinals.png',
   'quarterfinals-lower-rounds-1-2': '/assets/match-intro/bp-layout/stage-losers.png',
@@ -32,32 +30,51 @@ function defaultState() {
 }
 
 class BpPresentationService extends EventEmitter {
-  constructor({ resolver, getSession, storePath = DEFAULT_STORE, now = () => Date.now() } = {}) {
+  constructor({ resolver, getSession, now = () => Date.now() } = {}) {
     super();
     if (!resolver) throw new Error('Tournament resolver is required');
     if (typeof getSession !== 'function') throw new Error('BP session resolver is required');
     this.resolver = resolver;
     this.getSession = getSession;
-    this.storePath = storePath;
     this.now = now;
     this.state = this.readStore();
   }
 
   readStore() {
     try {
-      const parsed = JSON.parse(fs.readFileSync(this.storePath, 'utf8'));
-      if (parsed.schemaVersion !== 1) throw new Error('Unsupported BP presentation state');
-      return { ...defaultState(), ...parsed, visibility: 'hidden', playAt: null, commandExpiresAt: null };
+      const row = db.prepare('SELECT * FROM bp_presentation_state WHERE id = 1').get();
+      if (!row) return defaultState();
+      if (row.sequence == null) throw new Error('Unsupported BP presentation state');
+      return {
+        ...defaultState(),
+        dynamicEnabled: Boolean(row.dynamic_enabled),
+        activeSessionId: row.active_session_id || null,
+        sequence: row.sequence,
+        introEpoch: row.intro_epoch,
+        reason: row.reason || 'initial',
+        updatedAt: row.updated_at ?? Date.now(),
+        visibility: 'hidden',
+        playAt: null,
+        commandExpiresAt: null
+      };
     } catch {
       return defaultState();
     }
   }
 
   persist() {
-    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
-    const tempPath = `${this.storePath}.tmp`;
-    fs.writeFileSync(tempPath, `${JSON.stringify(this.state, null, 2)}\n`, 'utf8');
-    fs.renameSync(tempPath, this.storePath);
+    db.prepare(`INSERT INTO bp_presentation_state
+      (id, dynamic_enabled, active_session_id, sequence, intro_epoch, visibility, play_at, command_expires_at, reason, updated_at)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        dynamic_enabled = excluded.dynamic_enabled, active_session_id = excluded.active_session_id,
+        sequence = excluded.sequence, intro_epoch = excluded.intro_epoch, visibility = excluded.visibility,
+        play_at = excluded.play_at, command_expires_at = excluded.command_expires_at,
+        reason = excluded.reason, updated_at = excluded.updated_at`)
+      .run(this.state.dynamicEnabled ? 1 : 0, this.state.activeSessionId || null,
+        this.state.sequence ?? 0, this.state.introEpoch ?? 0, this.state.visibility || 'hidden',
+        this.state.playAt ?? null, this.state.commandExpiresAt ?? null, this.state.reason || null,
+        this.state.updatedAt ?? Date.now());
   }
 
   resolveSession(id = this.state.activeSessionId) {
@@ -223,4 +240,4 @@ class BpPresentationService extends EventEmitter {
   }
 }
 
-module.exports = { BpPresentationService, DEFAULT_STORE, STAGE_ASSETS };
+module.exports = { BpPresentationService, STAGE_ASSETS };

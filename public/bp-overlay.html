@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BP Dynamic Overlay</title>
+  <title data-text="bo.title">BP Dynamic Overlay</title>
   <link rel="stylesheet" href="/assets/css/bp-overlay.css?v=6">
 </head>
 <body>
   <main class="viewport">
-    <section class="bp-stage" id="bpStage" aria-label="动态 BP">
+    <section class="bp-stage" id="bpStage" aria-label="动态 BP" data-text-aria="bo.stageAria">
       <video class="base-video" id="bpBaseVideo" autoplay muted loop playsinline preload="auto" aria-hidden="true">
         <source src="/assets/match-intro/zhuifeng-base.mp4" type="video/mp4">
       </video>
@@ -66,6 +66,7 @@
       </div>
     </section>
   </main>
-  <script src="/assets/js/bp-overlay.js?v=3"></script>
+  <script src="/assets/js/text.js?v=1"></script>
+  <script src="/assets/js/bp-overlay.js?v=4"></script>
 </body>
 </html>

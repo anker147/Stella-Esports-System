@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const baseUrl = `http://127.0.0.1:${Number(process.env.PORT || 3788)}/control.html`;
+const baseUrl = `http://127.0.0.1:${Number(process.env.PORT || 3788)}/`;
 const outputDir = path.resolve('.screenshots', 'control-v1.5');
 const executablePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const cases = [
@@ -23,7 +23,22 @@ const cases = [
   try {
     for (const item of cases) {
       const page = await browser.newPage({ viewport: { width: item.width, height: item.height } });
-      await page.goto(`${baseUrl}?page=${item.page}`, { waitUntil: 'domcontentloaded' });
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(500);
+
+      // 单地址模式：未登录先通过登录壳进入，再按用例切换页面
+      const hasLogin = await page.$('#loginFormUser');
+      if (hasLogin) {
+        const setupResponse = await page.request.get(`${baseUrl}api/auth/status`).then(response => response.json());
+        if (setupResponse.setupRequired) {
+          await page.request.post(`${baseUrl}api/auth/setup`, { data: { password: 'release-test-password' } });
+        }
+        await page.fill('#loginFormUser input[name="account"]', 'operator');
+        await page.fill('#loginFormUser input[name="password"]', 'release-test-password');
+        await page.click('#loginFormUser button[type=submit]');
+        await page.waitForTimeout(900);
+      }
+      await page.click(`[data-page="${item.page}"]`);
       await page.waitForTimeout(800);
 
       const metrics = await page.evaluate(pageName => {

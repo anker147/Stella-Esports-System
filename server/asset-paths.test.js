@@ -3,47 +3,42 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+process.env.STELLA_DB_PATH = ':memory:';
+const { db } = require('./db');
+const { invalidateAssetRootCache, resolveAssetPath } = require('./asset-paths');
+
+function seedSync(targetRoot) {
+  db.prepare('DELETE FROM asset_path_syncs').run();
+  db.prepare(`INSERT INTO asset_path_syncs (id, folder_id, target_root, canonical_root, synced_at, rolled_back_at)
+    VALUES ('sync-test', NULL, ?, ?, ?, NULL)`).run(targetRoot, targetRoot, new Date().toISOString());
+  invalidateAssetRootCache();
+}
 
 test('packaged asset paths resolve only below the synchronized material root', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-assets-'));
-  const data = path.join(root, 'data');
   const assets = path.join(root, 'assets');
-  fs.mkdirSync(data, { recursive: true });
   fs.mkdirSync(assets, { recursive: true });
-  fs.writeFileSync(path.join(data, 'obs-path-migration.json'), JSON.stringify({
-    schemaVersion: 1,
-    canonicalRoot: 'E:\\2026追风杯',
-    lastSuccessfulSync: { targetRoot: assets, rolledBackAt: null }
-  }));
-  const previous = process.env.STELLA_DATA_DIR;
-  process.env.STELLA_DATA_DIR = data;
-  const modulePath = require.resolve('./asset-paths');
-  delete require.cache[modulePath];
-  const assetPaths = require('./asset-paths');
+  seedSync(assets);
   try {
-    assert.equal(assetPaths.resolveAssetPath('场景底图/晋级图/a.png'), path.join(assets, '场景底图', '晋级图', 'a.png'));
-    assert.throws(() => assetPaths.resolveAssetPath('../outside.png'), /相对路径无效|越界/);
-    assert.throws(() => assetPaths.resolveAssetPath('C:\\outside.png'), /不属于当前素材包/);
+    assert.equal(resolveAssetPath('场景底图/晋级图/a.png'), path.join(assets, '场景底图', '晋级图', 'a.png'));
+    assert.throws(() => resolveAssetPath('../outside.png'), /相对路径无效|越界/);
+    assert.throws(() => resolveAssetPath('C:\\outside.png'), /不属于当前素材包/);
   } finally {
-    if (previous === undefined) delete process.env.STELLA_DATA_DIR;
-    else process.env.STELLA_DATA_DIR = previous;
-    delete require.cache[modulePath];
+    invalidateAssetRootCache();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
 test('packaged asset paths fail closed before a successful synchronization', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-assets-empty-'));
-  fs.writeFileSync(path.join(root, 'obs-path-migration.json'), '{"schemaVersion":1}');
+  db.prepare('DELETE FROM asset_path_syncs').run();
+  invalidateAssetRootCache();
   const previous = process.env.STELLA_DATA_DIR;
-  process.env.STELLA_DATA_DIR = root;
-  const modulePath = require.resolve('./asset-paths');
-  delete require.cache[modulePath];
-  try { assert.throws(() => require('./asset-paths').resolveAssetPath('角色/Pick/占位.png'), /尚未确认素材包路径/); }
-  finally {
+  process.env.STELLA_DATA_DIR = path.join(os.tmpdir(), 'zfb-assets-empty');
+  try {
+    assert.throws(() => resolveAssetPath('角色/Pick/占位.png'), /尚未确认素材包路径/);
+  } finally {
     if (previous === undefined) delete process.env.STELLA_DATA_DIR;
     else process.env.STELLA_DATA_DIR = previous;
-    delete require.cache[modulePath];
-    fs.rmSync(root, { recursive: true, force: true });
+    invalidateAssetRootCache();
   }
 });

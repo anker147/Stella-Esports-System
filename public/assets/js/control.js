@@ -1,29 +1,11 @@
 (function () {
   const pageCopy = {
-    countdown: {
-      title: '计时中心',
-      description: '生成透明 OBS Browser Source 链接，并从这里控制倒计时。'
-    },
-    bp: {
-      title: 'BP 控制台',
-      description: '按比赛、BO3 局数和房间管理 BP，并通过唯一中转源串行同步到 OBS。'
-    },
-    bracket: {
-      title: '晋级榜推送',
-      description: '保存带时间标识的晋级榜图片，并同步推送到 OBS。'
-    },
-    materials: {
-      title: '素材中心',
-      description: '索引并管理本机文件与文件夹。'
-    },
-    logs: {
-      title: '日志面板',
-      description: '查看 BP 历史与本次服务运行期间的 OBS 操作记录。'
-    },
-    updates: {
-      title: '更新日志',
-      description: '查看系统版本与历次功能变更。'
-    }
+    countdown: { title: t('page.countdown.title'), description: t('page.countdown.desc') },
+    bp: { title: t('page.bp.title'), description: t('page.bp.desc') },
+    bracket: { title: t('page.bracket.title'), description: t('page.bracket.desc') },
+    materials: { title: t('page.materials.title'), description: t('page.materials.desc') },
+    logs: { title: t('page.logs.title'), description: t('page.logs.desc') },
+    updates: { title: t('page.updates.title'), description: t('page.updates.desc') }
   };
 
   const NAV_STATE_KEY = 'zfb.nav-state';
@@ -61,9 +43,10 @@
   function setSidebarCollapsed(collapsed, persist = true) {
     document.body.classList.toggle('sidebar-collapsed', collapsed);
     const toggleButton = document.getElementById('sidebarToggle');
-    toggleButton.title = collapsed ? '展开侧边栏' : '收起侧边栏';
+    toggleButton.title = collapsed ? t('nav.expand') : t('nav.collapse');
     toggleButton.setAttribute('aria-label', toggleButton.title);
     closeNavFlyout();
+    clearFlyoutTimers();
     if (persist) {
       navState.collapsed = collapsed;
       saveNavState();
@@ -83,8 +66,23 @@
   flyout.className = 'nav-flyout';
   document.body.appendChild(flyout);
   let flyoutToggle = null;
+  let hoverToggle = null;
+  let pointerInFlyout = false;
+  let flyoutHoverTimer = 0;
+  let flyoutCloseTimer = 0;
+  let flyoutSwitchTimer = 0;
+
+  function clearFlyoutTimers() {
+    clearTimeout(flyoutHoverTimer);
+    clearTimeout(flyoutCloseTimer);
+    clearTimeout(flyoutSwitchTimer);
+    flyoutHoverTimer = 0;
+    flyoutCloseTimer = 0;
+    flyoutSwitchTimer = 0;
+  }
 
   function closeNavFlyout() {
+    clearTimeout(flyoutSwitchTimer);
     if (!flyoutToggle) return;
     flyoutToggle.classList.remove('flyout-open');
     flyoutToggle = null;
@@ -92,27 +90,38 @@
   }
 
   function openNavFlyout(group, toggle) {
-    if (flyoutToggle === toggle) {
-      closeNavFlyout();
-      return;
+    clearFlyoutTimers();
+    if (flyoutToggle === toggle) return;
+    const fill = () => {
+      flyoutToggle = toggle;
+      toggle.classList.add('flyout-open');
+      flyout.replaceChildren(...Array.from(group.querySelectorAll('.nav-group-items .nav-btn')).map(button => {
+        const clone = button.cloneNode(true);
+        clone.addEventListener('click', () => {
+          button.click();
+          closeNavFlyout();
+        });
+        return clone;
+      }));
+      const rect = toggle.getBoundingClientRect();
+      flyout.style.left = 'var(--nav-flyout-left)';
+      flyout.style.top = `${Math.round(rect.top)}px`;
+      flyout.classList.add('show');
+      const flyoutRect = flyout.getBoundingClientRect();
+      flyout.style.top = `${Math.round(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutRect.height - 12)))}px`;
+    };
+    if (flyout.classList.contains('show')) {
+      // 切换父级：先播放收起动画，再展开新子菜单
+      if (flyoutToggle) flyoutToggle.classList.remove('flyout-open');
+      flyoutToggle = null;
+      flyout.classList.remove('show');
+      flyoutSwitchTimer = setTimeout(() => {
+        flyoutSwitchTimer = 0;
+        if (!flyout.classList.contains('show') && hoverToggle === toggle) fill();
+      }, 200);
+    } else {
+      fill();
     }
-    if (flyoutToggle) flyoutToggle.classList.remove('flyout-open');
-    flyoutToggle = toggle;
-    toggle.classList.add('flyout-open');
-    flyout.replaceChildren(...Array.from(group.querySelectorAll('.nav-group-items .nav-btn')).map(button => {
-      const clone = button.cloneNode(true);
-      clone.addEventListener('click', () => {
-        button.click();
-        closeNavFlyout();
-      });
-      return clone;
-    }));
-    const rect = toggle.getBoundingClientRect();
-    flyout.style.left = 'var(--nav-flyout-left)';
-    flyout.style.top = `${Math.round(rect.top)}px`;
-    flyout.classList.add('show');
-    const flyoutRect = flyout.getBoundingClientRect();
-    flyout.style.top = `${Math.round(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutRect.height - 12)))}px`;
   }
 
   document.addEventListener('click', event => {
@@ -123,6 +132,18 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeNavFlyout();
   });
+  flyout.addEventListener('mouseenter', () => {
+    pointerInFlyout = true;
+    clearTimeout(flyoutCloseTimer);
+  });
+  flyout.addEventListener('mouseleave', () => {
+    pointerInFlyout = false;
+    clearTimeout(flyoutCloseTimer);
+    flyoutCloseTimer = setTimeout(() => {
+      flyoutCloseTimer = 0;
+      if (!pointerInFlyout && hoverToggle !== flyoutToggle) closeNavFlyout();
+    }, 220);
+  });
 
   document.querySelectorAll('[data-nav-group]').forEach(group => {
     const key = group.dataset.navGroup;
@@ -131,13 +152,39 @@
     toggle.addEventListener('click', event => {
       event.stopPropagation();
       if (isSidebarCollapsed()) {
-        openNavFlyout(group, toggle);
+        if (flyoutToggle === toggle) closeNavFlyout();
+        else openNavFlyout(group, toggle);
         return;
       }
       const open = group.dataset.open !== 'true';
       group.dataset.open = String(open);
       navState.openGroups[key] = open;
       saveNavState();
+    });
+    toggle.addEventListener('mouseenter', () => {
+      if (!isSidebarCollapsed()) return;
+      hoverToggle = toggle;
+      if (flyoutToggle === toggle) {
+        clearTimeout(flyoutCloseTimer);
+        return;
+      }
+      clearTimeout(flyoutHoverTimer);
+      clearTimeout(flyoutCloseTimer);
+      flyoutHoverTimer = setTimeout(() => {
+        flyoutHoverTimer = 0;
+        if (isSidebarCollapsed() && hoverToggle === toggle) openNavFlyout(group, toggle);
+      }, 250);
+    });
+    toggle.addEventListener('mouseleave', () => {
+      if (hoverToggle === toggle) hoverToggle = null;
+      clearTimeout(flyoutHoverTimer);
+      if (flyoutToggle === toggle && !pointerInFlyout) {
+        clearTimeout(flyoutCloseTimer);
+        flyoutCloseTimer = setTimeout(() => {
+          flyoutCloseTimer = 0;
+          if (!pointerInFlyout && hoverToggle !== flyoutToggle) closeNavFlyout();
+        }, 220);
+      }
     });
   });
 
@@ -147,7 +194,7 @@
   });
 
   document.querySelectorAll('[data-soon]').forEach(button => {
-    button.addEventListener('click', () => showToast(`「${button.dataset.soon}」功能建设中`));
+    button.addEventListener('click', () => showToast(t('nav.soonToast', { label: t(button.dataset.soon) })));
   });
 
   document.querySelectorAll('[data-page]').forEach(button => {
@@ -173,6 +220,13 @@
         group.classList.toggle('has-active', Boolean(group.querySelector('[data-page].active')));
       });
     });
+  });
+
+  document.getElementById('logoutButton').addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    window.location.href = '/';
   });
 
   const initialPage = new URLSearchParams(window.location.search).get('page');
@@ -244,7 +298,7 @@
   async function jsonRequest(url, options) {
     const response = await fetch(url, options);
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || `请求失败 (${response.status})`);
+    if (!response.ok) throw new Error(payload.error || t('common.requestFailed', { status: response.status }));
     return payload;
   }
 
@@ -267,9 +321,9 @@
       input.step = '1';
       input.value = config.phaseDurations[phase.id];
       input.dataset.phaseId = phase.id;
-      input.setAttribute('aria-label', `${phase.label}倒计时秒数`);
+      input.setAttribute('aria-label', t('cd.phaseSecondsAria', { label: phase.label }));
       const unit = document.createElement('small');
-      unit.textContent = '秒';
+      unit.textContent = t('common.secondsUnit');
       label.append(number, copy, input, unit);
       return label;
     }));
@@ -293,7 +347,7 @@
     });
     const selectedAnimation = elements.bpAnimationStyle.querySelector('input:checked')?.value;
     elements.saveBpTimerSettings.disabled = true;
-    elements.bpTimerSettingsStatus.textContent = '正在保存...';
+    elements.bpTimerSettingsStatus.textContent = t('cd.saving');
     elements.bpTimerSettingsStatus.className = '';
     try {
       const next = await jsonRequest('/api/bp/timer-config', {
@@ -302,9 +356,9 @@
         body: JSON.stringify({ phaseDurations: values, animationStyle: selectedAnimation })
       });
       renderBpTimerSettings(next);
-      elements.bpTimerSettingsStatus.textContent = '已保存，计时从下一阶段生效，动画从下一次入场生效';
+      elements.bpTimerSettingsStatus.textContent = t('cd.saved');
       elements.bpTimerSettingsStatus.className = 'success';
-      addLog(`已更新 BP 七阶段倒计时与${selectedAnimation === 'classic' ? '经典' : '亮度'}展开动画`);
+      addLog(t('cd.savedLog', { mode: selectedAnimation === 'classic' ? t('cd.animClassicName') : t('cd.animLuminanceName') }));
     } catch (error) {
       elements.bpTimerSettingsStatus.textContent = error.message;
       elements.bpTimerSettingsStatus.className = 'error';
@@ -318,7 +372,7 @@
     const payload = await response.json();
     hubId = payload.id;
     updateHubUrl();
-    addLog('固定 HUB 链接已确认');
+    addLog(t('cd.hubConfirmedLog'));
   }
 
   function updateHubUrl() {
@@ -329,7 +383,7 @@
     if (!state) return;
     const remaining = window.CountdownHub.currentRemaining(state);
     elements.previewDigits.textContent = window.CountdownHub.formatClock(remaining);
-    elements.modeChip.textContent = state.mode === 'target' ? '指定时间' : '指定倒计时';
+    elements.modeChip.textContent = state.mode === 'target' ? t('cd.modeTarget') : t('cd.modeDuration');
   }
 
   function applyState(nextState) {
@@ -342,9 +396,9 @@
     eventSource = new EventSource(`/api/hubs/${hubId}/events`);
     eventSource.addEventListener('state', event => {
       applyState(JSON.parse(event.data));
-      setStatus('HUB 在线');
+      setStatus(t('header.hubOnline'));
     });
-    eventSource.onerror = () => setStatus('正在重连');
+    eventSource.onerror = () => setStatus(t('header.reconnecting'));
   }
 
   async function connect() {
@@ -356,7 +410,7 @@
     const response = await fetch(`/api/hubs/${hubId}/state`);
     applyState(await response.json());
     connectEvents();
-    setStatus('HUB 在线');
+    setStatus(t('header.hubOnline'));
   }
 
   async function sendAction(action, logText) {
@@ -378,23 +432,23 @@
   elements.newHub.addEventListener('click', createHub);
   elements.copyHub.addEventListener('click', async () => {
     await navigator.clipboard.writeText(elements.hubUrl.value);
-    addLog('已复制透明 HUB 链接');
+    addLog(t('cd.copiedLog'));
   });
   elements.applyTarget.addEventListener('click', () => {
     const targetAt = targetLocalToIso(elements.targetAt.value);
     if (!targetAt) return;
-    sendAction({ type: 'set-target', targetAt }, '已应用目标时间并开始倒计时');
+    sendAction({ type: 'set-target', targetAt }, t('cd.appliedTargetLog'));
   });
   elements.applyDuration.addEventListener('click', () => {
     const minutes = window.CountdownHub.clamp(elements.minutes.value, 0, 99);
     const seconds = window.CountdownHub.clamp(elements.seconds.value, 0, 59);
     elements.minutes.value = minutes;
     elements.seconds.value = seconds;
-    sendAction({ type: 'set-duration', minutes, seconds }, `已应用 ${minutes}分${seconds}秒并开始倒计时`);
+    sendAction({ type: 'set-duration', minutes, seconds }, t('cd.appliedDurationLog', { minutes, seconds }));
   });
-  elements.start.addEventListener('click', () => sendAction({ type: 'start' }, '开始倒计时'));
-  elements.pause.addEventListener('click', () => sendAction({ type: 'pause' }, '暂停倒计时'));
-  elements.reset.addEventListener('click', () => sendAction({ type: 'reset' }, '重置倒计时'));
+  elements.start.addEventListener('click', () => sendAction({ type: 'start' }, t('cd.startLog')));
+  elements.pause.addEventListener('click', () => sendAction({ type: 'pause' }, t('cd.pauseLog')));
+  elements.reset.addEventListener('click', () => sendAction({ type: 'reset' }, t('cd.resetLog')));
   elements.saveBpTimerSettings.addEventListener('click', saveBpTimerSettings);
   document.querySelector('[data-page="countdown"]').addEventListener('click', loadBpTimerSettings);
 
@@ -405,7 +459,7 @@
   });
 
   connect().catch(error => {
-    setStatus('连接失败');
+    setStatus(t('header.connectFailed'));
     addLog(error.message);
   });
   loadBpTimerSettings();

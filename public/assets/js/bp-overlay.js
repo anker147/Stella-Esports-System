@@ -70,7 +70,7 @@
     const promise = new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = resolve;
-      image.onerror = () => reject(new Error(`素材加载失败: ${url}`));
+      image.onerror = () => reject(new Error(t('bo.loadFailed', { url })));
       image.src = url;
     });
     assetPromises.set(url, promise);
@@ -80,7 +80,7 @@
   function preloadVideo() {
     if (video.readyState >= 2) return Promise.resolve();
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('动态 BP 背景视频加载超时')), 8000);
+      const timeout = setTimeout(() => reject(new Error(t('bo.bgVideoTimeout'))), 8000);
       const done = callback => {
         clearTimeout(timeout);
         video.removeEventListener('loadeddata', loaded);
@@ -88,7 +88,7 @@
         callback();
       };
       const loaded = () => done(resolve);
-      const failed = () => done(() => reject(new Error('动态 BP 背景视频加载失败')));
+      const failed = () => done(() => reject(new Error(t('bo.bgVideoFailed'))));
       video.addEventListener('loadeddata', loaded, { once: true });
       video.addEventListener('error', failed, { once: true });
       video.load();

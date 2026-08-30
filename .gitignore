@@ -8,6 +8,11 @@ data/bp-state.json.*
 data/bp-presentation.json
 data/material-library.json
 data/obs-path-migration.json
+data/app.db
+data/app.db-shm
+data/app.db-wal
+data/app.db-journal
+data/*.migrated-*
 
 # Local logs and temporary files
 *.log
@@ -20,6 +25,7 @@ data/obs-path-migration.json
 .packaging-test/
 .zcode/
 .dotnet-home/
+.tmp-smoke*/
 
 # Build outputs and dependency caches
 dist/

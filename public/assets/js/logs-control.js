@@ -10,14 +10,10 @@
   let logs = [];
   const beijingTime = value => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 
-  const actionLabels = {
-    'session-created': '创建记录', 'bp-started': '开始 BP', 'slot-updated': '更新槽位',
-    'slot-cleared': '清空槽位', 'phase-completed': '阶段完成', 'phase-started': '进入阶段',
-    'timer-expired': '计时结束', 'bp-completed': 'BP 完成', 'bp-manually-completed': '手动结束 BP', 'revision-restored': '恢复版本',
-    'replay-created': '创建重赛', 'output-mode-updated': '切换文本模式',
-    'result-updated': '记录战果', 'result-image-updated': '上传赛果图片', 'session-reset': '重置正赛',
-    'forfeit-declared': '弃赛结算', 'forfeit-revoked': '撤回弃赛'
-  };
+  const actionLabels = {};
+  for (const [key, value] of Object.entries(window.UI_TEXT)) {
+    if (key.startsWith('bp.logActions.')) actionLabels[key.slice('bp.logActions.'.length)] = value;
+  }
 
   function filteredLogs() {
     const query = elements.search.value.trim().toLocaleLowerCase();
@@ -38,7 +34,7 @@
 
   function render() {
     const visible = filteredLogs();
-    elements.summary.textContent = `显示 ${visible.length} 条，共 ${logs.length} 条`;
+    elements.summary.textContent = t('lg.summary', { visible: visible.length, total: logs.length });
     elements.body.replaceChildren(...visible.slice(0, 1000).map(item => {
       const row = document.createElement('tr');
       appendCell(row, beijingTime(item.timestamp), 'log-time');
@@ -53,7 +49,7 @@
   async function load() {
     const response = await fetch('/api/logs');
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '日志加载失败');
+    if (!response.ok) throw new Error(payload.error || t('lg.loadFailed'));
     logs = payload.logs;
     render();
   }

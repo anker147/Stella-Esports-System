@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const test = require('node:test');
+process.env.STELLA_DB_PATH = ':memory:';
 const { ObsController } = require('./obs-controller');
 const { createTournamentResolver, readAllData } = require('./tournament-data');
 

@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-db-obs-path-'));
+process.env.STELLA_DB_PATH = path.join(dbDir, 'test.db');
 const { ObsPathMigration, findRootedPaths, relativeFromRoot } = require('./obs-path-migration');
 
 function clone(value) {
@@ -116,7 +118,7 @@ test('successful synchronization persists changed fields and can be rolled back'
   const rolledBack = await fx.migration.rollback();
   assert.equal(rolledBack.changedCount, 2);
   assert.equal(fx.client.inputs.Board.file, path.join(fx.canonicalRoot, 'images', 'board.png'));
-  assert.equal(JSON.parse(fs.readFileSync(fx.migration.storePath, 'utf8')).lastRollback.syncTransactionId, synced.transaction.id);
+  assert.equal(JSON.parse(require('./db').db.prepare("SELECT value_json FROM app_settings WHERE key = 'assetPaths.lastRollback'").get().value_json).syncTransactionId, synced.transaction.id);
 });
 
 test('a partial write failure automatically restores objects already changed', async t => {

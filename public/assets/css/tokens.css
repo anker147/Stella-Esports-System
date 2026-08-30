@@ -38,4 +38,5 @@
   --f2-header-height: 64px;
   --f2-transition-fast: 0.12s ease;
   --f2-transition-normal: 0.2s ease;
+  --nav-ease: cubic-bezier(0.4, 0, 0.2, 1);
 }

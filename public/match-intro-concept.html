@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ban/Pick 入场动画修改稿</title>
+  <title data-text="design.conceptTitle">Ban/Pick 入场动画修改稿</title>
   <link rel="stylesheet" href="/assets/css/match-intro-concept.css?v=25">
 </head>
 <body>
   <main class="viewport">
-    <section class="stage" id="stage" aria-label="Ban/Pick 入场动画修改稿">
+    <section class="stage" id="stage" aria-label="Ban/Pick 入场动画修改稿" data-text-aria="design.conceptStageAria">
       <div class="bp-destination" aria-hidden="true">
         <img class="bp-background" src="/assets/match-intro/bp-background.png" alt="">
         <img class="bp-stage-label" src="/assets/match-intro/bp-stage-quarterfinals.png" alt="">
@@ -33,12 +33,12 @@
           <div class="solo-word" id="leftSoloWord">365DAYS</div>
           <div class="solo-lockup">
             <div class="solo-logo-frame">
-              <img id="leftSoloLogo" src="/assets/teams/2026-07-26/pc/pc-365days-escape.png" alt="365Days 战队队徽">
+              <img id="leftSoloLogo" src="/assets/teams/2026-07-26/pc/pc-365days-escape.png" alt="365Days 战队队徽" data-text-aria="design.teamLogoAlt">
             </div>
             <div class="solo-accent"></div>
             <div class="solo-copy">
               <strong id="leftSoloName">365DAYS</strong>
-              <span>逃生方 / ESCAPE</span>
+              <span data-text="design.escapeSide">逃生方 / ESCAPE</span>
             </div>
           </div>
         </div>
@@ -48,11 +48,11 @@
           <div class="solo-lockup">
             <div class="solo-copy">
               <strong id="rightSoloName">小姐姐的洋房</strong>
-              <span>追捕方 / HUNTER</span>
+              <span data-text="design.hunterSide">追捕方 / HUNTER</span>
             </div>
             <div class="solo-accent"></div>
             <div class="solo-logo-frame">
-              <img id="rightSoloLogo" src="/assets/teams/2026-07-26/pc/pc-xiaojiejiedeyangfang-hunter.png" alt="小姐姐的洋房战队队徽">
+              <img id="rightSoloLogo" src="/assets/teams/2026-07-26/pc/pc-xiaojiejiedeyangfang-hunter.png" alt="小姐姐的洋房战队队徽" data-text-aria="design.teamLogoAlt">
             </div>
           </div>
         </div>
@@ -61,7 +61,7 @@
           <div class="team-word" id="leftWord">365DAYS</div>
           <div class="logo-shell">
             <div class="logo-echo"></div>
-            <img id="leftLogo" src="/assets/teams/2026-07-26/pc/pc-365days-escape.png" alt="365Days 战队队徽">
+            <img id="leftLogo" src="/assets/teams/2026-07-26/pc/pc-365days-escape.png" alt="365Days 战队队徽" data-text-aria="design.teamLogoAlt">
           </div>
           <div class="team-name" id="leftName">365DAYS</div>
         </div>
@@ -70,7 +70,7 @@
           <div class="team-word" id="rightWord">洋房</div>
           <div class="logo-shell">
             <div class="logo-echo"></div>
-            <img id="rightLogo" src="/assets/teams/2026-07-26/pc/pc-xiaojiejiedeyangfang-hunter.png" alt="小姐姐的洋房战队队徽">
+            <img id="rightLogo" src="/assets/teams/2026-07-26/pc/pc-xiaojiejiedeyangfang-hunter.png" alt="小姐姐的洋房战队队徽" data-text-aria="design.teamLogoAlt">
           </div>
           <div class="team-name" id="rightName">小姐姐的洋房</div>
         </div>
@@ -82,12 +82,12 @@
         </div>
 
         <div class="cup-lockup">
-          <img src="/assets/match-intro/2026-zhuifeng-cup-logo.png" alt="2026追风杯">
-          <div class="phase-label">进入 BAN / PICK</div>
+          <img src="/assets/match-intro/2026-zhuifeng-cup-logo.png" alt="2026追风杯" data-text-aria="design.cupAlt">
+          <div class="phase-label" data-text="design.phaseLabel">进入 BAN / PICK</div>
         </div>
 
         <div class="broadcast-frame" aria-hidden="true">
-          <div class="frame-top"><span>2026 追风杯</span><span>QUARTERFINALS · GAME 01</span></div>
+          <div class="frame-top"><span data-text="design.frameEvent">2026 追风杯</span><span>QUARTERFINALS · GAME 01</span></div>
           <div class="frame-bottom"><span>ESCAPE</span><span>HUNTER</span></div>
         </div>
       </div>
@@ -98,9 +98,10 @@
         <div class="outro-line"></div>
       </div>
 
-      <button class="replay" id="replay" type="button" title="重新播放" aria-label="重新播放">↻</button>
+      <button class="replay" id="replay" type="button" data-text-title="design.replay" title="重新播放" aria-label="重新播放">↻</button>
     </section>
   </main>
+  <script src="/assets/js/text.js?v=1"></script>
   <script src="/assets/js/match-intro-concept.js?v=4"></script>
 </body>
 </html>

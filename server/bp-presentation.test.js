@@ -3,21 +3,24 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-db-bp-presentation-'));
+process.env.STELLA_DB_PATH = path.join(dbDir, 'test.db');
 const { BpPresentationService } = require('./bp-presentation');
 const { BpService } = require('./bp-service');
+const { db } = require('./db');
 const { createTournamentResolver } = require('./tournament-data');
 
 function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-bp-presentation-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  db.exec('DELETE FROM bp_session_history; DELETE FROM bp_session_results; DELETE FROM bp_session_slots; DELETE FROM bp_sessions; DELETE FROM bp_presentation_state;');
   const resolver = createTournamentResolver();
-  const bp = new BpService({ resolver, storePath: path.join(directory, 'bp.json') });
+  const bp = new BpService({ resolver });
   t.after(() => bp.close());
   let now = 1000;
   const presentation = new BpPresentationService({
     resolver,
     getSession: id => bp.serialize(bp.getSession(id)),
-    storePath: path.join(directory, 'presentation.json'),
     now: () => now
   });
   const session = bp.ensureSession('mobile-2026-07-25-qf-1', 1, 'A', 1);
@@ -97,8 +100,7 @@ test('dynamic toggle persists but stale visibility never survives restart', t =>
   presentation.armIntro(bp.serialize(session));
   const restored = new BpPresentationService({
     resolver: presentation.resolver,
-    getSession: id => bp.serialize(bp.getSession(id)),
-    storePath: presentation.storePath
+    getSession: id => bp.serialize(bp.getSession(id))
   });
   assert.equal(restored.state.dynamicEnabled, true);
   assert.equal(restored.state.activeSessionId, session.id);
