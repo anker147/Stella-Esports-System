@@ -3,15 +3,23 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-db-material-'));
+process.env.STELLA_DB_PATH = path.join(dbDir, 'test.db');
+const { db } = require('./db');
 const { MaterialLibrary, isFilesystemRoot } = require('./material-library');
+
+function clearMaterialTables() {
+  db.exec('DELETE FROM material_entries; DELETE FROM material_watched_folders; DELETE FROM material_excluded_paths;');
+}
 
 function fixture() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-material-test-'));
+  clearMaterialTables();
   const files = path.join(directory, 'files');
   fs.mkdirSync(path.join(files, 'nested'), { recursive: true });
   fs.writeFileSync(path.join(files, 'cover.png'), 'image');
   fs.writeFileSync(path.join(files, 'nested', 'notes.txt'), 'notes');
-  const library = new MaterialLibrary({ storePath: path.join(directory, 'index.json') });
+  const library = new MaterialLibrary();
   return { directory, files, library };
 }
 
@@ -99,20 +107,23 @@ test('index-only removal inside a watched folder remains excluded', t => {
   assert.equal(fs.existsSync(image.path), true);
 });
 
-test('schema version 1 infers top-level imported folders as watched roots', t => {
-  const { directory, files } = fixture();
+test('startup removes unsafe drive watchers and their indexed descendants', t => {
+  clearMaterialTables();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-material-root-test-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const storePath = path.join(directory, 'legacy.json');
-  fs.writeFileSync(storePath, JSON.stringify({
-    schemaVersion: 1,
-    entries: {
-      root: { id: 'root', path: files, kind: 'directory', addedAt: 1 },
-      image: { id: 'image', path: path.join(files, 'cover.png'), kind: 'file', addedAt: 1 }
-    }
-  }));
-  const library = new MaterialLibrary({ storePath });
-  assert.deepEqual(library.store.watchedFolders, [files]);
-  assert.equal(JSON.parse(fs.readFileSync(storePath, 'utf8')).schemaVersion, 2);
+  const driveRoot = path.parse(directory).root;
+  db.prepare('INSERT INTO material_entries (id, path, kind, added_at) VALUES (?, ?, ?, ?)')
+    .run('root', driveRoot, 'directory', 1);
+  db.prepare('INSERT INTO material_entries (id, path, kind, added_at) VALUES (?, ?, ?, ?)')
+    .run('child', path.join(directory, 'asset.png'), 'file', 1);
+  db.prepare('INSERT INTO material_watched_folders (path) VALUES (?)').run(driveRoot);
+  db.prepare('INSERT INTO material_excluded_paths (path) VALUES (?)').run(path.join(directory, 'excluded'));
+
+  const library = new MaterialLibrary();
+  assert.deepEqual(library.store.watchedFolders, []);
+  assert.deepEqual(library.store.excludedPaths, []);
+  assert.deepEqual(library.store.entries, {});
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM material_watched_folders').get().n, 0);
 });
 
 test('drive root imports are rejected before recursive indexing', t => {
@@ -123,25 +134,4 @@ test('drive root imports are rejected before recursive indexing', t => {
   assert.throws(() => library.addPaths([driveRoot]), /不能导入整个磁盘/);
   assert.equal(library.store.watchedFolders.length, 0);
   assert.equal(library.list().length, 0);
-});
-
-test('startup removes unsafe drive watchers and their indexed descendants', t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-material-root-test-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const driveRoot = path.parse(directory).root;
-  const storePath = path.join(directory, 'unsafe-index.json');
-  fs.writeFileSync(storePath, JSON.stringify({
-    schemaVersion: 2,
-    entries: {
-      root: { id: 'root', path: driveRoot, kind: 'directory', addedAt: 1 },
-      child: { id: 'child', path: path.join(directory, 'asset.png'), kind: 'file', addedAt: 1 }
-    },
-    watchedFolders: [driveRoot],
-    excludedPaths: [path.join(directory, 'excluded')]
-  }));
-  const library = new MaterialLibrary({ storePath });
-  assert.deepEqual(library.store.watchedFolders, []);
-  assert.deepEqual(library.store.excludedPaths, []);
-  assert.deepEqual(library.store.entries, {});
-  assert.deepEqual(JSON.parse(fs.readFileSync(storePath, 'utf8')).watchedFolders, []);
 });

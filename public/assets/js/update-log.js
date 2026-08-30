@@ -103,7 +103,7 @@
   }
 
   function formatDate(value) {
-    if (!value) return '历史版本';
+    if (!value) return t('up.noDate');
     const date = new Date(`${value}T00:00:00+08:00`);
     if (!Number.isFinite(date.getTime())) return value;
     return new Intl.DateTimeFormat('zh-CN', {
@@ -146,7 +146,7 @@
     rail.append(version, date);
     if (latest) {
       const badge = document.createElement('span');
-      badge.textContent = '当前版本';
+      badge.textContent = t('up.currentBadge');
       rail.appendChild(badge);
     }
 
@@ -194,11 +194,11 @@
     try {
       const response = await fetch('/api/update-log');
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `更新日志读取失败 (${response.status})`);
+      if (!response.ok) throw new Error(data.error || t('up.loadFailed', { status: response.status }));
       elements.sidebarVersion.textContent = `v${data.currentVersion}`;
       elements.currentVersion.textContent = `v${data.currentVersion}`;
-      elements.updatedAt.textContent = `更新时间 ${formatDate(data.updatedAt)}`;
-      elements.count.textContent = `${data.releases.length} 个版本`;
+      elements.updatedAt.textContent = t('up.updatedAt', { date: formatDate(data.updatedAt) });
+      elements.count.textContent = t('up.versionCount', { count: data.releases.length });
       elements.list.replaceChildren(...data.releases.map((release, index) => makeRelease(release, index === 0)));
       releaseEntries = [...elements.list.children];
       pointerOverList = false;
@@ -209,7 +209,7 @@
         line.type = 'button';
         line.className = 'release-locator-item';
         line.title = `v${release.version} ${release.title}`;
-        line.setAttribute('aria-label', `定位到 v${release.version} ${release.title}`);
+        line.setAttribute('aria-label', t('up.locateAria', { version: release.version, title: release.title }));
         line.addEventListener('click', () => {
           smoothScrollTo(releaseEntries[index].offsetTop - 8);
         });

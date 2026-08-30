@@ -6,35 +6,35 @@
   <title>星澜赛事导播系统</title>
   <link rel="stylesheet" href="assets/css/tokens.css">
   <link rel="stylesheet" href="assets/css/components.css">
-  <link rel="stylesheet" href="assets/css/control.css?v=34">
+  <link rel="stylesheet" href="assets/css/control.css?v=41">
 </head>
 <body>
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-mark"><img src="assets/brand/stella-logo.png" alt=""></div>
       <div class="sidebar-heading">
-        <div class="sidebar-title">星澜赛事导播系统</div>
-        <div class="sidebar-subtitle">OBS WebSocket 控制台 <span class="sidebar-version" id="systemVersion">v--</span></div>
+        <div class="sidebar-title" data-text="app.title">星澜赛事导播系统</div>
+        <div class="sidebar-subtitle"><span data-text="app.subtitle">OBS WebSocket 控制台</span> <span class="sidebar-version" id="systemVersion">v--</span></div>
       </div>
     </div>
     <nav class="sidebar-nav">
       <button class="nav-btn nav-leaf" type="button" data-page="updates">
         <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5.5L13 5.5V14H4z"/><path d="M9.5 2v3.5H13"/><path d="M6.2 8.5h3.6M6.2 11h3.6"/></svg>
-        <span class="nav-label">更新日志</span>
+        <span class="nav-label" data-text="nav.item.updates">更新日志</span>
       </button>
 
       <div class="nav-group" data-nav-group="tournament">
         <button class="nav-group-toggle" type="button">
           <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 2h5v3.2a2.5 2.5 0 0 1-5 0V2z"/><path d="M5.5 3H3.4a2.1 2.1 0 0 0 2.2 2.6M10.5 3h2.1a2.1 2.1 0 0 1-2.2 2.6"/><path d="M8 7.7v2.8M5.5 13.5h5M6.8 10.5h2.4"/></svg>
-          <span class="nav-label">赛事中心</span>
+          <span class="nav-label" data-text="nav.group.tournament">赛事中心</span>
           <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
         <div class="nav-group-body">
           <div class="nav-group-items">
-            <button class="nav-btn nav-sub" type="button" data-soon="赛事管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 14V2.5"/><path d="M3.5 3h8.5l-1.8 2.5L12 8H3.5"/></svg><span class="nav-label">赛事管理</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="赛程管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><span class="nav-label">赛程管理</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="战队管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l4.8 1.9v3.8c0 3.2-2.3 5.2-4.8 6.7-2.5-1.5-4.8-3.5-4.8-6.7V3.7L8 1.8z"/></svg><span class="nav-label">战队管理</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="选手管理"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5.2" r="2.4"/><path d="M3.2 13.5c.5-2.9 2.4-3.9 4.8-3.9s4.3 1 4.8 3.9"/></svg><span class="nav-label">选手管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.tournament.events"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 14V2.5"/><path d="M3.5 3h8.5l-1.8 2.5L12 8H3.5"/></svg><span class="nav-label" data-text="nav.soon.tournament.events">赛事管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.tournament.schedule"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/></svg><span class="nav-label" data-text="nav.soon.tournament.schedule">赛程管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.tournament.teams"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l4.8 1.9v3.8c0 3.2-2.3 5.2-4.8 6.7-2.5-1.5-4.8-3.5-4.8-6.7V3.7L8 1.8z"/></svg><span class="nav-label" data-text="nav.soon.tournament.teams">战队管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.tournament.players"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5.2" r="2.4"/><path d="M3.2 13.5c.5-2.9 2.4-3.9 4.8-3.9s4.3 1 4.8 3.9"/></svg><span class="nav-label" data-text="nav.soon.tournament.players">选手管理</span></button>
           </div>
         </div>
       </div>
@@ -42,14 +42,14 @@
       <div class="nav-group" data-nav-group="control">
         <button class="nav-group-toggle" type="button">
           <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.5v9l7-4.5-7-4.5z"/></svg>
-          <span class="nav-label">赛事控制</span>
+          <span class="nav-label" data-text="nav.group.control">赛事控制</span>
           <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
         <div class="nav-group-body">
           <div class="nav-group-items">
-            <button class="nav-btn nav-sub active" type="button" data-page="countdown"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.4 1.5"/></svg><span class="nav-label">计时中心</span></button>
-            <button class="nav-btn nav-sub" type="button" data-page="bp"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/></svg><span class="nav-label">BP 控制台</span></button>
-            <button class="nav-btn nav-sub" type="button" data-page="bracket"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5h11"/><rect x="3.5" y="8.5" width="3" height="5"/><rect x="9.5" y="4" width="3" height="9.5"/></svg><span class="nav-label">晋级榜推送</span></button>
+            <button class="nav-btn nav-sub active" type="button" data-page="countdown"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.4 1.5"/></svg><span class="nav-label" data-text="nav.item.countdown">计时中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="bp"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/></svg><span class="nav-label" data-text="nav.item.bp">BP 控制台</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="bracket"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5h11"/><rect x="3.5" y="8.5" width="3" height="5"/><rect x="9.5" y="4" width="3" height="9.5"/></svg><span class="nav-label" data-text="nav.item.bracket">晋级榜推送</span></button>
           </div>
         </div>
       </div>
@@ -57,14 +57,14 @@
       <div class="nav-group" data-nav-group="data">
         <button class="nav-group-toggle" type="button">
           <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.6" rx="5" ry="1.7"/><path d="M3 3.6v8.8c0 .95 2.2 1.7 5 1.7s5-.75 5-1.7V3.6"/><path d="M3 8c0 .95 2.2 1.7 5 1.7S13 8.95 13 8"/></svg>
-          <span class="nav-label">赛事数据</span>
+          <span class="nav-label" data-text="nav.group.data">赛事数据</span>
           <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
         <div class="nav-group-body">
           <div class="nav-group-items">
-            <button class="nav-btn nav-sub" type="button" data-page="materials"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="5.6" cy="6.1" r="1.1"/><path d="M2.5 11.2l3.2-3.2 2.6 2.6 2.2-2.2 3 3"/></svg><span class="nav-label">素材中心</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="比赛记录"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="2.8" width="9" height="11" rx="1.5"/><path d="M6 2.8h4v2.2H6z"/><path d="M6 8h4M6 10.6h4"/></svg><span class="nav-label">比赛记录</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="角色数据"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.3"/><path d="M2.2 13.4c.4-2.6 2-3.6 3.8-3.6s3.4 1 3.8 3.6"/><path d="M10.4 3.7a2.3 2.3 0 0 1 0 3.6M11.6 10.2c1.3.5 2.1 1.5 2.4 3.2"/></svg><span class="nav-label">角色数据</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="materials"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="5.6" cy="6.1" r="1.1"/><path d="M2.5 11.2l3.2-3.2 2.6 2.6 2.2-2.2 3 3"/></svg><span class="nav-label" data-text="nav.item.materials">素材中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.data.matches"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="2.8" width="9" height="11" rx="1.5"/><path d="M6 2.8h4v2.2H6z"/><path d="M6 8h4M6 10.6h4"/></svg><span class="nav-label" data-text="nav.soon.data.matches">比赛记录</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.data.characters"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5.5" r="2.3"/><path d="M2.2 13.4c.4-2.6 2-3.6 3.8-3.6s3.4 1 3.8 3.6"/><path d="M10.4 3.7a2.3 2.3 0 0 1 0 3.6M11.6 10.2c1.3.5 2.1 1.5 2.4 3.2"/></svg><span class="nav-label" data-text="nav.soon.data.characters">角色数据</span></button>
           </div>
         </div>
       </div>
@@ -72,16 +72,16 @@
       <div class="nav-group" data-nav-group="system">
         <button class="nav-group-toggle" type="button">
           <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v2.2M8 12v2.2M1.8 8H4M12 8h2.2M3.5 3.5L5 5M11 11l1.5 1.5M12.5 3.5L11 5M5 11l-1.5 1.5"/></svg>
-          <span class="nav-label">系统中心</span>
+          <span class="nav-label" data-text="nav.group.system">系统中心</span>
           <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
         <div class="nav-group-body">
           <div class="nav-group-items">
-            <button class="nav-btn nav-sub" type="button" data-soon="数据配置"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.6" rx="5" ry="1.7"/><path d="M3 3.6v8.8c0 .95 2.2 1.7 5 1.7s5-.75 5-1.7V3.6"/><path d="M3 8c0 .95 2.2 1.7 5 1.7S13 8.95 13 8"/></svg><span class="nav-label">数据配置</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="终端状态"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="8.2" rx="1.5"/><path d="M6 13.7h4M8 11.2v2.5"/></svg><span class="nav-label">终端状态</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="系统设置"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11M6.2 2.9v3.2M10.6 6.4v3.2M5 9.9v3.2"/></svg><span class="nav-label">系统设置</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="HUD 中心"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.3h11M6.3 6.3v7.2"/></svg><span class="nav-label">HUD 中心</span></button>
-            <button class="nav-btn nav-sub" type="button" data-soon="个人中心"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="6.4" r="1.8"/><path d="M4.6 12.1c.7-1.7 2-2.5 3.4-2.5s2.7.8 3.4 2.5"/></svg><span class="nav-label">个人中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.system.config"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.6" rx="5" ry="1.7"/><path d="M3 3.6v8.8c0 .95 2.2 1.7 5 1.7s5-.75 5-1.7V3.6"/><path d="M3 8c0 .95 2.2 1.7 5 1.7S13 8.95 13 8"/></svg><span class="nav-label" data-text="nav.soon.system.config">数据配置</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.system.terminal"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="8.2" rx="1.5"/><path d="M6 13.7h4M8 11.2v2.5"/></svg><span class="nav-label" data-text="nav.soon.system.terminal">终端状态</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.system.settings"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11M6.2 2.9v3.2M10.6 6.4v3.2M5 9.9v3.2"/></svg><span class="nav-label" data-text="nav.soon.system.settings">系统设置</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.system.hud"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.3h11M6.3 6.3v7.2"/></svg><span class="nav-label" data-text="nav.soon.system.hud">HUD 中心</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.system.profile"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="6.4" r="1.8"/><path d="M4.6 12.1c.7-1.7 2-2.5 3.4-2.5s2.7.8 3.4 2.5"/></svg><span class="nav-label" data-text="nav.soon.system.profile">个人中心</span></button>
           </div>
         </div>
       </div>
@@ -89,21 +89,39 @@
       <div class="nav-group" data-nav-group="respond">
         <button class="nav-group-toggle" type="button">
           <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.2a3.8 3.8 0 0 1 3.8 3.8v2.8l1.3 2.4H2.9l1.3-2.4V6A3.8 3.8 0 0 1 8 2.2z"/><path d="M6.6 13.2a1.4 1.4 0 0 0 2.8 0"/></svg>
-          <span class="nav-label">响应中心</span>
+          <span class="nav-label" data-text="nav.group.respond">响应中心</span>
           <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
         </button>
         <div class="nav-group-body">
           <div class="nav-group-items">
-            <button class="nav-btn nav-sub" type="button" data-soon="高危响应"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.6l5.8 10H2.2l5.8-10z"/><path d="M8 6.6v2.6M8 11.4v.01"/></svg><span class="nav-label">高危响应</span></button>
-            <button class="nav-btn nav-sub" type="button" data-page="logs"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M4.6 6.2l1.9 1.8-1.9 1.8M8.2 10.4h3.2"/></svg><span class="nav-label">日志面板</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.respond.alert"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.6l5.8 10H2.2l5.8-10z"/><path d="M8 6.6v2.6M8 11.4v.01"/></svg><span class="nav-label" data-text="nav.soon.respond.alert">高危响应</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="logs"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M4.6 6.2l1.9 1.8-1.9 1.8M8.2 10.4h3.2"/></svg><span class="nav-label" data-text="nav.item.logs">日志面板</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-group" data-nav-group="management">
+        <button class="nav-group-toggle" type="button">
+          <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="6" cy="4.5" r="1.4"/><circle cx="10" cy="8" r="1.4"/><circle cx="5" cy="11.5" r="1.4"/></svg>
+          <span class="nav-label" data-text="nav.group.management">管理中心</span>
+          <svg class="nav-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <div class="nav-group-body">
+          <div class="nav-group-items">
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.management.accounts"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="7" r="1.6"/><path d="M4.2 10.8c.4-1.2 1-1.8 1.8-1.8s1.4.6 1.8 1.8M10 6h2.5M10 8.5h2.5"/></svg><span class="nav-label" data-text="nav.soon.management.accounts">账号管理</span></button>
+            <button class="nav-btn nav-sub" type="button" data-soon="nav.soon.management.permissions"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="10.5" r="2.5"/><path d="M7.4 8.6L13 3M11 5l1.8 1.8M9.3 6.7l1.5 1.5"/></svg><span class="nav-label" data-text="nav.soon.management.permissions">权限中心</span></button>
           </div>
         </div>
       </div>
     </nav>
     <div class="sidebar-footer">
-      <button class="sidebar-collapse" id="sidebarToggle" type="button" title="收起侧边栏" aria-label="收起侧边栏">
+      <button class="sidebar-logout" id="logoutButton" type="button" data-text-title="nav.logout" title="退出登录" aria-label="退出登录">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 2H4a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 4 14h2.5"/><path d="M10.5 5.5L13 8l-2.5 2.5M13 8H6.5"/></svg>
+        <span class="nav-label" data-text="nav.logout">退出登录</span>
+      </button>
+      <button class="sidebar-collapse" id="sidebarToggle" type="button" data-text-title="nav.collapse">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 4L5.5 8l4 4M13 4L9 8l4 4"/></svg>
-        <span class="nav-label">收起侧边栏</span>
+        <span class="nav-label" data-text="nav.collapse">收起侧边栏</span>
       </button>
     </div>
   </aside>
@@ -111,12 +129,12 @@
   <main class="app-main">
     <header class="app-header">
       <div>
-        <h1 id="pageTitle">计时中心</h1>
-        <p id="pageDescription">生成透明 OBS Browser Source 链接，并从这里控制倒计时。</p>
+        <h1 id="pageTitle" data-text="page.countdown.title">计时中心</h1>
+        <p id="pageDescription" data-text="page.countdown.desc">生成透明 OBS Browser Source 链接，并从这里控制倒计时。</p>
       </div>
       <div class="header-statuses">
-        <div class="status-pill status-muted" id="obsStatus">OBS 未连接</div>
-        <div class="status-pill" id="connectionStatus">初始化中</div>
+        <div class="status-pill status-muted" id="obsStatus" data-text="header.obsDisconnected">OBS 未连接</div>
+        <div class="status-pill" id="connectionStatus" data-text="header.init">初始化中</div>
       </div>
     </header>
 
@@ -125,22 +143,22 @@
       <article class="card hub-card">
         <div class="card-header">
           <div>
-            <h2>Web HUB 链接</h2>
-            <p>把这个透明链接添加到 OBS 浏览器源。</p>
+            <h2 data-text="cd.hubTitle">Web HUB 链接</h2>
+            <p data-text="cd.hubDesc">把这个透明链接添加到 OBS 浏览器源。</p>
           </div>
-          <button class="btn btn-secondary" id="newHub" type="button" disabled>固定链接</button>
+          <button class="btn btn-secondary" id="newHub" type="button" disabled data-text="cd.pinLink">固定链接</button>
         </div>
         <div class="link-row">
           <input class="input mono" id="hubUrl" readonly>
-          <button class="btn btn-primary" id="copyHub" type="button">复制</button>
+          <button class="btn btn-primary" id="copyHub" type="button" data-text="cd.copy">复制</button>
         </div>
       </article>
 
       <article class="card preview-card">
         <div class="card-header">
           <div>
-            <h2>当前输出</h2>
-            <p>Overlay 始终输出四位数字，格式为 MM:SS。</p>
+            <h2 data-text="cd.outputTitle">当前输出</h2>
+            <p data-text="cd.outputDesc">Overlay 始终输出四位数字，格式为 MM:SS。</p>
           </div>
           <span class="mode-chip" id="modeChip">指定倒计时</span>
         </div>
@@ -150,77 +168,77 @@
       <article class="card">
         <div class="card-header">
           <div>
-            <h2>指定时间倒计时</h2>
-            <p>设置一个目标日期时间，到点归零。</p>
+            <h2 data-text="cd.targetTitle">指定时间倒计时</h2>
+            <p data-text="cd.targetDesc">设置一个目标日期时间，到点归零。</p>
           </div>
         </div>
         <div class="form-stack">
-          <label class="field-label" for="targetAt">目标时间</label>
+          <label class="field-label" for="targetAt" data-text="cd.targetLabel">目标时间</label>
           <input class="input" id="targetAt" type="datetime-local">
-          <button class="btn btn-primary" id="applyTarget" type="button">应用目标时间</button>
+          <button class="btn btn-primary" id="applyTarget" type="button" data-text="cd.applyTarget">应用目标时间</button>
         </div>
       </article>
 
       <article class="card">
         <div class="card-header">
           <div>
-            <h2>指定倒计时</h2>
-            <p>设置倒计时几分几秒，最大显示 99 分 59 秒。</p>
+            <h2 data-text="cd.durationTitle">指定倒计时</h2>
+            <p data-text="cd.durationDesc">设置倒计时几分几秒，最大显示 99 分 59 秒。</p>
           </div>
         </div>
         <div class="duration-grid">
           <label class="form-stack">
-            <span class="field-label">分钟</span>
+            <span class="field-label" data-text="cd.minutes">分钟</span>
             <input class="input" id="minutes" type="number" min="0" max="99" value="0">
           </label>
           <label class="form-stack">
-            <span class="field-label">秒</span>
+            <span class="field-label" data-text="cd.seconds">秒</span>
             <input class="input" id="seconds" type="number" min="0" max="59" value="48">
           </label>
         </div>
-        <button class="btn btn-primary full-width" id="applyDuration" type="button">应用指定倒计时</button>
+        <button class="btn btn-primary full-width" id="applyDuration" type="button" data-text="cd.applyDuration">应用指定倒计时</button>
       </article>
 
       <article class="card controls-card">
         <div class="card-header">
           <div>
-            <h2>控制</h2>
-            <p>开始、暂停或重置当前倒计时。</p>
+            <h2 data-text="cd.controlsTitle">控制</h2>
+            <p data-text="cd.controlsDesc">开始、暂停或重置当前倒计时。</p>
           </div>
         </div>
         <div class="control-buttons">
-          <button class="btn btn-primary" id="start" type="button">开始</button>
-          <button class="btn btn-secondary" id="pause" type="button">暂停</button>
-          <button class="btn btn-secondary" id="reset" type="button">重置</button>
+          <button class="btn btn-primary" id="start" type="button" data-text="cd.start">开始</button>
+          <button class="btn btn-secondary" id="pause" type="button" data-text="cd.pause">暂停</button>
+          <button class="btn btn-secondary" id="reset" type="button" data-text="cd.reset">重置</button>
         </div>
       </article>
 
       <article class="card bp-timer-settings-card">
         <div class="card-header">
           <div>
-            <h2>BP 流程计时</h2>
-            <p>分别设置七个 Ban/Pick 阶段的倒计时秒数。</p>
+            <h2 data-text="cd.bpTimerTitle">BP 流程计时</h2>
+            <p data-text="cd.bpTimerDesc">分别设置七个 Ban/Pick 阶段的倒计时秒数。</p>
           </div>
         </div>
         <div class="bp-animation-setting">
-          <span>BP 板展开动画</span>
+          <span data-text="cd.animationLabel">BP 板展开动画</span>
           <div class="bp-animation-segments" id="bpAnimationStyle">
-            <label><input type="radio" name="bpAnimationStyle" value="classic"><span>经典展开</span></label>
-            <label><input type="radio" name="bpAnimationStyle" value="luminance"><span>亮度展开</span></label>
+            <label><input type="radio" name="bpAnimationStyle" value="classic"><span data-text="cd.animClassic">经典展开</span></label>
+            <label><input type="radio" name="bpAnimationStyle" value="luminance"><span data-text="cd.animLuminance">亮度展开</span></label>
           </div>
         </div>
         <div class="bp-timer-settings" id="bpTimerSettings"></div>
         <div class="bp-timer-settings-footer">
           <span id="bpTimerSettingsStatus"></span>
-          <button class="btn btn-primary" id="saveBpTimerSettings" type="button">保存 BP 计时</button>
+          <button class="btn btn-primary" id="saveBpTimerSettings" type="button" data-text="cd.saveBpTimer">保存 BP 计时</button>
         </div>
       </article>
 
       <article class="card log-card">
         <div class="card-header">
           <div>
-            <h2>事件日志</h2>
-            <p>记录控制端最近动作。</p>
+            <h2 data-text="cd.eventLogTitle">事件日志</h2>
+            <p data-text="cd.eventLogDesc">记录控制端最近动作。</p>
           </div>
         </div>
         <div class="log-list" id="logList"></div>
@@ -232,18 +250,18 @@
       <div class="utility-page">
         <article class="card upload-card">
           <div class="card-header">
-            <div><h2>晋级榜图片</h2><p>上传后保存至本地，并推送到 OBS 的“晋级榜单底图（切换这个）”。</p></div>
+            <div><h2 data-text="bk.title">晋级榜图片</h2><p data-text="bk.desc">上传后保存至本地，并推送到 OBS 的“晋级榜单底图（切换这个）”。</p></div>
           </div>
           <label class="image-drop-zone" id="bracketImageDropZone">
             <input id="bracketImageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-            <strong>粘贴、拖入或选择晋级榜图片</strong>
-            <span>PNG、JPG、WebP，最大 20MB</span>
+            <strong data-text="bk.dropTitle">粘贴、拖入或选择晋级榜图片</strong>
+            <span data-text="bk.dropHint">PNG、JPG、WebP，最大 20MB</span>
             <img id="bracketImagePreview" alt="晋级榜图片预览" hidden>
           </label>
-          <div class="upload-status" id="bracketUploadStatus">等待选择图片</div>
+          <div class="upload-status" id="bracketUploadStatus" data-text="bk.waiting">等待选择图片</div>
           <div class="dialog-actions">
-            <button class="btn btn-secondary" id="clearBracketImage" type="button">清除</button>
-            <button class="btn btn-primary" id="uploadBracketImage" type="button" disabled>上传并推送 OBS</button>
+            <button class="btn btn-secondary" id="clearBracketImage" type="button" data-text="bk.clear">清除</button>
+            <button class="btn btn-primary" id="uploadBracketImage" type="button" disabled data-text="bk.upload">上传并推送 OBS</button>
           </div>
         </article>
       </div>
@@ -254,44 +272,44 @@
         <section class="bp-context card">
           <div class="bp-context-fields">
             <label class="form-stack schedule-field">
-              <span class="field-label">赛程日期</span>
+              <span class="field-label" data-text="bp.scheduleDate">赛程日期</span>
               <select class="input" id="bpScheduleDate"></select>
             </label>
             <label class="form-stack compact-field">
-              <span class="field-label">赛区</span>
+              <span class="field-label" data-text="bp.division">赛区</span>
               <select class="input" id="bpDivision"></select>
             </label>
             <label class="form-stack match-field">
-              <span class="field-label">比赛场次</span>
+              <span class="field-label" data-text="bp.match">比赛场次</span>
               <select class="input" id="bpMatch"></select>
             </label>
             <label class="form-stack compact-field">
-              <span class="field-label">BO3 局数</span>
+              <span class="field-label" data-text="bp.game">BO3 局数</span>
               <select class="input" id="bpGame">
-                <option value="1">第 1 局</option>
-                <option value="2">第 2 局</option>
-                <option value="3">第 3 局</option>
+                <option value="1" data-text="bp.game1">第 1 局</option>
+                <option value="2" data-text="bp.game2">第 2 局</option>
+                <option value="3" data-text="bp.game3">第 3 局</option>
               </select>
             </label>
             <label class="form-stack compact-field">
-              <span class="field-label">房间</span>
+              <span class="field-label" data-text="bp.room">房间</span>
               <select class="input" id="bpRoom">
-                <option value="A">A 房</option>
-                <option value="B">B 房</option>
+                <option value="A" data-text="bp.roomA">A 房</option>
+                <option value="B" data-text="bp.roomB">B 房</option>
               </select>
             </label>
             <label class="form-stack compact-field">
-              <span class="field-label">记录</span>
-              <select class="input" id="bpAttempt"><option value="1">正式 BP</option></select>
+              <span class="field-label" data-text="bp.record">记录</span>
+              <select class="input" id="bpAttempt"><option value="1" data-text="bp.officialBp">正式 BP</option></select>
             </label>
             <label class="form-stack commentator-field">
-              <span class="field-label">本场解说组图</span>
-              <select class="input" id="bpCommentatorImage"><option value="">请选择解说组图</option></select>
+              <span class="field-label" data-text="bp.commentatorImage">本场解说组图</span>
+              <select class="input" id="bpCommentatorImage"><option value="" data-text="bp.commentatorImagePlaceholder">请选择解说组图</option></select>
               <small class="commentator-sync-status" id="bpCommentatorStatus"></small>
             </label>
             <label class="form-stack commentator-field">
-              <span class="field-label">解说 LOGO / 兑换码</span>
-              <select class="input" id="bpCommentatorLogo"><option value="">请选择显示内容</option></select>
+              <span class="field-label" data-text="bp.commentatorLogo">解说 LOGO / 兑换码</span>
+              <select class="input" id="bpCommentatorLogo"><option value="" data-text="bp.commentatorLogoPlaceholder">请选择显示内容</option></select>
               <small class="commentator-sync-status" id="bpCommentatorLogoStatus"></small>
             </label>
           </div>
@@ -299,52 +317,52 @@
             <label class="switch-control" for="dynamicBpEnabled">
               <input id="dynamicBpEnabled" type="checkbox" role="switch">
               <span class="switch-track" aria-hidden="true"><span></span></span>
-              <strong>启用动态 BP</strong>
+              <strong data-text="bp.dynamicEnable">启用动态 BP</strong>
             </label>
-            <span class="bp-dynamic-status" id="dynamicBpStatus">已关闭 · 仅旧 OBS</span>
+            <span class="bp-dynamic-status" id="dynamicBpStatus" data-text="bp.dynamicOff">已关闭 · 仅旧 OBS</span>
           </div>
           <div class="bp-context-actions">
-            <button class="btn btn-accent" id="bpLoadAndSwitch" type="button">载入并切换</button>
-            <button class="btn btn-primary" id="bpSwitchScene" type="button">切换场景至 BP</button>
-            <button class="btn btn-secondary" id="bpStart" type="button">开始 BP</button>
-            <button class="btn btn-secondary" id="bpLoad" type="button">载入</button>
-            <button class="btn btn-secondary" id="bpSync" type="button">同步 OBS</button>
-            <button class="btn btn-secondary" id="bpExport" type="button">导出</button>
-            <button class="btn btn-secondary" id="bpReplay" type="button">创建重赛</button>
-            <button class="btn btn-danger" id="bpComplete" type="button">手动结束 BP</button>
-            <button class="btn btn-danger" id="bpForfeit" type="button">弃赛调度</button>
-            <button class="btn btn-secondary" id="bpRevokeForfeit" type="button" disabled>撤回弃赛</button>
-            <button class="btn btn-danger" id="bpReset" type="button">重置正赛</button>
+            <button class="btn btn-accent" id="bpLoadAndSwitch" type="button" data-text="bp.loadAndSwitch">载入并切换</button>
+            <button class="btn btn-primary" id="bpSwitchScene" type="button" data-text="bp.switchScene">切换场景至 BP</button>
+            <button class="btn btn-secondary" id="bpStart" type="button" data-text="bp.startBp">开始 BP</button>
+            <button class="btn btn-secondary" id="bpLoad" type="button" data-text="bp.load">载入</button>
+            <button class="btn btn-secondary" id="bpSync" type="button" data-text="bp.syncObs">同步 OBS</button>
+            <button class="btn btn-secondary" id="bpExport" type="button" data-text="bp.export">导出</button>
+            <button class="btn btn-secondary" id="bpReplay" type="button" data-text="bp.createReplay">创建重赛</button>
+            <button class="btn btn-danger" id="bpComplete" type="button" data-text="bp.manualComplete">手动结束 BP</button>
+            <button class="btn btn-danger" id="bpForfeit" type="button" data-text="bp.forfeit">弃赛调度</button>
+            <button class="btn btn-secondary" id="bpRevokeForfeit" type="button" disabled data-text="bp.revokeForfeit">撤回弃赛</button>
+            <button class="btn btn-danger" id="bpReset" type="button" data-text="bp.resetMatch">重置正赛</button>
           </div>
           <div class="bp-forfeit-status" id="bpForfeitStatus" hidden></div>
-          <div class="bp-output-mode" role="group" aria-label="选手文本输出模式">
-            <span>推送文本</span>
-            <button type="button" data-output-mode="nickname">选手昵称</button>
-            <button type="button" data-output-mode="character">角色称号</button>
+          <div class="bp-output-mode" role="group" aria-label="选手文本输出模式" data-text-aria="bp.outputModeAria">
+            <span data-text="bp.pushTextLabel">推送文本</span>
+            <button type="button" data-output-mode="nickname" data-text="bp.modeNickname">选手昵称</button>
+            <button type="button" data-output-mode="character" data-text="bp.modeCharacter">角色称号</button>
           </div>
         </section>
 
         <section class="bp-team-strip">
           <div class="bp-team escape-team">
             <img id="escapeTeamLogo" alt="">
-            <div><span>逃生方</span><strong id="escapeTeamName">-</strong></div>
+            <div><span data-text="bp.escapeSide">逃生方</span><strong id="escapeTeamName">-</strong></div>
           </div>
           <div class="bp-clock-block">
-            <span id="bpPhaseLabel">等待载入</span>
+            <span id="bpPhaseLabel" data-text="bp.waitingLoad">等待载入</span>
             <strong id="bpClock">30</strong>
-            <small id="bpRecordLabel">未创建记录</small>
+            <small id="bpRecordLabel" data-text="bp.noRecord">未创建记录</small>
           </div>
           <div class="bp-team hunter-team">
-            <div><span>追捕方</span><strong id="hunterTeamName">-</strong></div>
+            <div><span data-text="bp.hunterSide">追捕方</span><strong id="hunterTeamName">-</strong></div>
             <img id="hunterTeamLogo" alt="">
           </div>
         </section>
 
         <section class="bp-result-panel" id="bpResultPanel" hidden>
-          <strong>选择本局战果</strong>
+          <strong data-text="bp.resultTitle">选择本局战果</strong>
           <button class="btn result-escape" id="resultEscape" type="button">逃生方获胜</button>
           <button class="btn result-hunter" id="resultHunter" type="button">追捕方获胜</button>
-          <span id="bpScoreLabel">比分 0 : 0</span>
+          <span id="bpScoreLabel" data-text="bp.scoreLine">比分 0 : 0</span>
           <button class="btn btn-primary" id="bpNextGame" type="button" hidden>切换到下一局</button>
         </section>
 
@@ -353,34 +371,34 @@
         <div class="bp-workspace">
           <main class="bp-board">
             <section class="bp-section">
-              <div class="bp-section-title"><h2>Ban</h2><span>3 个禁用槽位</span></div>
+              <div class="bp-section-title"><h2 data-text="bp.banTitle">Ban</h2><span data-text="bp.banSlots">3 个禁用槽位</span></div>
               <div class="bp-slot-grid ban-grid" id="banSlots"></div>
             </section>
             <section class="bp-section">
-              <div class="bp-section-title"><h2>追捕 Pick</h2><span>2 个角色</span></div>
+              <div class="bp-section-title"><h2 data-text="bp.hunterPickTitle">追捕 Pick</h2><span data-text="bp.hunterPickSlots">2 个角色</span></div>
               <div class="bp-slot-grid hunter-pick-grid" id="hunterPickSlots"></div>
             </section>
             <section class="bp-section">
-              <div class="bp-section-title"><h2>逃生 Pick</h2><span>8 个角色</span></div>
+              <div class="bp-section-title"><h2 data-text="bp.escapePickTitle">逃生 Pick</h2><span data-text="bp.escapePickSlots">8 个角色</span></div>
               <div class="bp-slot-grid escape-pick-grid" id="escapePickSlots"></div>
             </section>
           </main>
 
           <aside class="bp-side-panel">
             <section class="card obs-card">
-              <div class="card-header"><div><h2>OBS WebSocket</h2></div></div>
+              <div class="card-header"><div><h2 data-text="bp.obsTitle">OBS WebSocket</h2></div></div>
               <div class="form-stack">
-                <input class="input mono" id="obsUrl" value="ws://127.0.0.1:4455" aria-label="OBS WebSocket 地址">
-                <input class="input" id="obsPassword" type="password" placeholder="密码（如有）" aria-label="OBS WebSocket 密码">
-                <button class="btn btn-primary" id="obsConnect" type="button">连接 OBS</button>
+                <input class="input mono" id="obsUrl" value="ws://127.0.0.1:4455" data-text-aria="bp.obsUrlAria" aria-label="OBS WebSocket 地址">
+                <input class="input" id="obsPassword" type="password" data-text-placeholder="bp.pwdPlaceholder" data-text-aria="bp.obsPwdAria" placeholder="密码（如有）" aria-label="OBS WebSocket 密码">
+                <button class="btn btn-primary" id="obsConnect" type="button" data-text="bp.connectObs">连接 OBS</button>
               </div>
             </section>
             <section class="card history-card">
-              <div class="card-header"><div><h2>版本历史</h2></div></div>
+              <div class="card-header"><div><h2 data-text="bp.historyTitle">版本历史</h2></div></div>
               <div class="history-list" id="bpHistory"></div>
             </section>
             <section class="card operation-card">
-              <div class="card-header"><div><h2>操作状态</h2></div></div>
+              <div class="card-header"><div><h2 data-text="bp.operationTitle">操作状态</h2></div></div>
               <div class="log-list" id="bpLog"></div>
             </section>
           </aside>
@@ -392,42 +410,42 @@
       <div class="material-page">
         <section class="material-toolbar">
           <div class="material-actions">
-            <button class="btn btn-primary material-command" id="importMaterialFiles" type="button"><span aria-hidden="true">＋</span>导入文件</button>
-            <button class="btn btn-secondary material-command" id="importMaterialFolder" type="button"><span class="material-mini-folder" aria-hidden="true"></span>导入文件夹</button>
-            <button class="btn btn-secondary material-command" id="createMaterialDocument" type="button"><span aria-hidden="true">＋</span>新建文档</button>
+            <button class="btn btn-primary material-command" id="importMaterialFiles" type="button"><span aria-hidden="true">＋</span><span data-text="mt.importFiles">导入文件</span></button>
+            <button class="btn btn-secondary material-command" id="importMaterialFolder" type="button"><span class="material-mini-folder" aria-hidden="true"></span><span data-text="mt.importFolder">导入文件夹</span></button>
+            <button class="btn btn-secondary material-command" id="createMaterialDocument" type="button"><span aria-hidden="true">＋</span><span data-text="mt.createDocument">新建文档</span></button>
             <span class="material-action-divider" aria-hidden="true"></span>
-            <button class="btn btn-secondary material-command" id="confirmMaterialPaths" type="button">文件路径确认</button>
-            <button class="btn material-sync-command" id="syncMaterialPaths" type="button" disabled>OBS 同步</button>
-            <button class="btn btn-secondary material-command" id="rollbackMaterialPaths" type="button" disabled>撤销上次同步</button>
-            <button class="material-refresh" id="refreshMaterials" type="button" title="刷新素材库" aria-label="刷新素材库">&#8635;</button>
+            <button class="btn btn-secondary material-command" id="confirmMaterialPaths" type="button" data-text="mt.confirmPaths">文件路径确认</button>
+            <button class="btn material-sync-command" id="syncMaterialPaths" type="button" disabled data-text="mt.syncPaths">OBS 同步</button>
+            <button class="btn btn-secondary material-command" id="rollbackMaterialPaths" type="button" disabled data-text="mt.rollbackPaths">撤销上次同步</button>
+            <button class="material-refresh" id="refreshMaterials" type="button" data-text-title="mt.refreshAria" title="刷新素材库" aria-label="刷新素材库">&#8635;</button>
           </div>
           <label class="material-search-wrap">
             <span aria-hidden="true">&#9906;</span>
-            <input class="input material-search" id="materialSearch" type="search" placeholder="搜索名称、格式或绝对路径">
+            <input class="input material-search" id="materialSearch" type="search" data-text-placeholder="mt.searchPlaceholder" placeholder="搜索名称、格式或绝对路径">
           </label>
         </section>
         <div class="material-summary">
-          <strong id="materialSummary">正在读取素材库...</strong>
+          <strong id="materialSummary" data-text="mt.readingLibrary">正在读取素材库...</strong>
           <span id="materialStatus"></span>
         </div>
         <div class="material-navigation">
-          <button class="material-icon-button" id="materialUp" type="button" title="返回上一级" aria-label="返回上一级">&#8593;</button>
-          <nav class="material-breadcrumbs" id="materialBreadcrumbs" aria-label="素材库路径"></nav>
+          <button class="material-icon-button" id="materialUp" type="button" data-text-title="mt.upAria" title="返回上一级" aria-label="返回上一级">&#8593;</button>
+          <nav class="material-breadcrumbs" id="materialBreadcrumbs" data-text-aria="mt.breadcrumbsAria" aria-label="素材库路径"></nav>
         </div>
         <div class="material-browser-zone">
           <div class="material-browser" id="materialBrowser">
             <div class="material-grid" id="materialGrid" role="grid" aria-multiselectable="true" tabindex="0"></div>
             <div class="material-selection-rect" id="materialSelectionRect" hidden></div>
-            <div class="material-empty" id="materialEmpty" hidden>素材库为空</div>
+            <div class="material-empty" id="materialEmpty" hidden data-text="mt.empty">素材库为空</div>
           </div>
           <div class="material-selection-bar" id="materialSelectionBar">
-            <strong id="materialSelectionCount">已选择 0 项</strong>
+            <strong id="materialSelectionCount" data-text="mt.selectedCount">已选择 0 项</strong>
             <div class="material-selection-actions">
-              <button class="btn btn-primary" id="openSelectedMaterial" type="button">系统打开</button>
-              <button class="btn btn-secondary" id="previewSelectedMaterial" type="button">预览</button>
-              <button class="btn btn-secondary" id="renameSelectedMaterial" type="button">重命名</button>
-              <button class="btn btn-danger" id="deleteSelectedMaterials" type="button">删除</button>
-              <button class="btn btn-secondary" id="clearMaterialSelection" type="button">取消选择</button>
+              <button class="btn btn-primary" id="openSelectedMaterial" type="button" data-text="mt.openSelected">系统打开</button>
+              <button class="btn btn-secondary" id="previewSelectedMaterial" type="button" data-text="mt.previewSelected">预览</button>
+              <button class="btn btn-secondary" id="renameSelectedMaterial" type="button" data-text="mt.renameSelected">重命名</button>
+              <button class="btn btn-danger" id="deleteSelectedMaterials" type="button" data-text="mt.deleteSelected">删除</button>
+              <button class="btn btn-secondary" id="clearMaterialSelection" type="button" data-text="mt.clearSelection">取消选择</button>
             </div>
           </div>
         </div>
@@ -437,19 +455,19 @@
     <section class="page-view" id="logsPage" data-page-panel="logs" hidden>
       <div class="logs-page">
         <div class="logs-toolbar">
-          <input class="input" id="logsSearch" type="search" placeholder="搜索会话、动作或内容">
-          <select class="input" id="logsCategory" aria-label="日志类型">
-            <option value="all">全部类型</option>
-            <option value="bp">BP 操作</option>
-            <option value="obs">OBS 操作</option>
+          <input class="input" id="logsSearch" type="search" data-text-placeholder="lg.searchPlaceholder" placeholder="搜索会话、动作或内容">
+          <select class="input" id="logsCategory" data-text-aria="lg.categoryAria" aria-label="日志类型">
+            <option value="all" data-text="lg.allTypes">全部类型</option>
+            <option value="bp" data-text="lg.typeBp">BP 操作</option>
+            <option value="obs" data-text="lg.typeObs">OBS 操作</option>
           </select>
-          <button class="btn btn-secondary" id="logsRefresh" type="button">刷新</button>
-          <button class="btn btn-primary" id="logsExport" type="button">导出 JSON</button>
+          <button class="btn btn-secondary" id="logsRefresh" type="button" data-text="lg.refresh">刷新</button>
+          <button class="btn btn-primary" id="logsExport" type="button" data-text="lg.export">导出 JSON</button>
         </div>
         <div class="logs-summary" id="logsSummary"></div>
         <div class="logs-table-wrap">
           <table class="logs-table">
-            <thead><tr><th>时间</th><th>类型</th><th>动作</th><th>会话</th><th>内容</th></tr></thead>
+            <thead><tr><th data-text="lg.col.time">时间</th><th data-text="lg.col.type">类型</th><th data-text="lg.col.action">动作</th><th data-text="lg.col.session">会话</th><th data-text="lg.col.content">内容</th></tr></thead>
             <tbody id="logsTableBody"></tbody>
           </table>
         </div>
@@ -460,7 +478,7 @@
       <div class="updates-page">
         <section class="release-overview">
           <div class="release-current">
-            <span>当前版本</span>
+            <span data-text="up.currentVersion">当前版本</span>
             <strong id="releaseCurrentVersion">v--</strong>
           </div>
           <div class="release-overview-meta">
@@ -470,10 +488,10 @@
         </section>
         <div class="release-layout">
           <div class="release-list" id="releaseList">
-            <div class="release-loading">正在读取更新日志...</div>
+            <div class="release-loading" data-text="up.loading">正在读取更新日志...</div>
           </div>
           <nav class="release-locator" id="releaseLocator" aria-label="版本定位"></nav>
-          <button class="release-top" id="releaseTop" type="button" title="返回顶部" aria-label="返回顶部">
+          <button class="release-top" id="releaseTop" type="button" data-text-title="up.backToTop" title="返回顶部" aria-label="返回顶部">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10L8 5.5L12.5 10"/><path d="M3.5 14h9"/></svg>
           </button>
         </div>
@@ -483,130 +501,130 @@
 
   <dialog class="character-dialog" id="characterDialog">
     <div class="dialog-header">
-      <div><h2 id="characterDialogTitle">选择角色</h2><p id="characterDialogRole"></p></div>
-      <button class="icon-close" id="closeCharacterDialog" type="button" aria-label="关闭">×</button>
+      <div><h2 id="characterDialogTitle" data-text="dlg.characterTitle">选择角色</h2><p id="characterDialogRole"></p></div>
+      <button class="icon-close" id="closeCharacterDialog" type="button" data-text-aria="dlg.close" aria-label="关闭">×</button>
     </div>
-    <input class="input" id="characterSearch" type="search" placeholder="搜索角色、拼音或首字母">
+    <input class="input" id="characterSearch" type="search" data-text-placeholder="dlg.characterSearchPlaceholder" placeholder="搜索角色、拼音或首字母">
     <div class="character-grid" id="characterGrid"></div>
   </dialog>
 
   <dialog class="confirm-dialog" id="resetDialog">
-    <h2>重置正赛 BP</h2>
-    <p>角色、选手、阶段和赛果将归零，当前内容仍保留在版本历史中。</p>
+    <h2 data-text="dlg.resetTitle">重置正赛 BP</h2>
+    <p data-text="dlg.resetDesc">角色、选手、阶段和赛果将归零，当前内容仍保留在版本历史中。</p>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelReset" type="button">取消</button>
-      <button class="btn btn-danger" id="confirmReset" type="button">确认重置</button>
+      <button class="btn btn-secondary" id="cancelReset" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-danger" id="confirmReset" type="button" data-text="dlg.confirmReset">确认重置</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="completeDialog">
-    <h2>手动结束 BP</h2>
-    <p>尚未完成的槽位将保持当前状态，倒计时会停止，并直接进入本局战果选择流程。</p>
+    <h2 data-text="dlg.completeTitle">手动结束 BP</h2>
+    <p data-text="dlg.completeDesc">尚未完成的槽位将保持当前状态，倒计时会停止，并直接进入本局战果选择流程。</p>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelComplete" type="button">取消</button>
-      <button class="btn btn-danger" id="confirmComplete" type="button">确认结束</button>
+      <button class="btn btn-secondary" id="cancelComplete" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-danger" id="confirmComplete" type="button" data-text="dlg.confirmComplete">确认结束</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="forfeitDialog">
-    <h2>弃赛调度</h2>
-    <p>选择当前对阵中确认弃赛的队伍。</p>
+    <h2 data-text="dlg.forfeitTitle">弃赛调度</h2>
+    <p data-text="dlg.forfeitDesc">选择当前对阵中确认弃赛的队伍。</p>
     <div class="forfeit-team-options" id="forfeitTeamOptions"></div>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelForfeit" type="button">取消</button>
-      <button class="btn btn-danger" id="continueForfeit" type="button">下一步</button>
+      <button class="btn btn-secondary" id="cancelForfeit" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-danger" id="continueForfeit" type="button" data-text="dlg.next">下一步</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="forfeitConfirmDialog">
-    <h2>确认弃赛结算</h2>
+    <h2 data-text="dlg.forfeitConfirmTitle">确认弃赛结算</h2>
     <p id="forfeitConfirmText"></p>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelForfeitConfirm" type="button">返回</button>
-      <button class="btn btn-danger" id="confirmForfeit" type="button">确认弃赛并结算</button>
+      <button class="btn btn-secondary" id="cancelForfeitConfirm" type="button" data-text="dlg.back">返回</button>
+      <button class="btn btn-danger" id="confirmForfeit" type="button" data-text="dlg.confirmForfeit">确认弃赛并结算</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="revokeForfeitDialog">
-    <h2>撤回弃赛</h2>
+    <h2 data-text="dlg.revokeForfeitTitle">撤回弃赛</h2>
     <p id="revokeForfeitText"></p>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelRevokeForfeit" type="button">取消</button>
-      <button class="btn btn-primary" id="confirmRevokeForfeit" type="button">确认撤回</button>
+      <button class="btn btn-secondary" id="cancelRevokeForfeit" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-primary" id="confirmRevokeForfeit" type="button" data-text="dlg.confirmRevoke">确认撤回</button>
     </div>
   </dialog>
 
   <dialog class="result-image-dialog" id="resultImageDialog">
     <div class="dialog-header">
-      <div><h2>本局赛果图片</h2><p>比分已更新，上传后将保存并推送至本场赛果场景</p></div>
-      <button class="icon-close" id="closeResultImage" type="button" aria-label="关闭">×</button>
+      <div><h2 data-text="dlg.resultImageTitle">本局赛果图片</h2><p data-text="dlg.resultImageDesc">比分已更新，上传后将保存并推送至本场赛果场景</p></div>
+      <button class="icon-close" id="closeResultImage" type="button" data-text-aria="dlg.close" aria-label="关闭">×</button>
     </div>
     <label class="image-drop-zone" id="resultImageDropZone">
       <input id="resultImageInput" type="file" accept="image/*" hidden>
-      <strong>粘贴、拖入或选择图片</strong>
-      <span>PNG、JPG、WebP</span>
+      <strong data-text="dlg.dropTitle">粘贴、拖入或选择图片</strong>
+      <span data-text="dlg.dropHint">PNG、JPG、WebP</span>
       <img id="resultImagePreview" alt="赛果图片预览" hidden>
     </label>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="clearResultImage" type="button">清除</button>
-      <button class="btn btn-primary" id="keepResultImage" type="button" disabled>上传并推送 OBS</button>
+      <button class="btn btn-secondary" id="clearResultImage" type="button" data-text="bk.clear">清除</button>
+      <button class="btn btn-primary" id="keepResultImage" type="button" disabled data-text="bk.upload">上传并推送 OBS</button>
     </div>
   </dialog>
 
   <dialog class="material-preview-dialog" id="materialPreviewDialog">
     <div class="dialog-header">
-      <div><h2 id="materialPreviewTitle">图片预览</h2><p id="materialPreviewPath"></p></div>
-      <button class="icon-close" id="closeMaterialPreview" type="button" aria-label="关闭">×</button>
+      <div><h2 id="materialPreviewTitle" data-text="dlg.previewTitle">图片预览</h2><p id="materialPreviewPath"></p></div>
+      <button class="icon-close" id="closeMaterialPreview" type="button" data-text-aria="dlg.close" aria-label="关闭">×</button>
     </div>
     <div class="material-preview-stage" id="materialPreviewStage"></div>
   </dialog>
 
   <dialog class="confirm-dialog" id="materialRenameDialog">
-    <h2>重命名</h2>
+    <h2 data-text="dlg.renameTitle">重命名</h2>
     <p id="materialRenamePath"></p>
-    <input class="input" id="materialRenameInput" maxlength="255" aria-label="新名称">
+    <input class="input" id="materialRenameInput" maxlength="255" data-text-aria="dlg.renameAria" aria-label="新名称">
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelMaterialRename" type="button">取消</button>
-      <button class="btn btn-primary" id="confirmMaterialRename" type="button">确认重命名</button>
+      <button class="btn btn-secondary" id="cancelMaterialRename" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-primary" id="confirmMaterialRename" type="button" data-text="dlg.confirmRename">确认重命名</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="materialDeleteDialog">
-    <h2 id="materialDeleteTitle">删除素材</h2>
+    <h2 id="materialDeleteTitle" data-text="mt.deleteTitle">删除素材</h2>
     <p id="materialDeleteText"></p>
     <div class="material-delete-warning" id="materialDeleteWarning"></div>
     <div class="dialog-actions material-delete-actions">
-      <button class="btn btn-secondary" id="cancelMaterialDelete" type="button">取消</button>
-      <button class="btn btn-secondary" id="removeMaterialIndex" type="button">仅移除索引</button>
-      <button class="btn btn-danger" id="deleteMaterialFile" type="button">从文件系统删除</button>
+      <button class="btn btn-secondary" id="cancelMaterialDelete" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-secondary" id="removeMaterialIndex" type="button" data-text="dlg.removeIndexOnly">仅移除索引</button>
+      <button class="btn btn-danger" id="deleteMaterialFile" type="button" data-text="dlg.deleteFromFile">从文件系统删除</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="materialDocumentDialog">
-    <h2>新建文档</h2>
+    <h2 data-text="dlg.documentTitle">新建文档</h2>
     <div class="form-stack">
-      <label class="field-label" for="materialDocumentDirectory">保存位置</label>
+      <label class="field-label" for="materialDocumentDirectory" data-text="dlg.saveLocation">保存位置</label>
       <div class="material-directory-row">
-        <input class="input mono" id="materialDocumentDirectory" readonly placeholder="请选择文件夹">
-        <button class="btn btn-secondary" id="chooseMaterialDirectory" type="button">选择</button>
+        <input class="input mono" id="materialDocumentDirectory" readonly data-text-placeholder="dlg.pickFolderPlaceholder" placeholder="请选择文件夹">
+        <button class="btn btn-secondary" id="chooseMaterialDirectory" type="button" data-text="dlg.choose">选择</button>
       </div>
-      <label class="field-label" for="materialDocumentName">文件名</label>
+      <label class="field-label" for="materialDocumentName" data-text="dlg.fileName">文件名</label>
       <input class="input" id="materialDocumentName" value="新建文档.txt" maxlength="255">
     </div>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelMaterialDocument" type="button">取消</button>
-      <button class="btn btn-primary" id="confirmMaterialDocument" type="button">创建</button>
+      <button class="btn btn-secondary" id="cancelMaterialDocument" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-primary" id="confirmMaterialDocument" type="button" data-text="dlg.create">创建</button>
     </div>
   </dialog>
 
   <dialog class="material-path-dialog" id="materialPathDialog">
     <div class="dialog-header">
-      <div><h2>OBS 素材路径确认</h2><p>选择已导入素材库的完整赛事素材包根目录</p></div>
+      <div><h2 data-text="dlg.pathTitle">OBS 素材路径确认</h2><p data-text="dlg.pathDesc">选择已导入素材库的完整赛事素材包根目录</p></div>
       <button class="icon-close" id="closeMaterialPathDialog" type="button" aria-label="关闭">×</button>
     </div>
     <div class="material-path-roots">
-      <div><span>开发环境根目录</span><strong class="mono" id="materialCanonicalRoot">--</strong></div>
-      <div><span>迁移后的素材包</span><strong class="mono" id="materialSelectedRoot">尚未选择</strong></div>
+      <div><span data-text="dlg.canonicalRoot">开发环境根目录</span><strong class="mono" id="materialCanonicalRoot">--</strong></div>
+      <div><span data-text="dlg.migratedRoot">迁移后的素材包</span><strong class="mono" id="materialSelectedRoot" data-text="mt.noRootSelected">尚未选择</strong></div>
     </div>
     <div class="material-folder-picker" id="materialPathFolderList"></div>
     <div class="material-path-report" id="materialPathReport" hidden>
@@ -614,30 +632,43 @@
       <div class="material-path-mappings" id="materialPathMappings"></div>
     </div>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelMaterialPathDialog" type="button">取消</button>
-      <button class="btn btn-primary" id="validateMaterialPaths" type="button" disabled>校验文件路径</button>
+      <button class="btn btn-secondary" id="cancelMaterialPathDialog" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-primary" id="validateMaterialPaths" type="button" disabled data-text="dlg.validatePaths">校验文件路径</button>
     </div>
   </dialog>
 
   <dialog class="confirm-dialog" id="materialPathOperationDialog">
-    <h2 id="materialPathOperationTitle">确认操作</h2>
+    <h2 id="materialPathOperationTitle" data-text="dlg.pathOperationTitle">确认操作</h2>
     <p id="materialPathOperationText"></p>
     <div class="material-path-operation-warning" id="materialPathOperationWarning"></div>
     <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelMaterialPathOperation" type="button">取消</button>
-      <button class="btn btn-primary" id="confirmMaterialPathOperation" type="button">确认</button>
+      <button class="btn btn-secondary" id="cancelMaterialPathOperation" type="button" data-text="dlg.cancel">取消</button>
+      <button class="btn btn-primary" id="confirmMaterialPathOperation" type="button" data-text="dlg.confirm">确认</button>
     </div>
   </dialog>
 
+  <script>
+(function () {
+  const originalFetch = window.fetch;
+  window.fetch = function (...args) {
+    return originalFetch.apply(this, args).then(response => {
+      if (response.status === 401) location.replace('/');
+      return response;
+    });
+  };
+})();
+</script>
+  <script src="assets/js/text.js?v=1"></script>
   <script src="assets/vendor/pinyin-pro.js?v=3.28.2"></script>
   <script src="assets/js/fx.js?v=2"></script>
+  <script src="assets/js/particles.js?v=1"></script>
   <script src="assets/js/search.js?v=1"></script>
   <script src="assets/js/countdown.js?v=4"></script>
-  <script src="assets/js/control.js?v=17"></script>
-  <script src="assets/js/bracket-control.js?v=3"></script>
-  <script src="assets/js/bp-control.js?v=12"></script>
-  <script src="assets/js/material-library.js?v=6"></script>
-  <script src="assets/js/logs-control.js?v=7"></script>
-  <script src="assets/js/update-log.js?v=14"></script>
+  <script src="assets/js/control.js?v=24"></script>
+  <script src="assets/js/bracket-control.js?v=4"></script>
+  <script src="assets/js/bp-control.js?v=13"></script>
+  <script src="assets/js/material-library.js?v=8"></script>
+  <script src="assets/js/logs-control.js?v=8"></script>
+  <script src="assets/js/update-log.js?v=15"></script>
 </body>
 </html>

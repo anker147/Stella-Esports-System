@@ -1,10 +1,6 @@
 const { EventEmitter } = require('events');
-const fs = require('fs');
-const path = require('path');
 const { CONFIG, ESCAPE_CHARACTERS, HUNTER_CHARACTERS, PHASES, SLOT_CONFIG } = require('./bp-config');
-const { mutableDataPath, parseJsonFile } = require('./data-paths');
-
-const DEFAULT_STORE = mutableDataPath('bp-state.json', '{"schemaVersion":1,"sessions":{},"forfeits":{}}\n');
+const { db, withTransaction } = require('./db');
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -31,15 +27,15 @@ function snapshot(session) {
 }
 
 class BpService extends EventEmitter {
-  constructor({ resolver, storePath = DEFAULT_STORE, zeroPulseMs = CONFIG.timer.zeroPulseMs, tickMs = 250, phaseDurations = null, commentatorImage = null } = {}) {
+  constructor({ resolver, zeroPulseMs = CONFIG.timer.zeroPulseMs, tickMs = 250, phaseDurations = null, commentatorImage = null } = {}) {
     super();
     assert(resolver, 'Tournament resolver is required');
     this.resolver = resolver;
-    this.storePath = storePath;
     this.zeroPulseMs = zeroPulseMs;
     this.configuredPhaseDurations = phaseDurations;
     this.commentatorImage = commentatorImage ? clone(commentatorImage) : null;
-    this.store = this.readStore();
+    this.sessions = this.loadSessions();
+    this.forfeits = this.loadForfeits();
     this.transitionTimers = new Map();
     this.lastDisplayedSeconds = new Map();
     this.tickTimer = setInterval(() => this.tick(), tickMs);
@@ -53,38 +49,212 @@ class BpService extends EventEmitter {
     this.transitionTimers.clear();
   }
 
-  readStore() {
-    if (!fs.existsSync(this.storePath)) return { schemaVersion: 1, sessions: {}, forfeits: {} };
-    let parsed;
+  loadSessions() {
+    const sessions = {};
     try {
-      parsed = parseJsonFile(this.storePath);
-      assert(parsed.schemaVersion === 1 && parsed.sessions, 'Invalid BP state store');
-    } catch (error) {
-      const emptyStore = { schemaVersion: 1, sessions: {}, forfeits: {} };
-      const backupPath = `${this.storePath}.corrupt-${Date.now()}`;
-      fs.renameSync(this.storePath, backupPath);
-      fs.writeFileSync(this.storePath, `${JSON.stringify(emptyStore, null, 2)}\n`, 'utf8');
-      console.warn(`Invalid BP state moved to ${backupPath}: ${error.message}`);
-      return emptyStore;
-    }
-    parsed.forfeits ||= {};
-    for (const session of Object.values(parsed.sessions)) {
-      if (!session.outputMode || session.outputMode === 'officialId') session.outputMode = 'nickname';
-      session.result ||= null;
-      session.commentatorImage ||= null;
-      if (session.attempt > 1 && !session.history.some(entry => entry.action === 'result-updated')) session.result = null;
-      for (const [slotId, slot] of Object.entries(session.slots)) {
-        if (SLOT_CONFIG[slotId]?.kind === 'pick' && !Object.hasOwn(slot, 'playerText')) slot.playerText = null;
+      const sessionRows = db.prepare('SELECT * FROM bp_sessions').all();
+      const slotRows = db.prepare('SELECT * FROM bp_session_slots').all();
+      const resultRows = db.prepare('SELECT * FROM bp_session_results').all();
+      const historyRows = db.prepare('SELECT * FROM bp_session_history ORDER BY seq').all();
+
+      const slotsBySession = new Map();
+      for (const row of slotRows) {
+        if (!slotsBySession.has(row.session_id)) slotsBySession.set(row.session_id, {});
+        slotsBySession.get(row.session_id)[row.slot_id] = {
+          characterId: row.character_id || null,
+          playerId: row.player_id || null,
+          playerText: row.player_text || null
+        };
       }
+      const resultsBySession = new Map();
+      for (const row of resultRows) {
+        resultsBySession.set(row.session_id, {
+          winnerRole: row.winner_role,
+          winnerTeamId: row.winner_team_id,
+          decidedAt: row.decided_at,
+          ...(row.image_file_name != null
+            ? { image: { fileName: row.image_file_name, filePath: row.image_file_path, uploadedAt: row.image_uploaded_at } }
+            : {})
+        });
+      }
+      const historyBySession = new Map();
+      for (const row of historyRows) {
+        if (!historyBySession.has(row.session_id)) historyBySession.set(row.session_id, []);
+        historyBySession.get(row.session_id).push({
+          revision: row.revision,
+          timestamp: row.timestamp_ms,
+          action: row.action,
+          details: JSON.parse(row.details_json || '{}'),
+          snapshot: JSON.parse(row.snapshot_json || '{}')
+        });
+      }
+
+      for (const row of sessionRows) {
+        const slots = slotsBySession.get(row.id) || {};
+        for (const [slotId, config] of Object.entries(SLOT_CONFIG)) {
+          if (!slots[slotId]) {
+            slots[slotId] = config.kind === 'ban'
+              ? { characterId: null }
+              : { characterId: null, playerId: null, playerText: null };
+          } else if (config.kind === 'ban') {
+            slots[slotId] = { characterId: slots[slotId].characterId || null };
+          }
+        }
+        const result = resultsBySession.get(row.id) || null;
+        const session = {
+          id: row.id,
+          matchId: row.match_id,
+          gameNumber: row.game_number,
+          room: row.room,
+          attempt: row.attempt,
+          replayOf: row.replay_of || null,
+          outputMode: !row.output_mode || row.output_mode === 'officialId' ? 'nickname' : row.output_mode,
+          commentatorImage: row.commentator_image_id
+            ? { id: row.commentator_image_id, name: row.commentator_image_name }
+            : null,
+          result: result ? clone(result) : null,
+          revision: row.revision,
+          status: row.status,
+          currentPhaseIndex: row.current_phase_index,
+          slots,
+          timer: {
+            durationSeconds: row.timer_duration_seconds,
+            remainingSeconds: row.timer_remaining_seconds,
+            running: Boolean(row.timer_running),
+            deadline: row.timer_deadline_ms ?? null,
+            transitionPending: Boolean(row.timer_transition_pending)
+          },
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          history: historyBySession.get(row.id) || []
+        };
+        if (session.result) session.result ||= null;
+        if (session.attempt > 1 && !session.history.some(entry => entry.action === 'result-updated')) session.result = null;
+        sessions[session.id] = session;
+      }
+    } catch (error) {
+      console.warn(`BP 会话加载失败，已重置 BP 域数据: ${error.message}`);
+      db.exec('DELETE FROM bp_session_history; DELETE FROM bp_session_results; DELETE FROM bp_session_slots; DELETE FROM bp_sessions;');
+      return {};
     }
-    return parsed;
+    return sessions;
   }
 
-  persist() {
-    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
-    const tempPath = `${this.storePath}.tmp`;
-    fs.writeFileSync(tempPath, `${JSON.stringify(this.store, null, 2)}\n`, 'utf8');
-    fs.renameSync(tempPath, this.storePath);
+  loadForfeits() {
+    const forfeits = {};
+    try {
+      const rows = db.prepare('SELECT * FROM bp_forfeits').all();
+      const eventRows = db.prepare('SELECT * FROM bp_forfeit_events ORDER BY seq').all();
+      const eventsByForfeit = new Map();
+      for (const row of eventRows) {
+        const key = `${row.match_id}:r${row.room}`;
+        if (!eventsByForfeit.has(key)) eventsByForfeit.set(key, []);
+        const event = { action: row.action, timestamp: row.timestamp_ms };
+        if (row.forfeiting_team_id != null) event.forfeitingTeamId = row.forfeiting_team_id;
+        if (row.winner_team_id != null) event.winnerTeamId = row.winner_team_id;
+        eventsByForfeit.get(key).push(event);
+      }
+      for (const row of rows) {
+        const key = `${row.match_id}:r${row.room}`;
+        forfeits[key] = {
+          matchId: row.match_id,
+          room: row.room,
+          forfeitingTeamId: row.forfeiting_team_id,
+          winnerTeamId: row.winner_team_id,
+          active: Boolean(row.active),
+          declaredAt: row.declared_at,
+          revokedAt: row.revoked_at ?? null,
+          sessionStates: JSON.parse(row.session_states_json || '{}'),
+          events: eventsByForfeit.get(key) || []
+        };
+      }
+    } catch (error) {
+      console.warn(`弃赛记录加载失败，已重置: ${error.message}`);
+      db.exec('DELETE FROM bp_forfeit_events; DELETE FROM bp_forfeits;');
+      return {};
+    }
+    return forfeits;
+  }
+
+  persist(...subjects) {
+    const targets = subjects.filter(Boolean);
+    if (!targets.length) return;
+    withTransaction(() => {
+      const upsertSession = db.prepare(`INSERT INTO bp_sessions
+        (id, match_id, game_number, room, attempt, replay_of, output_mode, status, current_phase_index,
+         commentator_image_id, commentator_image_name, timer_duration_seconds, timer_remaining_seconds,
+         timer_running, timer_deadline_ms, timer_transition_pending, created_at, updated_at, revision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET
+          match_id = excluded.match_id, game_number = excluded.game_number, room = excluded.room,
+          attempt = excluded.attempt, replay_of = excluded.replay_of, output_mode = excluded.output_mode,
+          status = excluded.status, current_phase_index = excluded.current_phase_index,
+          commentator_image_id = excluded.commentator_image_id, commentator_image_name = excluded.commentator_image_name,
+          timer_duration_seconds = excluded.timer_duration_seconds, timer_remaining_seconds = excluded.timer_remaining_seconds,
+          timer_running = excluded.timer_running, timer_deadline_ms = excluded.timer_deadline_ms,
+          timer_transition_pending = excluded.timer_transition_pending, created_at = excluded.created_at,
+          updated_at = excluded.updated_at, revision = excluded.revision`);
+      const deleteSlots = db.prepare('DELETE FROM bp_session_slots WHERE session_id = ?');
+      const insertSlot = db.prepare(
+        'INSERT INTO bp_session_slots (session_id, slot_id, character_id, player_id, player_text) VALUES (?, ?, ?, ?, ?)');
+      const deleteResult = db.prepare('DELETE FROM bp_session_results WHERE session_id = ?');
+      const insertResult = db.prepare(`INSERT INTO bp_session_results
+        (session_id, winner_role, winner_team_id, decided_at, image_file_name, image_file_path, image_uploaded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`);
+      const deleteHistory = db.prepare('DELETE FROM bp_session_history WHERE session_id = ?');
+      const insertHistory = db.prepare(`INSERT INTO bp_session_history
+        (session_id, revision, timestamp_ms, action, details_json, snapshot_json) VALUES (?, ?, ?, ?, ?, ?)`);
+      const upsertForfeit = db.prepare(`INSERT INTO bp_forfeits
+        (match_id, room, forfeiting_team_id, winner_team_id, active, declared_at, revoked_at, session_states_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (match_id, room) DO UPDATE SET
+          forfeiting_team_id = excluded.forfeiting_team_id, winner_team_id = excluded.winner_team_id,
+          active = excluded.active, declared_at = excluded.declared_at, revoked_at = excluded.revoked_at,
+          session_states_json = excluded.session_states_json`);
+      const deleteForfeitEvents = db.prepare('DELETE FROM bp_forfeit_events WHERE match_id = ? AND room = ?');
+      const insertForfeitEvent = db.prepare(`INSERT INTO bp_forfeit_events
+        (match_id, room, seq, action, timestamp_ms, forfeiting_team_id, winner_team_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`);
+
+      for (const subject of targets) {
+        if (subject.events) {
+          const forfeit = subject;
+          upsertForfeit.run(forfeit.matchId, forfeit.room, forfeit.forfeitingTeamId, forfeit.winnerTeamId,
+            forfeit.active ? 1 : 0, forfeit.declaredAt ?? 0, forfeit.revokedAt ?? null,
+            JSON.stringify(forfeit.sessionStates || {}));
+          deleteForfeitEvents.run(forfeit.matchId, forfeit.room);
+          (forfeit.events || []).forEach((event, seq) => insertForfeitEvent.run(
+            forfeit.matchId, forfeit.room, seq, event.action, event.timestamp ?? 0,
+            event.forfeitingTeamId ?? null, event.winnerTeamId ?? null));
+          continue;
+        }
+        const session = subject;
+        upsertSession.run(
+          session.id, session.matchId, session.gameNumber, session.room, session.attempt ?? 1,
+          session.replayOf || null, session.outputMode || 'nickname', session.status,
+          session.currentPhaseIndex ?? -1,
+          session.commentatorImage?.id || null, session.commentatorImage?.name || null,
+          session.timer?.durationSeconds ?? 30, session.timer?.remainingSeconds ?? 30,
+          session.timer?.running ? 1 : 0, session.timer?.deadline ?? null,
+          session.timer?.transitionPending ? 1 : 0,
+          session.createdAt ?? 0, session.updatedAt ?? 0, session.revision ?? 0);
+        deleteSlots.run(session.id);
+        for (const [slotId, slot] of Object.entries(session.slots || {})) {
+          insertSlot.run(session.id, slotId, slot.characterId || null, slot.playerId || null, slot.playerText ?? null);
+        }
+        deleteResult.run(session.id);
+        if (session.result) {
+          insertResult.run(session.id, session.result.winnerRole, session.result.winnerTeamId,
+            session.result.decidedAt ?? 0, session.result.image?.fileName || null,
+            session.result.image?.filePath || null, session.result.image?.uploadedAt ?? null);
+        }
+        deleteHistory.run(session.id);
+        for (const item of session.history || []) {
+          insertHistory.run(session.id, item.revision, item.timestamp ?? 0, item.action,
+            JSON.stringify(item.details || {}), JSON.stringify(item.snapshot || {}));
+        }
+      }
+    });
   }
 
   sessionId(matchId, gameNumber, room, attempt = 1) {
@@ -128,25 +298,25 @@ class BpService extends EventEmitter {
       updatedAt: now,
       history: []
     };
-    this.store.sessions[id] = session;
+    this.sessions[id] = session;
     this.record(session, 'session-created');
-    this.persist();
+    this.persist(session);
     return session;
   }
 
   ensureSession(matchId, gameNumber, room, attempt = 1) {
     const id = this.sessionId(matchId, gameNumber, room, attempt);
-    return this.store.sessions[id] || this.createSession(matchId, gameNumber, room, attempt);
+    return this.sessions[id] || this.createSession(matchId, gameNumber, room, attempt);
   }
 
   getSession(id) {
-    const session = this.store.sessions[id];
+    const session = this.sessions[id];
     assert(session, `BP记录不存在: ${id}`);
     return session;
   }
 
   listSessions(matchId = null) {
-    return Object.values(this.store.sessions)
+    return Object.values(this.sessions)
       .filter(session => !matchId || session.matchId === matchId)
       .map(session => this.serialize(session));
   }
@@ -174,7 +344,7 @@ class BpService extends EventEmitter {
   }
 
   activeForfeit(matchId, room) {
-    const record = this.store.forfeits[this.forfeitKey(matchId, room)];
+    const record = this.forfeits[this.forfeitKey(matchId, room)];
     return record?.active ? record : null;
   }
 
@@ -194,7 +364,7 @@ class BpService extends EventEmitter {
     for (let gameNumber = 1; gameNumber <= 3; gameNumber += 1) {
       const effective = selectedSession?.matchId === matchId && selectedSession.room === room && selectedSession.gameNumber === gameNumber
         ? selectedSession
-        : Object.values(this.store.sessions)
+        : Object.values(this.sessions)
           .filter(item => item.matchId === matchId && item.room === room && item.gameNumber === gameNumber)
           .sort((left, right) => right.attempt - left.attempt)[0];
       if (effective?.result?.winnerRole) score[effective.result.winnerRole] += 1;
@@ -203,7 +373,7 @@ class BpService extends EventEmitter {
   }
 
   effectiveSession(matchId, room, gameNumber) {
-    return Object.values(this.store.sessions)
+    return Object.values(this.sessions)
       .filter(item => item.matchId === matchId && item.room === room && item.gameNumber === gameNumber)
       .sort((left, right) => right.attempt - left.attempt)[0] || null;
   }
@@ -258,7 +428,7 @@ class BpService extends EventEmitter {
     session.status = 'active';
     this.startTimer(session);
     this.record(session, 'bp-started');
-    this.persist();
+    this.persist(session);
     this.emitSession(session, 'bp-started');
     return this.serialize(session);
   }
@@ -364,7 +534,7 @@ class BpService extends EventEmitter {
     const afterComplete = this.slotComplete(session, slotId);
     const value = field === 'character' ? characterId : field === 'player' ? playerId : session.slots[slotId].playerText;
     this.record(session, 'slot-updated', { slotId, field, value });
-    this.persist();
+    this.persist(session);
     this.emitSession(session, 'slot-updated', { slotId, field });
 
     if (afterComplete) {
@@ -396,7 +566,7 @@ class BpService extends EventEmitter {
       this.startTimer(session);
     }
     this.record(session, 'slot-cleared', { slotId });
-    this.persist();
+    this.persist(session);
     this.emit('clear-slot', { session: this.serialize(session), slotId });
     this.emitSession(session, 'slot-cleared', { slotId });
     return this.serialize(session);
@@ -409,7 +579,7 @@ class BpService extends EventEmitter {
     session.timer.remainingSeconds = 0;
     session.timer.transitionPending = true;
     this.record(session, 'phase-completed', { phaseId: PHASES[session.currentPhaseIndex].id });
-    this.persist();
+    this.persist(session);
     this.emitSession(session, 'phase-zero');
     this.emit('timer', { session: this.serialize(session), seconds: 0 });
     this.schedulePhaseAdvance(session);
@@ -419,7 +589,7 @@ class BpService extends EventEmitter {
     clearTimeout(this.transitionTimers.get(session.id));
     const timer = setTimeout(() => {
       this.transitionTimers.delete(session.id);
-      const current = this.store.sessions[session.id];
+      const current = this.sessions[session.id];
       if (!current || !current.timer.transitionPending) return;
       current.currentPhaseIndex += 1;
       current.timer.transitionPending = false;
@@ -429,13 +599,13 @@ class BpService extends EventEmitter {
         current.timer.deadline = null;
         current.timer.remainingSeconds = 0;
         this.record(current, 'bp-completed');
-        this.persist();
+        this.persist(current);
         this.emitSession(current, 'bp-completed');
         return;
       }
       this.startTimer(current);
       this.record(current, 'phase-started', { phaseId: PHASES[current.currentPhaseIndex].id });
-      this.persist();
+      this.persist(current);
       this.emitSession(current, 'phase-started');
       this.emit('timer', { session: this.serialize(current), seconds: current.timer.durationSeconds });
     }, this.zeroPulseMs);
@@ -444,14 +614,14 @@ class BpService extends EventEmitter {
   }
 
   recoverPendingTransitions() {
-    for (const session of Object.values(this.store.sessions)) {
+    for (const session of Object.values(this.sessions)) {
       if (session.timer.transitionPending) this.schedulePhaseAdvance(session);
     }
   }
 
   tick() {
     const now = Date.now();
-    for (const session of Object.values(this.store.sessions)) {
+    for (const session of Object.values(this.sessions)) {
       if (!session.timer.running) continue;
       const remaining = this.currentRemaining(session, now);
       if (remaining !== this.lastDisplayedSeconds.get(session.id)) {
@@ -464,7 +634,7 @@ class BpService extends EventEmitter {
         session.timer.deadline = null;
         session.timer.remainingSeconds = 0;
         this.record(session, 'timer-expired', { phaseId: PHASES[session.currentPhaseIndex]?.id });
-        this.persist();
+        this.persist(session);
         this.emitSession(session, 'timer-expired');
       }
     }
@@ -482,9 +652,9 @@ class BpService extends EventEmitter {
     clearTimeout(this.transitionTimers.get(id));
     this.transitionTimers.delete(id);
     if (restored.status === 'active' && !restored.timer.transitionPending) this.startTimer(restored);
-    this.store.sessions[id] = restored;
+    this.sessions[id] = restored;
     this.record(restored, 'revision-restored', { restoredRevision: revision });
-    this.persist();
+    this.persist(restored);
     if (restored.timer.transitionPending) this.schedulePhaseAdvance(restored);
     this.emitSession(restored, 'revision-restored', { revision });
     this.emit('sync-session', { session: this.serialize(restored) });
@@ -494,7 +664,7 @@ class BpService extends EventEmitter {
   createReplay(id) {
     const original = this.getSession(id);
     this.assertNotForfeited(original.matchId, original.room);
-    const attempts = Object.values(this.store.sessions)
+    const attempts = Object.values(this.sessions)
       .filter(item => item.matchId === original.matchId && item.gameNumber === original.gameNumber && item.room === original.room)
       .map(item => item.attempt);
     const attempt = Math.max(...attempts) + 1;
@@ -509,9 +679,9 @@ class BpService extends EventEmitter {
     replay.updatedAt = replay.createdAt;
     replay.revision = 0;
     replay.history = [];
-    this.store.sessions[replay.id] = replay;
+    this.sessions[replay.id] = replay;
     this.record(replay, 'replay-created', { replayOf: original.id });
-    this.persist();
+    this.persist(replay);
     this.emitSession(replay, 'replay-created');
     this.emit('sync-session', { session: this.serialize(replay) });
     return this.serialize(replay);
@@ -524,7 +694,7 @@ class BpService extends EventEmitter {
     const before = new Map(Object.keys(SLOT_CONFIG).map(slotId => [slotId, this.slotComplete(session, slotId)]));
     session.outputMode = mode;
     this.record(session, 'output-mode-updated', { mode });
-    this.persist();
+    this.persist(session);
     this.emitSession(session, 'output-mode-updated', { mode });
     this.emit('sync-session', { session: this.serialize(session) });
 
@@ -546,12 +716,12 @@ class BpService extends EventEmitter {
   setGlobalCommentatorImage(image) {
     assert(image && typeof image.id === 'string' && image.id && typeof image.name === 'string', '解说组图无效');
     this.commentatorImage = { id: image.id, name: image.name };
-    const affected = Object.values(this.store.sessions);
+    const affected = Object.values(this.sessions);
     for (const session of affected) {
       session.commentatorImage = clone(this.commentatorImage);
       this.record(session, 'commentator-image-updated', { imageId: image.id, imageName: image.name });
     }
-    if (affected.length) this.persist();
+    if (affected.length) this.persist(...affected);
     for (const session of affected) this.emitSession(session, 'commentator-image-updated', { imageId: image.id });
     return clone(this.commentatorImage);
   }
@@ -569,7 +739,7 @@ class BpService extends EventEmitter {
     session.timer.remainingSeconds = 0;
     session.timer.transitionPending = false;
     this.record(session, 'bp-manually-completed');
-    this.persist();
+    this.persist(session);
     const serialized = this.serialize(session);
     this.emit('timer', { session: serialized, seconds: 0 });
     this.emitSession(session, 'bp-manually-completed');
@@ -584,7 +754,7 @@ class BpService extends EventEmitter {
     const teamId = this.resolver.getMatch(session.matchId).rooms[session.room][`${winnerRole}TeamId`];
     session.result = { winnerRole, winnerTeamId: teamId, decidedAt: Date.now() };
     this.record(session, 'result-updated', { winnerRole, winnerTeamId: teamId });
-    this.persist();
+    this.persist(session);
     const serialized = this.serialize(session);
     this.emitSession(session, 'result-updated', { winnerRole, winnerTeamId: teamId });
     return serialized;
@@ -596,7 +766,7 @@ class BpService extends EventEmitter {
     assert(session.result?.winnerRole, '请先选择本局战果');
     session.result.image = { ...image, uploadedAt: Date.now() };
     this.record(session, 'result-image-updated', { fileName: image.fileName, filePath: image.filePath });
-    this.persist();
+    this.persist(session);
     this.emitSession(session, 'result-image-updated', { fileName: image.fileName });
     return this.serialize(session);
   }
@@ -619,7 +789,7 @@ class BpService extends EventEmitter {
       transitionPending: false
     };
     this.record(session, 'session-reset');
-    this.persist();
+    this.persist(session);
     const serialized = this.serialize(session);
     this.emitSession(session, 'session-reset');
     this.emit('sync-session', { session: serialized });
@@ -647,7 +817,7 @@ class BpService extends EventEmitter {
     assert(teamIds.includes(forfeitingTeamId), '弃赛队伍不属于当前对阵');
     const winnerTeamId = teamIds.find(teamId => teamId !== forfeitingTeamId);
     const now = Date.now();
-    const affected = Object.values(this.store.sessions)
+    const affected = Object.values(this.sessions)
       .filter(session => session.matchId === selected.matchId && session.room === selected.room);
     const sessionStates = {};
 
@@ -670,7 +840,7 @@ class BpService extends EventEmitter {
     }
 
     const key = this.forfeitKey(selected.matchId, selected.room);
-    this.store.forfeits[key] = {
+    this.forfeits[key] = {
       matchId: selected.matchId,
       room: selected.room,
       forfeitingTeamId,
@@ -681,7 +851,7 @@ class BpService extends EventEmitter {
       sessionStates,
       events: [{ action: 'forfeit-declared', timestamp: now, forfeitingTeamId, winnerTeamId }]
     };
-    this.persist();
+    this.persist(...affected, this.forfeits[key]);
     for (const session of affected) this.emitSession(session, 'forfeit-declared', { forfeitingTeamId, winnerTeamId });
     const serialized = this.serialize(selected);
     this.emit('score', { session: serialized, score: serialized.score });
@@ -691,12 +861,12 @@ class BpService extends EventEmitter {
   revokeForfeit(id) {
     const selected = this.getSession(id);
     const key = this.forfeitKey(selected.matchId, selected.room);
-    const forfeit = this.store.forfeits[key];
+    const forfeit = this.forfeits[key];
     assert(forfeit?.active, '当前房间没有可撤回的弃赛记录');
     const now = Date.now();
 
     for (const [sessionId, state] of Object.entries(forfeit.sessionStates || {})) {
-      const session = this.store.sessions[sessionId];
+      const session = this.sessions[sessionId];
       if (!session) continue;
       session.status = state.status;
       session.currentPhaseIndex = state.currentPhaseIndex;
@@ -714,10 +884,10 @@ class BpService extends EventEmitter {
     forfeit.active = false;
     forfeit.revokedAt = now;
     forfeit.events.push({ action: 'forfeit-revoked', timestamp: now });
-    this.persist();
     const affected = Object.keys(forfeit.sessionStates || {})
-      .map(sessionId => this.store.sessions[sessionId])
+      .map(sessionId => this.sessions[sessionId])
       .filter(Boolean);
+    this.persist(...affected, forfeit);
     for (const session of affected) this.emitSession(session, 'forfeit-revoked');
     const serialized = this.serialize(selected);
     this.emit('score', { session: serialized, score: serialized.score });
@@ -725,4 +895,4 @@ class BpService extends EventEmitter {
   }
 }
 
-module.exports = { BpService, DEFAULT_STORE };
+module.exports = { BpService };

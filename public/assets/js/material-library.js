@@ -47,7 +47,7 @@
   async function request(url, options) {
     const response = await fetch(url, options);
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || `请求失败 (${response.status})`);
+    if (!response.ok) throw new Error(payload.error || t('common.requestFailed', { status: response.status }));
     return payload;
   }
 
@@ -79,8 +79,8 @@
     elements.syncPaths.disabled = busy || !migrationStatus?.obsConnected || !validation?.valid;
     elements.rollbackPaths.disabled = busy || !migrationStatus?.rollback?.available;
     elements.syncPaths.title = !migrationStatus?.obsConnected
-      ? 'OBS 尚未连接'
-      : (validation?.valid ? `将 ${validation.referenceCount} 个路径字段同步至 OBS` : '请先完成文件路径校验');
+      ? t('mt.obsNotConnected')
+      : (validation?.valid ? t('mt.syncWillUpdate', { count: validation.referenceCount }) : t('mt.validateFirst'));
     elements.rollbackPaths.title = migrationStatus?.rollback?.reason || '';
   }
 
@@ -113,12 +113,12 @@
     const folders = migrationStatus?.folders || [];
     elements.canonicalRoot.textContent = migrationStatus?.canonicalRoot || '--';
     const selected = folders.find(folder => folder.id === selectedPathFolderId);
-    elements.selectedRoot.textContent = selected?.path || '尚未选择';
+    elements.selectedRoot.textContent = selected?.path || t('mt.noRootSelected');
     elements.validatePaths.disabled = !selected;
     if (!folders.length) {
       const empty = document.createElement('div');
       empty.className = 'material-folder-picker-empty';
-      empty.textContent = '素材库中没有可用文件夹，请先导入完整素材包';
+      empty.textContent = t('mt.noFolders');
       elements.pathFolderList.replaceChildren(empty);
       return;
     }
@@ -129,11 +129,11 @@
     elements.pathReport.hidden = false;
     elements.pathReport.classList.toggle('is-error', !validation.valid);
     if (!validation.referenceCount) {
-      elements.pathReportSummary.textContent = `OBS 中没有发现位于 ${validation.canonicalRoot} 下的素材路径`;
+      elements.pathReportSummary.textContent = t('mt.pathNoneFound', { root: validation.canonicalRoot });
     } else if (validation.missingCount) {
-      elements.pathReportSummary.textContent = `校验未通过：${validation.referenceCount} 个路径字段中有 ${validation.missingCount} 个目标文件缺失`;
+      elements.pathReportSummary.textContent = t('mt.pathInvalid', { total: validation.referenceCount, missing: validation.missingCount });
     } else {
-      elements.pathReportSummary.textContent = `校验通过：${validation.objectCount} 个 OBS 对象，共 ${validation.referenceCount} 个路径字段`;
+      elements.pathReportSummary.textContent = t('mt.pathValid', { objects: validation.objectCount, total: validation.referenceCount });
     }
     const ordered = [...validation.records].sort((left, right) => Number(left.exists) - Number(right.exists));
     const rows = ordered.slice(0, 200).map(record => {
@@ -142,14 +142,14 @@
       const title = document.createElement('strong');
       title.textContent = `${record.sourceName}${record.filterName ? ` / ${record.filterName}` : ''} · ${record.settingPath}`;
       const mapping = document.createElement('span');
-      mapping.textContent = `${record.before}  →  ${record.after}${record.exists ? '' : '（缺失）'}`;
+      mapping.textContent = t('mt.mappingLine', { before: record.before, after: record.after }) + (record.exists ? '' : t('mt.mappingMissing'));
       row.append(title, mapping);
       return row;
     });
     if (ordered.length > 200) {
       const more = document.createElement('div');
       more.className = 'material-path-mapping';
-      more.textContent = `另有 ${ordered.length - 200} 条映射未在预览中展开`;
+      more.textContent = t('mt.mappingMore', { count: ordered.length - 200 });
       rows.push(more);
     }
     elements.pathMappings.replaceChildren(...rows);
@@ -182,14 +182,14 @@
     if (!selectedPathFolderId || busy) return;
     setBusy(true);
     elements.validatePaths.disabled = true;
-    elements.validatePaths.textContent = '正在读取 OBS...';
+    elements.validatePaths.textContent = t('mt.readingObs');
     try {
       const validation = await post('/api/material-paths/validate', { folderId: selectedPathFolderId });
       migrationStatus.lastValidation = validation;
       migrationStatus.selectedFolderId = selectedPathFolderId;
       renderPathReport(validation);
       syncMigrationControls();
-      setStatus(validation.valid ? '素材路径校验通过，OBS 同步已可用' : `路径校验未通过，缺少 ${validation.missingCount} 个文件`, !validation.valid);
+      setStatus(validation.valid ? t('mt.validateOk') : t('mt.validateFail', { count: validation.missingCount }), !validation.valid);
     } catch (error) {
       migrationStatus.lastValidation = null;
       syncMigrationControls();
@@ -197,7 +197,7 @@
     } finally {
       setBusy(false);
       elements.validatePaths.disabled = false;
-      elements.validatePaths.textContent = '重新校验文件路径';
+      elements.validatePaths.textContent = t('mt.revalidate');
       syncMigrationControls();
     }
   }
@@ -223,19 +223,19 @@
     const validation = migrationStatus?.lastValidation;
     if (!validation?.valid || busy) return;
     const confirmed = await askOperation({
-      title: '同步 OBS 素材路径',
-      text: `将 ${validation.objectCount} 个 OBS 对象中的 ${validation.referenceCount} 个路径字段改为所选素材包。`,
-      warning: '同步前会再次校验全部文件。发生写入或回读错误时，本次已修改内容会自动恢复。',
-      confirmText: '确认同步'
+      title: t('mt.syncConfirmTitle'),
+      text: t('mt.syncConfirmText', { objects: validation.objectCount, total: validation.referenceCount }),
+      warning: t('mt.syncConfirmWarning'),
+      confirmText: t('mt.syncConfirmOk')
     });
     if (!confirmed) return;
     setBusy(true);
     syncMigrationControls();
-    setStatus('正在同步并回读校验 OBS 素材路径...');
+    setStatus(t('mt.syncing'));
     try {
       const result = await post('/api/material-paths/sync', { folderId: validation.folderId });
       await loadMigrationStatus({ quiet: true });
-      setStatus(`OBS 路径同步完成，共修改 ${result.changedCount} 个字段`);
+      setStatus(t('mt.syncDone', { count: result.changedCount }));
     } catch (error) {
       await loadMigrationStatus({ quiet: true });
       setStatus(error.message, true);
@@ -248,19 +248,19 @@
   async function rollbackObsPaths() {
     if (!migrationStatus?.rollback?.available || busy) return;
     const confirmed = await askOperation({
-      title: '撤销上次 OBS 同步',
-      text: `将上次同步修改的 ${migrationStatus.rollback.changedCount} 个路径字段恢复为同步前的值。`,
-      warning: '系统会先确认这些字段没有被其他操作改动，并检查原素材仍然存在。撤销也会进行写入后回读校验。',
-      confirmText: '确认撤销'
+      title: t('mt.rollbackConfirmTitle'),
+      text: t('mt.rollbackConfirmText', { count: migrationStatus.rollback.changedCount }),
+      warning: t('mt.rollbackConfirmWarning'),
+      confirmText: t('mt.rollbackConfirmOk')
     });
     if (!confirmed) return;
     setBusy(true);
     syncMigrationControls();
-    setStatus('正在撤销上次 OBS 路径同步...');
+    setStatus(t('mt.rollbacking'));
     try {
       const result = await post('/api/material-paths/rollback');
       await loadMigrationStatus({ quiet: true });
-      setStatus(`已恢复 ${result.changedCount} 个 OBS 路径字段`);
+      setStatus(t('mt.rollbackDone', { count: result.changedCount }));
     } catch (error) {
       await loadMigrationStatus({ quiet: true });
       setStatus(error.message, true);
@@ -352,6 +352,26 @@
     return entries.filter(entry => entry.id !== directory.id && pathKey(parentPath(entry.path)) === key).length;
   }
 
+  // 内置 iconfont 风格线性图标（离线可用）；换图标只需改这里的 path
+  const GLYPH_ICONS = {
+    folder: '<path d="M5 10a3 3 0 0 1 3-3h10l4.5 5H40a3 3 0 0 1 3 3v19a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V10z"/>',
+    audio: '<path d="M17 33V12l20-5v22"/><circle cx="12" cy="33" r="5"/><circle cx="32" cy="29" r="5"/>',
+    file: '<path d="M11 5h16l10 10v26a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M27 5v10h10"/>'
+  };
+
+  function makeGlyph(kind, label = '') {
+    const glyph = document.createElement('span');
+    glyph.className = `material-glyph is-${kind}`;
+    glyph.innerHTML = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GLYPH_ICONS[kind]}</svg>`;
+    if (label) {
+      const text = document.createElement('span');
+      text.className = 'material-glyph-label';
+      text.textContent = label;
+      glyph.appendChild(text);
+    }
+    return glyph;
+  }
+
   function makeThumbnail(entry) {
     const thumb = document.createElement('div');
     thumb.className = 'material-thumbnail';
@@ -361,9 +381,7 @@
       return thumb;
     }
     if (entry.kind === 'directory') {
-      const folder = document.createElement('span');
-      folder.className = 'material-folder-glyph';
-      thumb.appendChild(folder);
+      thumb.appendChild(makeGlyph('folder'));
       return thumb;
     }
     if (isImage(entry)) {
@@ -385,13 +403,14 @@
       thumb.appendChild(video);
       const badge = document.createElement('span');
       badge.className = 'material-media-badge';
-      badge.textContent = 'VIDEO';
+      badge.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>';
       thumb.appendChild(badge);
       return thumb;
     }
-    const mark = document.createElement('span');
-    mark.className = isAudio(entry) ? 'material-audio-glyph' : 'material-file-glyph';
-    mark.textContent = isAudio(entry) ? '\u266b' : (entry.extension || 'FILE').slice(0, 5).toLocaleUpperCase();
+    const mark = makeGlyph(
+      isAudio(entry) ? 'audio' : 'file',
+      isAudio(entry) ? '' : (entry.extension || 'FILE').slice(0, 5).toLocaleUpperCase()
+    );
     thumb.appendChild(mark);
     return thumb;
   }
@@ -413,7 +432,7 @@
     const meta = document.createElement('span');
     meta.className = 'material-card-meta';
     meta.textContent = entry.kind === 'directory'
-      ? `${immediateChildCount(entry)} 项`
+      ? t('mt.itemCount', { count: immediateChildCount(entry) })
       : [entry.extension?.toLocaleUpperCase(), formatSize(entry.size)].filter(Boolean).join(' · ');
     card.append(thumb, name, meta);
 
@@ -433,7 +452,7 @@
   function renderBreadcrumbs() {
     const root = document.createElement('button');
     root.type = 'button';
-    root.textContent = '素材库';
+    root.textContent = t('mt.rootName');
     root.addEventListener('click', () => navigateTo(null));
     const crumbs = [root];
     const map = entryMap();
@@ -464,9 +483,9 @@
     const files = entries.filter(entry => entry.kind === 'file').length;
     const directories = entries.length - files;
     const searching = Boolean(elements.search.value.trim());
-    const locationText = searching ? `搜索到 ${visible.length} 项` : `当前目录 ${visible.length} 项`;
-    elements.summary.textContent = `${locationText} · 索引共 ${files} 个文件、${directories} 个文件夹`;
-    elements.empty.textContent = entries.length === 0 ? '素材库为空' : (searching ? '没有匹配的素材' : '此文件夹为空');
+    const locationText = searching ? t('mt.searchedCount', { count: visible.length }) : t('mt.currentDirCount', { count: visible.length });
+    elements.summary.textContent = t('mt.summaryLine', { location: locationText, files, folders: directories });
+    elements.empty.textContent = entries.length === 0 ? t('mt.empty') : (searching ? t('mt.noMatch') : t('mt.folderEmpty'));
     elements.empty.hidden = visible.length > 0;
     elements.grid.replaceChildren(...visible.map(makeCard));
     window.PageFX.stagger(elements.grid.children, { step: 30, cap: 12 });
@@ -482,7 +501,7 @@
     });
     const selected = entries.filter(entry => selectedIds.has(entry.id));
     elements.selectionBar.classList.toggle('is-visible', selected.length > 0);
-    elements.selectionCount.textContent = `已选择 ${selected.length} 项`;
+    elements.selectionCount.textContent = t('mt.selectedCount', { count: selected.length });
     elements.openSelected.disabled = selected.length !== 1 || !selected[0].exists;
     elements.previewSelected.disabled = selected.length !== 1 || !isPreviewable(selected[0]) || !selected[0].exists;
     elements.renameSelected.disabled = selected.length !== 1 || !selected[0].exists;
@@ -558,9 +577,9 @@
 
   async function openInSystem(entry) {
     try {
-      setStatus(`正在使用系统程序打开：${entry.name}`);
+      setStatus(t('mt.openingWith', { name: entry.name }));
       await post(`/api/materials/${encodeURIComponent(entry.id)}/open`);
-      setStatus(`已交给系统程序打开：${entry.name}`);
+      setStatus(t('mt.openedWith', { name: entry.name }));
     } catch (error) {
       setStatus(error.message, true);
     }
@@ -569,12 +588,12 @@
   async function importItems(kind) {
     if (busy) return;
     setBusy(true);
-    setStatus(kind === 'folder' ? '等待选择文件夹...' : '等待选择文件...');
+    setStatus(t(kind === 'folder' ? 'mt.waitingFolder' : 'mt.waitingFile'));
     try {
       const payload = await post('/api/materials/import', { kind });
       entries = payload.entries;
       render();
-      setStatus(payload.cancelled ? '已取消选择' : `已加入 ${payload.added} 项，跳过 ${payload.skipped} 个重复索引`);
+      setStatus(payload.cancelled ? t('mt.pickCancelled') : t('mt.imported', { added: payload.added, skipped: payload.skipped }));
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -625,11 +644,11 @@
     if (!selected.length) return;
     deleteTargetIds = selected.map(entry => entry.id);
     const folders = selected.filter(entry => entry.kind === 'directory').length;
-    elements.deleteTitle.textContent = selected.length === 1 ? '删除素材' : `删除 ${selected.length} 项素材`;
-    elements.deleteText.textContent = selected.length === 1 ? `“${selected[0].name}”` : `已选择 ${selected.length} 项，其中 ${folders} 个文件夹`;
+    elements.deleteTitle.textContent = selected.length === 1 ? t('mt.deleteTitle') : t('mt.deleteTitleN', { count: selected.length });
+    elements.deleteText.textContent = selected.length === 1 ? t('mt.deleteTextOne', { name: selected[0].name }) : t('mt.deleteTextN', { count: selected.length, folders });
     elements.deleteWarning.textContent = folders
-      ? '从文件系统删除会递归删除所选文件夹及其全部内容，且不可撤销。仅移除索引不会改动任何源文件。'
-      : '从文件系统删除会永久删除所选源文件，且不可撤销。仅移除索引不会改动任何源文件。';
+      ? t('mt.deleteFolderWarning')
+      : t('mt.deleteFileWarning');
     elements.deleteDialog.showModal();
   }
 
@@ -643,8 +662,8 @@
       selectedIds.clear();
       render();
       setStatus(mode === 'index'
-        ? `已移除 ${payload.removed} 条索引，源文件未删除`
-        : `已从文件系统删除，并移除 ${payload.removed} 条索引`);
+        ? t('mt.removedIndexOnly', { count: payload.removed })
+        : t('mt.removedWithFiles', { count: payload.removed }));
     } catch (error) {
       setStatus(error.message, true);
     }
@@ -743,7 +762,7 @@
     render();
   });
   elements.up.addEventListener('click', navigateUp);
-  elements.refresh.addEventListener('click', () => load('素材库已刷新', { forceSync: true }));
+  elements.refresh.addEventListener('click', () => load(t('mt.refreshedLog'), { forceSync: true }));
   elements.importFiles.addEventListener('click', () => importItems('files'));
   elements.importFolder.addEventListener('click', () => importItems('folder'));
   elements.openSelected.addEventListener('click', () => {
@@ -771,7 +790,7 @@
       elements.renameDialog.close();
       selectedIds = new Set([payload.entry.id]);
       render();
-      setStatus(`已重命名为 ${payload.entry.name}`);
+      setStatus(t('mt.renamed', { name: payload.entry.name }));
       renameTarget = null;
     } catch (error) {
       setStatus(error.message, true);
@@ -786,7 +805,7 @@
   elements.createDocument.addEventListener('click', () => {
     const directory = currentDirectory();
     elements.documentDirectory.value = directory?.path || localStorage.getItem('zfb.materialDirectory') || '';
-    elements.documentName.value = '新建文档.txt';
+    elements.documentName.value = t('mt.newDocDefaultName');
     elements.documentDialog.showModal();
   });
   elements.chooseDirectory.addEventListener('click', async () => {
@@ -811,7 +830,7 @@
       elements.documentDialog.close();
       selectedIds = new Set([payload.entry.id]);
       render();
-      setStatus(`已创建并加入索引：${payload.entry.name}`);
+      setStatus(t('mt.docCreated', { name: payload.entry.name }));
     } catch (error) {
       setStatus(error.message, true);
     }

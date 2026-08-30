@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { db } = require('./db');
+const { importTournaments } = require('./db-migrate');
 const { resolveAssetPath } = require('./asset-paths');
 
 const DATA_PATH = path.resolve(
@@ -22,32 +24,131 @@ const DATA_PATHS = [
   path.resolve(__dirname, '..', 'public', 'assets', 'data', 'tournament-2026-08-02-pc-loser.json')
 ];
 
-function readData() {
-  return JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+const DEFAULT_ROSTER_SIZE = { escape: 8, hunter: 2, substitute: 5 };
+
+function ensureTournamentSeed() {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM events').get().n;
+  if (count === 0) importTournaments();
+}
+
+function buildTeam(teamId, rosterSize = DEFAULT_ROSTER_SIZE) {
+  const teamRow = db.prepare('SELECT * FROM teams WHERE id = ?').get(teamId);
+  if (!teamRow) return null;
+  const logos = { escape: null, hunter: null };
+  for (const row of db.prepare('SELECT * FROM team_logos WHERE team_id = ?').all(teamId)) {
+    logos[row.kind] = { obsFile: row.obs_file, webFile: row.web_file, sha256: row.sha256 };
+  }
+  const rows = db.prepare('SELECT * FROM players WHERE team_id = ? ORDER BY slot').all(teamId);
+  const toPlayer = row => ({
+    slot: row.slot,
+    playerId: row.player_id,
+    ...(row.nickname != null ? { nickname: row.nickname } : {}),
+    ...(row.official_id != null ? { officialId: row.official_id } : {}),
+    ...(row.registered_nickname != null ? { registeredNickname: row.registered_nickname } : {}),
+    ...(row.registered_official_id != null ? { registeredOfficialId: row.registered_official_id } : {})
+  });
+  const pad = (list, role) => {
+    const filled = list.filter(player => player.playerId);
+    const padded = [...filled];
+    for (let index = filled.length + 1; padded.length < rosterSize[role]; index += 1) {
+      padded.push({ slot: `${role}${index}`, playerId: null, nickname: null, officialId: null });
+    }
+    return padded;
+  };
+  const escape = pad(rows.filter(row => row.role === 'escape' && !row.is_substitute).map(toPlayer), 'escape');
+  const hunter = pad(rows.filter(row => row.role === 'hunter' && !row.is_substitute).map(toPlayer), 'hunter');
+  const substitutes = pad(rows.filter(row => row.is_substitute).map(toPlayer), 'substitute');
+  const roster = { escape, hunter, substitutes };
+  return {
+    id: teamRow.id,
+    displayName: teamRow.display_name,
+    ...(teamRow.aliases_json ? { aliases: JSON.parse(teamRow.aliases_json) } : {}),
+    sourceRows: teamRow.source_rows,
+    logos,
+    roster,
+    candidatePools: {
+      escape: [...roster.escape, ...roster.substitutes].map(player => player.playerId).filter(Boolean),
+      hunter: [...roster.hunter, ...roster.substitutes].map(player => player.playerId).filter(Boolean)
+    }
+  };
+}
+
+function buildDataset(eventRow) {
+  const event = {
+    id: eventRow.id,
+    name: eventRow.name,
+    division: eventRow.division,
+    stage: eventRow.stage,
+    ...(eventRow.stage_label ? { stageLabel: eventRow.stage_label } : {}),
+    ...(eventRow.schedule_image ? { scheduleImage: eventRow.schedule_image } : {}),
+    stageImage: eventRow.stage_image,
+    ...(eventRow.schedule_table_image ? { scheduleTableImage: eventRow.schedule_table_image } : {}),
+    date: eventRow.date,
+    mode: eventRow.mode,
+    format: eventRow.format
+  };
+  const teamIds = db.prepare('SELECT team_id FROM event_teams WHERE event_id = ? ORDER BY sort_order').all(eventRow.id).map(row => row.team_id);
+  const rosterSize = eventRow.role_rules_json
+    ? (({ escapeSlots = 8, hunterSlots = 2, substituteSlots = 5 }) => ({ escape: escapeSlots, hunter: hunterSlots, substitute: substituteSlots }))(JSON.parse(eventRow.role_rules_json))
+    : DEFAULT_ROSTER_SIZE;
+  const teams = {};
+  for (const teamId of teamIds) {
+    const team = buildTeam(teamId, rosterSize);
+    if (team) teams[teamId] = team;
+  }
+  const matchRows = db.prepare('SELECT * FROM matches WHERE event_id = ? ORDER BY sort_order').all(eventRow.id);
+  const matches = matchRows.map(matchRow => {
+    const rooms = {};
+    for (const room of db.prepare('SELECT * FROM match_rooms WHERE match_id = ?').all(matchRow.id)) {
+      rooms[room.room] = { escapeTeamId: room.escape_team_id, hunterTeamId: room.hunter_team_id };
+    }
+    const participants = db.prepare('SELECT * FROM match_participants WHERE match_id = ? ORDER BY slot').all(matchRow.id);
+    const match = {
+      id: matchRow.id,
+      sourceRow: matchRow.source_row,
+      date: matchRow.date,
+      startTime: matchRow.start_time,
+      endTime: matchRow.end_time,
+      mode: matchRow.mode,
+      format: matchRow.format,
+      matchup: [matchRow.matchup_home, matchRow.matchup_away].filter(Boolean),
+      winnerTeamId: matchRow.winner_team_id || null
+    };
+    if (Object.keys(rooms).length) match.rooms = rooms;
+    if (participants.length) {
+      match.participantRefs = participants.map(row => row.ref_type === 'team'
+        ? { teamId: row.team_id }
+        : { fromMatchId: row.from_match_id, outcome: row.outcome });
+    }
+    return match;
+  });
+  return {
+    schemaVersion: 1,
+    event,
+    source: {
+      workbook: eventRow.source_workbook,
+      workbookSha256: eventRow.source_workbook_sha256
+    },
+    ...(eventRow.role_rules_json ? { roleRules: JSON.parse(eventRow.role_rules_json) } : {}),
+    teams,
+    integrity: eventRow.integrity_json ? JSON.parse(eventRow.integrity_json) : {
+      teamCount: Object.keys(teams).length,
+      matchCount: matches.length,
+      registeredPlayerCount: 0,
+      logoCount: Object.keys(teams).length * 2,
+      checks: []
+    },
+    matches
+  };
 }
 
 function readAllData() {
-  const datasets = DATA_PATHS.map(filePath => JSON.parse(fs.readFileSync(filePath, 'utf8')));
-  const sharedTeams = {};
-  for (const data of datasets) {
-    for (const [teamId, team] of Object.entries(data.teams || {})) {
-      if (sharedTeams[teamId]) {
-        assert(JSON.stringify(sharedTeams[teamId]) === JSON.stringify(team), `Conflicting shared team data: ${teamId}`);
-      } else {
-        sharedTeams[teamId] = team;
-      }
-    }
-  }
-  return datasets.map(data => {
-    if (!data.teamIds) return data;
-    return {
-      ...data,
-      teams: Object.fromEntries(data.teamIds.map(teamId => {
-        assert(sharedTeams[teamId], `Unknown shared team: ${teamId}`);
-        return [teamId, sharedTeams[teamId]];
-      }))
-    };
-  });
+  ensureTournamentSeed();
+  return db.prepare('SELECT * FROM events ORDER BY sort_order').all().map(buildDataset);
+}
+
+function readData() {
+  return readAllData()[0];
 }
 
 function hashFile(filePath) {
@@ -170,7 +271,7 @@ function validateTournamentData(data, options = {}) {
   };
 }
 
-function createTournamentResolver(input = readData()) {
+function createTournamentResolver(input = readAllData()) {
   const tournaments = Array.isArray(input) ? input : [input];
   tournaments.forEach(data => validateTournamentData(data));
   const teams = {};

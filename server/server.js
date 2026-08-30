@@ -1,7 +1,158 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
+const { migrateLegacyData, readAppSetting, writeAppSetting } = require('./db-migrate');
+migrateLegacyData();
+const { db } = require('./db');
+
+// 本机登录凭据与会话：首次使用由开发者初始化专属密码，密码采用 scrypt。
+function scryptHash(password, salt) {
+  return crypto.scryptSync(String(password || ''), salt, 64).toString('hex');
+}
+
+function safeEqualHex(left, right) {
+  try {
+    const a = Buffer.from(String(left || ''), 'hex');
+    const b = Buffer.from(String(right || ''), 'hex');
+    return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+function findUserRow(account) {
+  return db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(account);
+}
+
+function authSetupRequired() {
+  return db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'developer' AND status = 'active'").get().n === 0;
+}
+
+function createUser({ username, displayName, password, role, permissions }) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  db.prepare(`INSERT INTO users
+    (id, username, display_name, password_hash, salt, role, permissions_json, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`)
+    .run(crypto.randomUUID(), username, displayName, scryptHash(password, salt), salt, role,
+      JSON.stringify(permissions || []), Date.now(), Date.now());
+}
+
+function initializeCredentials(password) {
+  if (!authSetupRequired()) throw new Error('系统已完成初始化');
+  const value = String(password || '');
+  if (value.length < 10) throw new Error('开发者密码至少需要 10 个字符');
+  withAuthTransaction(() => {
+    createUser({ username: 'administrator', displayName: '开发者', password: value, role: 'developer', permissions: ['*'] });
+    createUser({ username: 'operator', displayName: '操作员', password: value, role: 'operator', permissions: [] });
+  });
+}
+
+function withAuthTransaction(fn) {
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function checkUserPassword(row, passwordInput) {
+  if (!row || row.status !== 'active') return false;
+  // 2.2.0 正式账户使用 scrypt；64 位旧 SHA-256 记录只用于兼容迁移。
+  if (String(row.password_hash || '').length === 128) {
+    return safeEqualHex(scryptHash(passwordInput, row.salt), row.password_hash);
+  }
+  const legacy = crypto.createHash('sha256').update(`${row.salt}:${passwordInput}`).digest('hex');
+  return safeEqualHex(legacy, row.password_hash);
+}
+
+function verifyCredentials(account, password, expectedRole) {
+  const accountInput = String(account || '').trim();
+  if (!accountInput || !password) return null;
+  const row = findUserRow(accountInput);
+  if (!row || row.role !== expectedRole || !checkUserPassword(row, password)) return null;
+  return {
+    id: row.id,
+    account: row.username,
+    role: row.role,
+    permissions: JSON.parse(row.permissions_json || '[]')
+  };
+}
+
+const SESSION_SETTING_KEY = 'auth.sessions';
+const SESSION_COOKIE = 'stella_session';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function getSessionToken(req) {
+  const header = req.headers.cookie || '';
+  const match = header.split(/;\s*/).find(part => part.startsWith(`${SESSION_COOKIE}=`));
+  return match ? decodeURIComponent(match.slice(SESSION_COOKIE.length + 1)) : null;
+}
+
+function sessionCookie(token, remember) {
+  const maxAge = remember ? `; Max-Age=${SESSION_TTL_MS / 1000}` : '';
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict${maxAge}`;
+}
+
+function loadSessions() {
+  const list = readAppSetting(SESSION_SETTING_KEY);
+  return Array.isArray(list) ? list : [];
+}
+
+function saveSessions(list) {
+  writeAppSetting(SESSION_SETTING_KEY, list);
+}
+
+function createSession(user, remember) {
+  const sessions = loadSessions().filter(item => item.expiresAt > Date.now());
+  const session = {
+    token: crypto.randomBytes(32).toString('hex'),
+    userId: user.id,
+    role: user.role,
+    account: user.account,
+    permissions: user.permissions,
+    persistent: Boolean(remember),
+    createdAt: new Date().toISOString(),
+    expiresAt: Date.now() + SESSION_TTL_MS
+  };
+  sessions.push(session);
+  saveSessions(sessions);
+  return session;
+}
+
+function validateSession(token) {
+  if (!token) return null;
+  const sessions = loadSessions();
+  const session = sessions.find(item => item.token === token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    saveSessions(sessions.filter(item => item.token !== token && item.expiresAt > Date.now()));
+    return null;
+  }
+  const row = session.userId ? db.prepare('SELECT status, role, permissions_json FROM users WHERE id = ?').get(session.userId) : null;
+  if (row && row.status !== 'active') return null;
+  if (row) {
+    session.role = row.role;
+    session.permissions = JSON.parse(row.permissions_json || '[]');
+  }
+  return session;
+}
+
+function destroySession(token) {
+  if (!token) return;
+  saveSessions(loadSessions().filter(item => item.token !== token));
+}
+
+function canManageSystem(session) {
+  return session?.role === 'developer' || session?.role === 'admin'
+    || session?.permissions?.includes('*') || session?.permissions?.includes('system.manage');
+}
+
 const { BpService } = require('./bp-service');
 const { BpPresentationService } = require('./bp-presentation');
 const { CONFIG, ESCAPE_CHARACTERS, HUNTER_CHARACTERS, PHASES, SLOT_CONFIG, phaseDurations, animationStyle, updateBpTimerConfig, commentatorImageId, updateCommentatorImageId, commentatorLogoImageId, updateCommentatorLogoImageId } = require('./bp-config');
@@ -14,7 +165,7 @@ const { ObsPathMigration } = require('./obs-path-migration');
 const { readReleaseData } = require('./release-service');
 const { createTournamentResolver, readAllData } = require('./tournament-data');
 const { beijingTimestamp, selectSchedulePresentation } = require('./schedule-service');
-const { DATA_ROOT, mutableDataPath, parseJsonFile } = require('./data-paths');
+const { DATA_ROOT } = require('./data-paths');
 const { assertAssetDirectory, relativeAssetPath, resolveAssetPath } = require('./asset-paths');
 const { createAssetResolver, indexedCommentatorImages } = require('./asset-fallback');
 
@@ -32,6 +183,10 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
   '.mp4': 'video/mp4',
   '.ico': 'image/x-icon'
 };
@@ -54,16 +209,13 @@ const CONTROL_TOKEN = String(process.env.STELLA_CONTROL_TOKEN || '');
 const hubs = new Map();
 const bpClients = new Set();
 const bpPresentationClients = new Set();
-const obsOperations = [];
 const tournamentResolver = createTournamentResolver(readAllData());
-const runtimeConfigPath = mutableDataPath('runtime-config.json', '{}\n');
-const runtimeConfig = (() => {
-  try {
-    return parseJsonFile(runtimeConfigPath);
-  } catch {
-    return {};
+const runtimeConfig = {
+  obs: {
+    url: readAppSetting('obs.url'),
+    password: readAppSetting('obs.password')
   }
-})();
+};
 const localObsConfig = (() => {
   try {
     const configPath = path.join(process.env.APPDATA, 'obs-studio', 'plugin_config', 'obs-websocket', 'config.json');
@@ -222,13 +374,38 @@ function defaultCountdownState() {
 function ensureHub(id) {
   const normalizedId = id === COUNTDOWN_HUB_ID ? id : COUNTDOWN_HUB_ID;
   if (!hubs.has(normalizedId)) {
+    const row = db.prepare('SELECT * FROM hub_states WHERE hub_id = ?').get(normalizedId);
     hubs.set(normalizedId, {
       id: normalizedId,
-      state: defaultCountdownState(),
+      state: row ? {
+        module: 'countdown',
+        mode: row.mode,
+        durationSeconds: row.duration_seconds,
+        targetAt: row.target_at,
+        remainingSeconds: row.remaining_seconds,
+        running: Boolean(row.running),
+        startedAt: row.started_at,
+        deadline: row.deadline_ms,
+        updatedAt: row.updated_at
+      } : defaultCountdownState(),
       clients: new Set()
     });
   }
   return hubs.get(normalizedId);
+}
+
+function saveHubState(hub) {
+  const state = hub.state;
+  db.prepare(`INSERT INTO hub_states
+    (hub_id, mode, duration_seconds, target_at, remaining_seconds, running, started_at, deadline_ms, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hub_id) DO UPDATE SET
+      mode = excluded.mode, duration_seconds = excluded.duration_seconds, target_at = excluded.target_at,
+      remaining_seconds = excluded.remaining_seconds, running = excluded.running, started_at = excluded.started_at,
+      deadline_ms = excluded.deadline_ms, updated_at = excluded.updated_at`)
+    .run(hub.id, state.mode, state.durationSeconds ?? null, state.targetAt ?? null,
+      state.remainingSeconds ?? 0, state.running ? 1 : 0, state.startedAt ?? null,
+      state.deadline ?? null, state.updatedAt ?? Date.now());
 }
 
 function sendJson(res, status, payload) {
@@ -365,15 +542,14 @@ obsClient.on('CurrentProgramSceneChanged', event => {
   }
 });
 obsController.on('operation', operation => broadcastBp('obs-operation', operation));
-obsController.on('operation', operation => {
-  obsOperations.push({ ...operation, category: 'obs' });
-  while (obsOperations.length > 500) obsOperations.shift();
-});
+  obsController.on('operation', operation => {
+    db.prepare('INSERT INTO obs_operation_logs (timestamp_ms, label, ok, error, category) VALUES (?, ?, ?, ?, ?)')
+      .run(operation.timestamp ?? Date.now(), operation.label, operation.ok ? 1 : 0, operation.error || null, 'obs');
+  });
 
 function persistRuntimeConfig() {
-  const tempPath = `${runtimeConfigPath}.tmp`;
-  fs.writeFileSync(tempPath, `${JSON.stringify(runtimeConfig, null, 2)}\n`, 'utf8');
-  fs.renameSync(tempPath, runtimeConfigPath);
+  writeAppSetting('obs.url', runtimeConfig.obs.url);
+  writeAppSetting('obs.password', runtimeConfig.obs.password);
 }
 
 function collectedLogs() {
@@ -384,7 +560,16 @@ function collectedLogs() {
     sessionId: session.id,
     details: entry.details
   })));
-  return [...bpLogs, ...obsOperations].sort((left, right) => right.timestamp - left.timestamp);
+  const obsLogs = db.prepare('SELECT timestamp_ms, label, ok, error FROM obs_operation_logs ORDER BY timestamp_ms DESC LIMIT 2000')
+    .all()
+    .map(row => ({
+      timestamp: row.timestamp_ms,
+      category: 'obs',
+      action: row.label,
+      error: row.error || undefined,
+      details: {}
+    }));
+  return [...bpLogs, ...obsLogs].sort((left, right) => right.timestamp - left.timestamp);
 }
 
 function currentRemaining(state) {
@@ -463,9 +648,37 @@ function applyCountdownAction(state, action) {
   return next;
 }
 
+// 单一入口：全部页面收敛到 /，地址栏始终只显示站点根地址；OBS 输出源地址保持不变
+const OBS_PAGE_PATHS = new Set(['/overlay', '/overlay.html', '/bp-overlay', '/bp-overlay.html']);
+
+function sendShell(res, file) {
+  fs.readFile(path.resolve(ROOT, file), (error, data) => {
+    if (error) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
+    res.end(data);
+  });
+}
+
 function serveStatic(req, res, pathname) {
-  const cleanPath = pathname === '/' ? '/control.html' : pathname;
-  const filePath = path.resolve(ROOT, `.${cleanPath}`);
+  if (pathname === '/') {
+    sendShell(res, validateSession(getSessionToken(req)) ? 'control.html' : 'login.html');
+    return;
+  }
+  if (OBS_PAGE_PATHS.has(pathname)) {
+    sendShell(res, pathname.startsWith('/bp-overlay') ? 'bp-overlay.html' : 'overlay.html');
+    return;
+  }
+  const looksLikePage = pathname.endsWith('.html') || !path.extname(pathname);
+  if (looksLikePage && !pathname.startsWith('/api/')) {
+    res.writeHead(302, { Location: '/' });
+    res.end();
+    return;
+  }
+  const filePath = path.resolve(ROOT, `.${pathname}`);
   if (!filePath.startsWith(ROOT)) {
     res.writeHead(403);
     res.end('Forbidden');
@@ -491,6 +704,34 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`);
   const pathname = decodeURIComponent(url.pathname);
 
+  // 登录态鉴权：API 默认要求有效会话；只豁免认证、系统接口与 OBS 确实需要的 SSE
+  const publicObsEvents = req.method === 'GET' && (
+    pathname === '/api/bp/presentation/events'
+    || /^\/api\/hubs\/[^/]+\/events$/.test(pathname)
+  );
+  const authExempt = pathname.startsWith('/api/auth/')
+    || pathname.startsWith('/api/system/')
+    || publicObsEvents;
+  const requestSession = validateSession(getSessionToken(req));
+  if (pathname.startsWith('/api/') && !authExempt && !requestSession) {
+    sendJson(res, 401, { error: '未登录或会话已过期' });
+    return;
+  }
+  const developerOnly = req.method !== 'GET' && (
+    pathname.startsWith('/api/material-paths/')
+    || pathname === '/api/materials/import'
+    || pathname === '/api/materials/bulk-delete'
+    || pathname === '/api/materials/documents'
+    || /^\/api\/materials\/[^/]+\/(rename|delete)$/.test(pathname)
+    || pathname === '/api/obs/connect'
+    || pathname === '/api/bp/timer-config'
+    || pathname === '/api/bp/presentation/settings'
+  );
+  if (developerOnly && !canManageSystem(requestSession)) {
+    sendJson(res, 403, { error: '此操作需要开发者权限' });
+    return;
+  }
+
   if (req.method === 'GET' && pathname === '/api/system/health') {
     let version = 'unknown';
     try { version = readReleaseData().currentVersion; } catch {}
@@ -502,6 +743,59 @@ const server = http.createServer(async (req, res) => {
       startedAt: STARTED_AT,
       dataDir: DATA_ROOT
     });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/auth/status') {
+    sendJson(res, 200, { setupRequired: authSetupRequired() });
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/setup') {
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      initializeCredentials(body.password);
+      sendJson(res, 201, { ok: true });
+    } catch (error) {
+      sendJson(res, authSetupRequired() ? 400 : 409, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/login') {
+    try {
+      if (authSetupRequired()) {
+        sendJson(res, 409, { ok: false, setupRequired: true, error: '请先初始化开发者密码' });
+        return;
+      }
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const expectedRole = body.role === 'developer' ? 'developer' : 'operator';
+      const user = verifyCredentials(body.account, body.password, expectedRole);
+      if (!user) {
+        sendJson(res, 401, { ok: false, error: body.role === 'developer' ? '开发者账号或密码错误' : '操作员账号或密码错误' });
+        return;
+      }
+      const session = createSession(user, body.remember);
+      res.setHeader('Set-Cookie', sessionCookie(session.token, body.remember));
+      sendJson(res, 200, { ok: true, role: user.role, account: user.account });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/auth/session') {
+    const session = validateSession(getSessionToken(req));
+    sendJson(res, 200, session
+      ? { authenticated: true, role: session.role, account: session.account }
+      : { authenticated: false });
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/logout') {
+    destroySession(getSessionToken(req));
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
+    sendJson(res, 200, { ok: true });
     return;
   }
 
@@ -1040,6 +1334,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readBody(req);
         const action = body ? JSON.parse(body) : {};
         hub.state = applyCountdownAction(hub.state, action);
+        saveHubState(hub);
         broadcast(hub);
         sendJson(res, 200, hub.state);
       } catch (error) {
@@ -1058,8 +1353,8 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res, pathname);
 });
 
-server.listen(PORT, () => {
-  console.log(`ZFB Web HUB running at http://localhost:${PORT}/control.html`);
+server.listen(PORT, '127.0.0.1', () => {
+  console.log(`Stella Director running at http://127.0.0.1:${PORT}/`);
   obsController.connect()
     .then(async () => {
       await obsController.syncCountdownUrl(process.env.COUNTDOWN_URL || `http://localhost:${PORT}/hub/countdown`);

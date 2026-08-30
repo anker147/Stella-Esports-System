@@ -1,0 +1,577 @@
+/* 登录页：全屏沉浸 KV 背景 + 粒子层，深灰亚克力登录卡片，用户/开发者 Tab 切换，移动端折叠品牌区 */
+
+/* 登录页不加载 components.css，此处补齐全局盒模型规则 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--f2-bg-page);
+  color: var(--f2-text-primary);
+  font-family: var(--f2-font-family);
+}
+
+/* 全屏沉浸 KV 背景：低模糊、低遮罩 */
+.login-kv {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(4px) saturate(1.06) brightness(0.95);
+  transform: scale(1.04);
+}
+
+.login-kv-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(115deg, rgba(8, 20, 40, 0.34) 0%, rgba(8, 20, 40, 0.08) 55%, rgba(8, 20, 40, 0.26) 100%);
+}
+
+.particle-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.login-page {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 23vw, 340px);
+  align-items: center;
+  gap: clamp(16px, 2.5vw, 32px);
+  height: 100vh;
+  padding: clamp(24px, 4vh, 48px) clamp(40px, 18vw, 264px) clamp(24px, 4vh, 48px) clamp(32px, 7vw, 96px);
+}
+
+/* ===== 左侧产品核心展示：直接悬浮于沉浸背景 ===== */
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 40px;
+  min-height: 0;
+  height: 100%;
+  color: #fff;
+}
+
+.brand-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 3px;
+  box-shadow: 0 4px 14px rgba(6, 18, 36, 0.3);
+}
+
+.brand-name {
+  font-size: 17px;
+  font-weight: var(--f2-weight-bold);
+  text-shadow: 0 1px 8px rgba(6, 18, 36, 0.55);
+}
+
+.brand-core {
+  display: grid;
+  gap: 20px;
+  justify-items: start;
+}
+
+.brand-hero {
+  margin: 0;
+  font-size: 52px;
+  line-height: 1.16;
+  letter-spacing: 1px;
+  text-shadow: 0 3px 18px rgba(6, 18, 36, 0.55);
+}
+
+.brand-hero-desc {
+  margin: 0;
+  max-width: 430px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15.5px;
+  text-shadow: 0 1px 10px rgba(6, 18, 36, 0.5);
+}
+
+/* 亮点：独立的玻璃小卡（重新设计的产品展示） */
+.brand-highlights {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.brand-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  padding: 9px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 13px;
+  box-shadow: 0 6px 18px rgba(6, 18, 36, 0.18);
+}
+
+.brand-chip svg {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  color: #8fd0ff;
+}
+
+.brand-foot {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  text-shadow: 0 1px 8px rgba(6, 18, 36, 0.5);
+}
+
+/* ===== 开屏动画：LOGO/卡片滑入，亮点弹性划入，文字模糊浮现 ===== */
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes chip-spring-in {
+  from {
+    opacity: 0;
+    transform: translateX(-34px) scale(0.92);
+  }
+
+  60% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes text-blur-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes soft-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.brand-head {
+  animation: slide-in-left 0.6s var(--nav-ease) backwards;
+}
+
+.brand-hero {
+  animation: text-blur-rise 0.8s var(--nav-ease) backwards;
+}
+
+.brand-hero-desc {
+  animation: text-blur-rise 0.8s var(--nav-ease) 0.12s backwards;
+}
+
+.brand-chip {
+  animation: chip-spring-in 0.62s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+.brand-chip:nth-child(1) { animation-delay: 0.1s; }
+.brand-chip:nth-child(2) { animation-delay: 0.19s; }
+.brand-chip:nth-child(3) { animation-delay: 0.28s; }
+.brand-chip:nth-child(4) { animation-delay: 0.37s; }
+.brand-chip:nth-child(5) { animation-delay: 0.46s; }
+
+.brand-foot {
+  animation: soft-fade 0.7s var(--nav-ease) 0.5s backwards;
+}
+
+/* 登录卡片整体升起 + 卡内元素级联浮现 */
+.login-card {
+  animation: card-rise-in 0.6s var(--nav-ease) 0.18s backwards;
+}
+
+.login-card-title {
+  animation: text-blur-rise 0.55s var(--nav-ease) 0.32s backwards;
+}
+
+.login-tabs {
+  animation: soft-fade 0.5s var(--nav-ease) 0.4s backwards;
+}
+
+.login-tab-hint {
+  animation: soft-fade 0.5s var(--nav-ease) 0.46s backwards;
+}
+
+.login-forms {
+  animation: soft-fade 0.5s var(--nav-ease) 0.5s backwards;
+}
+
+.login-hint {
+  animation: soft-fade 0.5s var(--nav-ease) 0.58s backwards;
+}
+
+/* 底部声明条 */
+.login-declaration {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  z-index: 3;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-shadow: 0 1px 6px rgba(6, 18, 36, 0.6);
+  pointer-events: none;
+  animation: soft-fade 0.7s var(--nav-ease) 0.7s backwards;
+}
+
+/* ===== 深灰亚克力登录卡片（收窄拉高） ===== */
+.login-panel {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+.login-card {
+  position: relative;
+  width: 100%;
+  padding: 38px 24px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  background: rgba(26, 30, 36, 0.58);
+  backdrop-filter: blur(22px) saturate(1.25);
+  box-shadow: 0 30px 80px rgba(4, 10, 22, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: #eef2f7;
+}
+
+.brand-compact {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-weight: var(--f2-weight-bold);
+}
+
+.brand-compact img {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px;
+}
+
+.login-card-title {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: 0.4px;
+}
+
+.login-tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 18px 0 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 滑动式指示块：随身份切换在两个 Tab 间平滑滑动 */
+.login-tabs::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 8px);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), 0 2px 8px rgba(4, 10, 22, 0.3);
+  transition: transform 0.3s var(--nav-ease);
+}
+
+.login-tabs[data-active="developer"]::before {
+  transform: translateX(100%);
+}
+
+.login-tabs button {
+  position: relative;
+  z-index: 1;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(238, 242, 247, 0.66);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.24s var(--nav-ease);
+}
+
+.login-tabs button.active {
+  color: #fff;
+  font-weight: var(--f2-weight-semi);
+}
+
+.login-tab-hint {
+  margin: 0 0 14px;
+  color: rgba(238, 242, 247, 0.45);
+  font-size: 11px;
+}
+
+/* 表单切换容器：方向感知的线性变速过渡（两个表单同层叠放，visibility 延迟收起保证动画完整） */
+.login-forms {
+  position: relative;
+  display: grid;
+}
+
+.login-form {
+  grid-area: 1 / 1;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(20px);
+  pointer-events: none;
+  transition: opacity 0.28s var(--nav-ease), transform 0.28s var(--nav-ease), visibility 0s linear 0.28s;
+}
+
+/* 各表单固定滑出方向：开发者从右侧出入，用户从左侧出入；
+   仅作用于非活动表单，活动表单永远归位（:not 优先级隔离） */
+#loginFormUser:not(.is-active) {
+  transform: translateX(-20px);
+}
+
+.login-form.is-active {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: opacity 0.28s var(--nav-ease), transform 0.28s var(--nav-ease), visibility 0s;
+}
+
+/* 输入框卡片微交互 */
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  transition: border-color 0.22s var(--nav-ease), background 0.22s var(--nav-ease), box-shadow 0.22s var(--nav-ease), transform 0.22s var(--nav-ease);
+}
+
+.login-field:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.login-field:focus-within {
+  transform: translateY(-2px);
+  border-color: rgba(143, 208, 255, 0.7);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 22px rgba(6, 18, 36, 0.35), 0 0 0 3px rgba(93, 155, 214, 0.16);
+}
+
+.field-ico {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: rgba(238, 242, 247, 0.55);
+  transition: color 0.22s var(--nav-ease);
+}
+
+.login-field:focus-within .field-ico {
+  color: #8fd0ff;
+}
+
+.login-field .input {
+  height: 40px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 13.5px;
+}
+
+.login-field .input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.login-field .input::placeholder {
+  color: rgba(238, 242, 247, 0.38);
+}
+
+.login-field-desc {
+  margin: 0;
+  color: rgba(238, 242, 247, 0.72);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(238, 242, 247, 0.66);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.login-remember input {
+  accent-color: #8fd0ff;
+}
+
+.login-card .login-submit {
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #2f7fd0, #6a5fd0);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: var(--f2-weight-semi);
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(47, 100, 190, 0.4);
+  transition: transform 0.2s var(--nav-ease), box-shadow 0.2s var(--nav-ease), filter 0.2s var(--nav-ease);
+}
+
+.login-card .login-submit:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+  box-shadow: 0 12px 28px rgba(47, 100, 190, 0.48);
+}
+
+.login-card .login-submit:active {
+  transform: translateY(0);
+}
+
+.login-status {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: #ff9a9a;
+  font-size: 12px;
+}
+
+.login-hint {
+  margin: 12px 0 0;
+  color: rgba(238, 242, 247, 0.42);
+  font-size: 11.5px;
+}
+
+/* ===== 移动端：折叠品牌区 ===== */
+@media (max-width: 900px) {
+  .login-page {
+    grid-template-columns: 1fr;
+    padding: clamp(16px, 5vw, 32px);
+    padding-bottom: calc(clamp(16px, 5vw, 32px) + 48px);
+  }
+
+  .login-brand {
+    display: none;
+  }
+
+  .login-panel {
+    min-height: 100vh;
+    padding-bottom: 24px;
+  }
+
+  .login-card {
+    width: min(100%, 420px);
+    margin: 0 auto;
+    padding: clamp(24px, 4vh, 34px) clamp(18px, 5vw, 28px) clamp(18px, 3vh, 26px);
+  }
+
+  .brand-compact {
+    display: flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .particle-canvas {
+    display: none;
+  }
+
+  .login-form,
+  .login-field,
+  .login-card .login-submit,
+  .login-tabs::before {
+    transition: none;
+  }
+
+  .brand-head,
+  .brand-hero,
+  .brand-hero-desc,
+  .brand-chip,
+  .brand-foot,
+  .login-card,
+  .login-card-title,
+  .login-tabs,
+  .login-tab-hint,
+  .login-forms,
+  .login-hint,
+  .login-declaration {
+    animation: none;
+  }
+}

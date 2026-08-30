@@ -310,6 +310,8 @@ internal static class InstallerEngine
             var stateRoot = Path.Combine(installDir, "user-data");
             var stateRootExisted = Directory.Exists(stateRoot);
             var backupRoot = Path.Combine(stateRoot, "backups", $"{DateTime.Now:yyyyMMdd-HHmmss}-{manifest.Version}");
+            var dataBackupRoot = Path.Combine(backupRoot, "user-data-backup");
+            var dataDirExisted = Directory.Exists(dataDir);
             var updateStaging = Path.Combine(stateRoot, "updates", $"staging-{Guid.NewGuid():N}");
             Directory.CreateDirectory(updateStaging);
 
@@ -340,6 +342,7 @@ internal static class InstallerEngine
 
             var restored = new List<string>();
             var created = new List<string>();
+            if (dataDirExisted) CopyOwnedTree(dataDir, dataBackupRoot);
             try
             {
                 var operationCount = changed.Count + obsolete.Count;
@@ -389,6 +392,15 @@ internal static class InstallerEngine
                     await DeleteFileWithRetryAsync(SafePath(installDir, relative));
                 }
                 RestoreBackup(installDir, backupRoot, restored);
+                if (dataDirExisted)
+                {
+                    try
+                    {
+                        if (Directory.Exists(dataDir)) DeleteOwnedTree(dataDir);
+                        CopyOwnedTree(dataBackupRoot, dataDir);
+                    }
+                    catch { }
+                }
                 if (freshInstall)
                 {
                     try { Registry.CurrentUser.DeleteSubKeyTree(ProductKey, false); } catch { }
@@ -560,6 +572,21 @@ internal static class InstallerEngine
             try { if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory); } catch { }
         }
         try { if (!Directory.EnumerateFileSystemEntries(installDir).Any()) Directory.Delete(installDir); } catch { }
+    }
+
+    private static void CopyOwnedTree(string source, string destination)
+    {
+        if (!Directory.Exists(source)) return;
+        var root = new DirectoryInfo(source);
+        if ((root.Attributes & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("用户数据目录不能是符号链接或目录联接");
+        Directory.CreateDirectory(destination);
+        foreach (var entry in root.EnumerateFileSystemInfos())
+        {
+            if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+            var target = Path.Combine(destination, entry.Name);
+            if (entry is DirectoryInfo child) CopyOwnedTree(child.FullName, target);
+            else File.Copy(entry.FullName, target, true);
+        }
     }
 
     private static void DeleteOwnedTree(string path)

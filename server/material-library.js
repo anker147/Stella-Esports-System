@@ -1,9 +1,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { mutableDataPath, parseJsonFile } = require('./data-paths');
-
-const DEFAULT_STORE = mutableDataPath('material-library.json', '{"schemaVersion":2,"entries":{},"watchedFolders":[],"excludedPaths":[]}\n');
+const { db, withTransaction } = require('./db');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -36,10 +34,9 @@ function validName(name) {
 }
 
 class MaterialLibrary {
-  constructor({ storePath = DEFAULT_STORE } = {}) {
-    this.storePath = storePath;
+  constructor({ storePath = null } = {}) {
     this.lastSyncAt = 0;
-    this.store = this.readStore();
+    this.store = this.loadStore();
     if (this.migrated) this.persist();
   }
 
@@ -47,19 +44,19 @@ class MaterialLibrary {
     return { schemaVersion: 2, entries: {}, watchedFolders: [], excludedPaths: [] };
   }
 
-  readStore() {
-    if (!fs.existsSync(this.storePath)) return this.emptyStore();
+  loadStore() {
     try {
-      const store = parseJsonFile(this.storePath);
-      assert((store.schemaVersion === 1 || store.schemaVersion === 2) && store.entries, '素材库索引格式无效');
-      if (store.schemaVersion === 1) {
-        const indexedPaths = new Set(Object.values(store.entries).map(entry => pathKey(entry.path)));
-        const watchedFolders = Object.values(store.entries)
-          .filter(entry => entry.kind === 'directory' && !indexedPaths.has(pathKey(path.dirname(entry.path))))
-          .map(entry => entry.path);
-        this.migrated = true;
-        return this.removeUnsafeWatchedRoots({ schemaVersion: 2, entries: store.entries, watchedFolders, excludedPaths: [] });
+      const entryRows = db.prepare('SELECT * FROM material_entries').all();
+      const entries = {};
+      for (const row of entryRows) {
+        entries[row.id] = { id: row.id, path: row.path, kind: row.kind, addedAt: row.added_at };
       }
+      const store = {
+        schemaVersion: 2,
+        entries,
+        watchedFolders: db.prepare('SELECT path FROM material_watched_folders').all().map(row => row.path),
+        excludedPaths: db.prepare('SELECT path FROM material_excluded_paths').all().map(row => row.path)
+      };
       store.watchedFolders = Array.isArray(store.watchedFolders) ? store.watchedFolders : [];
       store.excludedPaths = Array.isArray(store.excludedPaths) ? store.excludedPaths : [];
       return this.removeUnsafeWatchedRoots(store);
@@ -83,10 +80,19 @@ class MaterialLibrary {
   }
 
   persist() {
-    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
-    const tempPath = `${this.storePath}.tmp`;
-    fs.writeFileSync(tempPath, `${JSON.stringify(this.store, null, 2)}\n`, 'utf8');
-    fs.renameSync(tempPath, this.storePath);
+    withTransaction(() => {
+      db.prepare('DELETE FROM material_entries').run();
+      db.prepare('DELETE FROM material_watched_folders').run();
+      db.prepare('DELETE FROM material_excluded_paths').run();
+      const insertEntry = db.prepare('INSERT INTO material_entries (id, path, kind, added_at) VALUES (?, ?, ?, ?)');
+      for (const entry of Object.values(this.store.entries)) {
+        insertEntry.run(entry.id, entry.path, entry.kind, entry.addedAt ?? 0);
+      }
+      const insertFolder = db.prepare('INSERT INTO material_watched_folders (path) VALUES (?)');
+      for (const folder of this.store.watchedFolders) insertFolder.run(folder);
+      const insertExcluded = db.prepare('INSERT INTO material_excluded_paths (path) VALUES (?)');
+      for (const excluded of this.store.excludedPaths) insertExcluded.run(excluded);
+    });
   }
 
   entry(id) {
@@ -328,4 +334,4 @@ class MaterialLibrary {
   }
 }
 
-module.exports = { DEFAULT_STORE, MaterialLibrary, isFilesystemRoot, isInside, validName };
+module.exports = { MaterialLibrary, isFilesystemRoot, isInside, validName };

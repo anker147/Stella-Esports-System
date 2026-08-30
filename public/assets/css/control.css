@@ -4,6 +4,19 @@
   --nav-rail-width: 68px;
   --nav-flyout-left: calc(var(--nav-inset) + var(--nav-rail-width) + 8px);
   --nav-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  /* 展开宽度收窄（覆盖 tokens 的 240px） */
+  --f2-sidebar-width: 200px;
+}
+
+/* 全站隐藏滚动条：滚动能力保留，仅去除滚动条视觉；自研定位条不受影响 */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .sidebar {
@@ -33,6 +46,7 @@
   margin-bottom: 12px;
   padding: 2px 4px 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  transition: gap 0.32s var(--nav-ease);
 }
 
 .sidebar-mark {
@@ -71,6 +85,8 @@
   color: var(--f2-text-tertiary);
   font-size: var(--f2-font-caption);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-version {
@@ -95,14 +111,46 @@
   overflow-x: hidden;
   margin: 0 -4px;
   padding: 0 4px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
 }
 
 .sidebar-footer {
+  display: grid;
+  gap: 2px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--f2-red);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.2s var(--nav-ease), color 0.2s var(--nav-ease), gap 0.32s var(--nav-ease);
+}
+
+.sidebar-logout:hover {
+  background: rgba(209, 52, 56, 0.09);
+  color: #b02a2e;
+}
+
+.sidebar-logout svg {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+}
+
+.sidebar-collapsed .sidebar-logout {
+  gap: 0;
+  padding: 0;
 }
 
 .sidebar-collapse {
@@ -118,7 +166,7 @@
   color: var(--f2-text-secondary);
   font-size: 12.5px;
   cursor: pointer;
-  transition: background 0.2s var(--nav-ease), color 0.2s var(--nav-ease);
+  transition: background 0.2s var(--nav-ease), color 0.2s var(--nav-ease), gap 0.32s var(--nav-ease);
 }
 
 .sidebar-collapse:hover {
@@ -137,6 +185,7 @@
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
+  transition: transform 0.32s var(--nav-ease);
 }
 
 .nav-btn,
@@ -155,7 +204,7 @@
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.2s var(--nav-ease), color 0.2s var(--nav-ease), padding 0.32s var(--nav-ease);
+  transition: background 0.2s var(--nav-ease), color 0.2s var(--nav-ease), padding 0.32s var(--nav-ease), gap 0.32s var(--nav-ease);
 }
 
 .nav-btn:hover,
@@ -207,14 +256,18 @@
   width: 12px;
   height: 12px;
   color: rgba(0, 0, 0, 0.26);
+  transition: opacity 0.18s var(--nav-ease), flex-basis 0.3s var(--nav-ease), width 0.3s var(--nav-ease);
 }
 
 .nav-label {
   flex: 1;
   min-width: 0;
+  max-width: 150px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  opacity: 1;
+  transition: opacity 0.18s var(--nav-ease), max-width 0.3s var(--nav-ease);
 }
 
 .nav-chevron {
@@ -265,19 +318,30 @@
 }
 
 .sidebar-collapsed .sidebar {
+  bottom: auto;
+  height: auto;
+  max-height: calc(100vh - 2 * var(--nav-inset));
   width: var(--nav-rail-width);
   padding: 14px 10px;
 }
 
 .sidebar-collapsed .sidebar-header {
   justify-content: center;
+  gap: 0;
   padding-left: 0;
   padding-right: 0;
 }
 
 .sidebar-collapsed .sidebar-heading {
+  flex: 0 0 0px;
+  max-width: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
+}
+
+.sidebar-collapsed .sidebar-collapse {
+  gap: 0;
 }
 
 .sidebar-collapsed .sidebar-collapse svg {
@@ -291,13 +355,29 @@
   padding: 0;
 }
 
-.sidebar-collapsed .nav-label,
-.sidebar-collapsed .nav-chevron,
-.sidebar-collapsed .nav-group-body {
-  display: none;
+.sidebar-collapsed .nav-label {
+  max-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-collapsed .nav-chevron {
+  max-width: 0;
+  flex-basis: 0;
+  opacity: 0;
 }
 
 .sidebar-collapsed .nav-soon {
+  flex-basis: 0;
+  width: 0;
+  opacity: 0;
+}
+
+.sidebar-collapsed .nav-ico {
+  transform: scale(1.1);
+}
+
+.sidebar-collapsed .nav-group-body {
   display: none;
 }
 
@@ -349,9 +429,21 @@
 
 .nav-flyout .nav-label {
   display: block;
+  max-width: none;
+  opacity: 1;
+}
+
+.particle-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.85;
 }
 
 .app-main {
+  position: relative;
+  z-index: 1;
   margin-left: calc(var(--f2-sidebar-width) + var(--nav-inset) + var(--nav-gap));
   min-height: 100vh;
   transition: margin-left 0.32s var(--nav-ease);
@@ -425,6 +517,8 @@
   .nav-group-body,
   .nav-flyout,
   .nav-toast,
+  .nav-ico,
+  .nav-label,
   .release-details,
   .release-top,
   .release-locator-item,
@@ -1784,55 +1878,48 @@
   position: absolute;
   right: 5px;
   bottom: 5px;
-  padding: 2px 4px;
-  border-radius: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
-  font-size: 9px;
-  font-weight: 700;
 }
 
-.material-folder-glyph {
-  position: relative;
-  width: 76px;
-  height: 53px;
-  margin-top: 9px;
-  border: 1px solid #c78b19;
-  border-radius: 4px;
-  background: #f4c24d;
-  box-shadow: inset 0 7px 0 rgba(255, 255, 255, 0.22);
+.material-media-badge svg {
+  width: 10px;
+  height: 10px;
 }
 
-.material-folder-glyph::before {
-  content: '';
-  position: absolute;
-  top: -13px;
-  left: 5px;
-  width: 31px;
-  height: 15px;
-  border: 1px solid #c78b19;
-  border-bottom: 0;
-  border-radius: 4px 4px 0 0;
-  background: #e9ad32;
-}
-
-.material-file-glyph,
-.material-audio-glyph {
+.material-glyph {
   display: grid;
-  width: 64px;
-  height: 76px;
-  place-items: center;
-  border: 1px solid #aeb8c2;
-  border-radius: 3px;
-  background: #fff;
-  color: #286a9f;
-  font-size: 12px;
-  font-weight: 700;
+  justify-items: center;
+  gap: 5px;
 }
 
-.material-audio-glyph {
-  color: #7b4ca5;
-  font-size: 36px;
+.material-glyph svg {
+  width: 52px;
+  height: 52px;
+}
+
+.material-glyph-label {
+  color: var(--f2-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.material-glyph.is-folder {
+  color: #d99527;
+}
+
+.material-glyph.is-audio {
+  color: #8a5fbf;
+}
+
+.material-glyph.is-file {
+  color: #5b8db8;
 }
 
 .material-thumbnail.is-missing {
@@ -2411,17 +2498,11 @@
   min-height: 0;
   align-content: start;
   grid-auto-rows: max-content;
-  gap: 12px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
+    gap: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 
-.release-list::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
 
 .release-layout {
   position: relative;
