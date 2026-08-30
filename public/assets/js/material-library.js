@@ -481,7 +481,7 @@
       card.setAttribute('aria-selected', selected ? 'true' : 'false');
     });
     const selected = entries.filter(entry => selectedIds.has(entry.id));
-    elements.selectionBar.hidden = selected.length === 0;
+    elements.selectionBar.classList.toggle('is-visible', selected.length > 0);
     elements.selectionCount.textContent = `已选择 ${selected.length} 项`;
     elements.openSelected.disabled = selected.length !== 1 || !selected[0].exists;
     elements.previewSelected.disabled = selected.length !== 1 || !isPreviewable(selected[0]) || !selected[0].exists;

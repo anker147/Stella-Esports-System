@@ -7,9 +7,8 @@
     stagger(nodes, { base = 0, step = 40, cap = 14 } = {}) {
       if (prefersReducedMotion()) return;
       Array.from(nodes).forEach((node, index) => {
-        if (index >= cap) return;
         node.classList.add('fly-in-item');
-        node.style.animationDelay = `${base + index * step}ms`;
+        node.style.animationDelay = `${base + Math.min(index, cap) * step}ms`;
       });
     },
     fly(node) {

@@ -428,7 +428,8 @@
   .release-details,
   .release-top,
   .release-locator-item,
-  .release-locator-strip {
+  .release-locator-strip,
+  .material-selection-bar {
     transition: none;
   }
 
@@ -1646,20 +1647,36 @@
   text-decoration: underline;
 }
 
+.material-browser-zone {
+  position: relative;
+}
+
 .material-selection-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 12;
   display: flex;
   min-height: 46px;
   align-items: center;
   justify-content: space-between;
   gap: var(--f2-space-3);
-  padding: 6px 10px;
+  padding: 8px 14px;
   border: 1px solid #b6d4f0;
-  border-bottom: 0;
-  background: #f0f7fd;
+  border-radius: 10px;
+  background: rgba(240, 247, 253, 0.96);
+  box-shadow: 0 10px 26px rgba(15, 35, 60, 0.16);
+  opacity: 0;
+  transform: translateY(14px);
+  pointer-events: none;
+  transition: opacity 0.24s var(--nav-ease), transform 0.24s var(--nav-ease);
 }
 
-.material-selection-bar[hidden] {
-  display: none;
+.material-selection-bar.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .material-selection-actions {

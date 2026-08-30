@@ -6,7 +6,7 @@
   <title>星澜赛事导播系统</title>
   <link rel="stylesheet" href="assets/css/tokens.css">
   <link rel="stylesheet" href="assets/css/components.css">
-  <link rel="stylesheet" href="assets/css/control.css?v=33">
+  <link rel="stylesheet" href="assets/css/control.css?v=34">
 </head>
 <body>
   <aside class="sidebar">
@@ -414,20 +414,22 @@
           <button class="material-icon-button" id="materialUp" type="button" title="返回上一级" aria-label="返回上一级">&#8593;</button>
           <nav class="material-breadcrumbs" id="materialBreadcrumbs" aria-label="素材库路径"></nav>
         </div>
-        <div class="material-selection-bar" id="materialSelectionBar" hidden>
-          <strong id="materialSelectionCount">已选择 0 项</strong>
-          <div class="material-selection-actions">
-            <button class="btn btn-primary" id="openSelectedMaterial" type="button">系统打开</button>
-            <button class="btn btn-secondary" id="previewSelectedMaterial" type="button">预览</button>
-            <button class="btn btn-secondary" id="renameSelectedMaterial" type="button">重命名</button>
-            <button class="btn btn-danger" id="deleteSelectedMaterials" type="button">删除</button>
-            <button class="btn btn-secondary" id="clearMaterialSelection" type="button">取消选择</button>
+        <div class="material-browser-zone">
+          <div class="material-browser" id="materialBrowser">
+            <div class="material-grid" id="materialGrid" role="grid" aria-multiselectable="true" tabindex="0"></div>
+            <div class="material-selection-rect" id="materialSelectionRect" hidden></div>
+            <div class="material-empty" id="materialEmpty" hidden>素材库为空</div>
           </div>
-        </div>
-        <div class="material-browser" id="materialBrowser">
-          <div class="material-grid" id="materialGrid" role="grid" aria-multiselectable="true" tabindex="0"></div>
-          <div class="material-selection-rect" id="materialSelectionRect" hidden></div>
-          <div class="material-empty" id="materialEmpty" hidden>素材库为空</div>
+          <div class="material-selection-bar" id="materialSelectionBar">
+            <strong id="materialSelectionCount">已选择 0 项</strong>
+            <div class="material-selection-actions">
+              <button class="btn btn-primary" id="openSelectedMaterial" type="button">系统打开</button>
+              <button class="btn btn-secondary" id="previewSelectedMaterial" type="button">预览</button>
+              <button class="btn btn-secondary" id="renameSelectedMaterial" type="button">重命名</button>
+              <button class="btn btn-danger" id="deleteSelectedMaterials" type="button">删除</button>
+              <button class="btn btn-secondary" id="clearMaterialSelection" type="button">取消选择</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -628,13 +630,13 @@
   </dialog>
 
   <script src="assets/vendor/pinyin-pro.js?v=3.28.2"></script>
-  <script src="assets/js/fx.js?v=1"></script>
+  <script src="assets/js/fx.js?v=2"></script>
   <script src="assets/js/search.js?v=1"></script>
   <script src="assets/js/countdown.js?v=4"></script>
   <script src="assets/js/control.js?v=17"></script>
   <script src="assets/js/bracket-control.js?v=3"></script>
   <script src="assets/js/bp-control.js?v=12"></script>
-  <script src="assets/js/material-library.js?v=5"></script>
+  <script src="assets/js/material-library.js?v=6"></script>
   <script src="assets/js/logs-control.js?v=7"></script>
   <script src="assets/js/update-log.js?v=14"></script>
 </body>
