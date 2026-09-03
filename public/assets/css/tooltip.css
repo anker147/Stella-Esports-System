@@ -1,0 +1,48 @@
+.system-tooltip {
+  --tooltip-offset: 4px;
+  position: fixed;
+  z-index: 1000;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--f2-radius-sm, 6px);
+  background: rgba(50, 49, 48, 0.97);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 35, 60, 0.16);
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(var(--tooltip-offset));
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.system-tooltip[data-side="bottom"] {
+  --tooltip-offset: -4px;
+}
+
+.system-tooltip[data-open="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.system-tooltip[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .system-tooltip {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .system-tooltip {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

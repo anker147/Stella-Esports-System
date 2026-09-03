@@ -1,15 +1,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { db, withTransaction, IN_MEMORY } = require('./db');
-const { DATA_ROOT, DEFAULTS_ROOT, parseJsonFile } = require('./data-paths');
+const { DATA_ROOT, DEFAULTS_ROOT, INSTALL_DATA_ROOT, parseJsonFile } = require('./data-paths');
 
 const TOURNAMENT_DIR_LEGACY = path.resolve(__dirname, '..', 'public', 'assets', 'data');
 const TOURNAMENT_DIR_SEED = path.join(DEFAULTS_ROOT, 'tournaments');
 const MIGRATED_SUFFIX = () => `.migrated-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
 
 function seedCandidates(relativeName) {
-  return [path.join(DATA_ROOT, relativeName), path.join(DEFAULTS_ROOT, relativeName)]
-    .filter(candidate => fs.existsSync(candidate));
+  return [...new Set([
+    path.join(DATA_ROOT, relativeName),
+    path.join(DEFAULTS_ROOT, relativeName),
+    path.join(INSTALL_DATA_ROOT, relativeName)
+  ])].filter(candidate => fs.existsSync(candidate));
 }
 
 function readSeedJson(relativeName) {
@@ -29,15 +32,146 @@ function countOf(table) {
   return db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 }
 
+function excelDateText(value) {
+  if (!Number.isFinite(value)) return String(value || '').trim() || null;
+  const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+  return `${date.getUTCFullYear()}年${date.getUTCMonth() + 1}月${date.getUTCDate()}日`;
+}
+
+function importCharacterProfiles() {
+  const migrationKey = 'migration.characterProfiles.v1';
+  if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(migrationKey)) {
+    return { skipped: true, reason: 'already imported' };
+  }
+  const seed = readSeedJson('character-profile-data.json');
+  if (!seed) return { skipped: true, reason: 'no character profile seed' };
+  if (seed.data.schemaVersion !== 1 || !Array.isArray(seed.data.characters)) {
+    throw new Error('角色资料种子格式无效');
+  }
+
+  let skillCount = 0;
+  withTransaction(() => {
+    const upsertCharacter = db.prepare(`INSERT INTO characters
+      (id, role, sort_order, enabled, nickname, display_name, release_date_text, portrait_url)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        nickname = CASE
+          WHEN characters.nickname IS NULL OR characters.nickname = '' THEN excluded.nickname
+          ELSE characters.nickname
+        END,
+        display_name = CASE
+          WHEN characters.display_name IS NULL OR characters.display_name = '' THEN excluded.display_name
+          ELSE characters.display_name
+        END,
+        release_date_text = CASE
+          WHEN characters.release_date_text IS NULL OR characters.release_date_text = '' THEN excluded.release_date_text
+          ELSE characters.release_date_text
+        END,
+        portrait_url = CASE
+          WHEN characters.portrait_url IS NULL OR characters.portrait_url = '' THEN excluded.portrait_url
+          ELSE characters.portrait_url
+        END`);
+    const upsertSkill = db.prepare(`INSERT INTO character_skills
+      (character_id, slot, name, description, icon_url) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (character_id, slot) DO UPDATE SET
+        name = CASE
+          WHEN character_skills.name IS NULL OR character_skills.name = '' THEN excluded.name
+          ELSE character_skills.name
+        END,
+        description = CASE
+          WHEN character_skills.description IS NULL OR character_skills.description = '' THEN excluded.description
+          ELSE character_skills.description
+        END,
+        icon_url = CASE
+          WHEN character_skills.icon_url IS NULL OR character_skills.icon_url = '' THEN excluded.icon_url
+          ELSE character_skills.icon_url
+        END`);
+    const roleIndexes = { escape: 0, hunter: 0 };
+    for (const character of seed.data.characters) {
+      const id = String(character.id || '').trim();
+      const role = character.role;
+      if (!id || !Object.hasOwn(roleIndexes, role)) throw new Error('角色资料种子包含无效角色');
+      const sortOrder = roleIndexes[role]++;
+      upsertCharacter.run(
+        id,
+        role,
+        sortOrder,
+        id,
+        String(character.name || '').trim() || null,
+        excelDateText(character.releaseDate),
+        `/assets/characters/ban/${encodeURIComponent(id)}.png?v=2`
+      );
+      (Array.isArray(character.skills) ? character.skills : []).forEach((skill, index) => {
+        upsertSkill.run(
+          id,
+          index + 1,
+          String(skill?.name || '').trim() || null,
+          String(skill?.description || '').trim() || null,
+          String(skill?.iconUrl || '').trim() || null
+        );
+        skillCount += 1;
+      });
+    }
+    db.prepare('INSERT INTO app_settings (key, value_json) VALUES (?, ?)').run(
+      migrationKey,
+      JSON.stringify({ source: seed.data.source || null, importedAt: Date.now(), schemaVersion: 1 })
+    );
+  });
+  return { imported: true, characters: seed.data.characters.length, skills: skillCount };
+}
+
+function importCharacterChangeHistory() {
+  const migrationKey = 'migration.characterChangeHistory.v1';
+  if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(migrationKey)) {
+    return { skipped: true, reason: 'already imported' };
+  }
+  const seed = readSeedJson('character-change-history.json');
+  if (!seed) return { skipped: true, reason: 'no character change history seed' };
+  if (seed.data.schemaVersion !== 1 || !Array.isArray(seed.data.characters)) {
+    throw new Error('角色修改历史种子格式无效');
+  }
+
+  let changeCount = 0;
+  withTransaction(() => {
+    const insert = db.prepare(`INSERT INTO character_change_history
+      (character_id, changed_on, title, content, source_order)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(character_id, changed_on, title) DO UPDATE SET
+        content = excluded.content,
+        source_order = excluded.source_order`);
+    for (const character of seed.data.characters) {
+      const characterId = String(character.id || '').trim();
+      if (!characterId || !db.prepare('SELECT 1 FROM characters WHERE id = ?').get(characterId)) continue;
+      (Array.isArray(character.changes) ? character.changes : []).forEach((change, index) => {
+        const title = String(change?.title || '').trim();
+        if (!title) return;
+        insert.run(
+          characterId,
+          String(change?.date || '').trim() || null,
+          title,
+          String(change?.content || '').trim() || null,
+          index
+        );
+        changeCount += 1;
+      });
+    }
+    db.prepare('INSERT INTO app_settings (key, value_json) VALUES (?, ?)').run(
+      migrationKey,
+      JSON.stringify({ source: seed.data.source || null, importedAt: Date.now(), schemaVersion: 1 })
+    );
+  });
+  return { imported: true, changes: changeCount };
+}
+
 function importBpConfig({ rename = false } = {}) {
   if (countOf('characters') > 0) return { skipped: true };
   const seed = readSeedJson('bp-config.json');
   if (!seed) return { skipped: true, reason: 'no bp-config seed' };
   const config = seed.data;
   withTransaction(() => {
-    const insertCharacter = db.prepare('INSERT INTO characters (id, role, sort_order) VALUES (?, ?, ?)');
-    config.characters.escape.forEach((name, index) => insertCharacter.run(name, 'escape', index));
-    config.characters.hunter.forEach((name, index) => insertCharacter.run(name, 'hunter', index));
+    const insertCharacter = db.prepare('INSERT INTO characters (id, role, sort_order, nickname) VALUES (?, ?, ?, ?)');
+    config.characters.escape.forEach((name, index) => insertCharacter.run(name, 'escape', index, name));
+    config.characters.hunter.forEach((name, index) => insertCharacter.run(name, 'hunter', index, name));
 
     const insertSlot = db.prepare(`INSERT INTO bp_slots
       (id, label, kind, role, image_source, text_source, image_group, text_group, group_name, sort_order)
@@ -174,6 +308,97 @@ function importTournaments() {
 
   // 赛事 JSON 的物理移除由打包/整理流程统一处理，导入本身不做改名
   return { imported: true, renamed: false, events: sources.length, teams: teamCount, matches: matchCount };
+}
+
+function ensureBpTestMatch() {
+  const eventId = 'bp-interface-test-event';
+  const matchId = 'bp-interface-test-match';
+  const preferredTeamIds = ['pc-365days', 'pc-chunxin'];
+  const selectTeam = id => db.prepare(`SELECT teams.id, teams.display_name
+    FROM teams
+    WHERE teams.id = ?
+      AND EXISTS (SELECT 1 FROM players WHERE players.team_id = teams.id)
+      AND (SELECT COUNT(DISTINCT kind) FROM team_logos WHERE team_id = teams.id) = 2`).get(id);
+  let teams = preferredTeamIds.map(selectTeam).filter(Boolean);
+  if (teams.length < 2) {
+    teams = db.prepare(`SELECT teams.id, teams.display_name
+      FROM teams
+      WHERE EXISTS (SELECT 1 FROM players WHERE players.team_id = teams.id)
+        AND (SELECT COUNT(DISTINCT kind) FROM team_logos WHERE team_id = teams.id) = 2
+      ORDER BY teams.id
+      LIMIT 2`).all();
+  }
+  if (teams.length < 2) return { skipped: true, reason: 'not enough complete teams' };
+
+  const [home, away] = teams;
+  const presentationAssets = db.prepare(`SELECT schedule_image, stage_image
+    FROM events
+    WHERE schedule_image IS NOT NULL AND schedule_image <> ''
+      AND stage_image IS NOT NULL AND stage_image <> ''
+    ORDER BY sort_order
+    LIMIT 1`).get() || {};
+  const scheduleImage = presentationAssets.schedule_image || '/assets/match-intro/bp-background.png';
+  const stageImage = presentationAssets.stage_image || '/assets/match-intro/bp-layout/stage-quarterfinals.png';
+  const playerCount = Number(db.prepare(`SELECT COUNT(DISTINCT player_id) AS count
+    FROM players WHERE team_id IN (?, ?)`).get(home.id, away.id).count);
+  const integrity = {
+    teamCount: 2,
+    matchCount: 1,
+    registeredPlayerCount: playerCount,
+    logoCount: 4,
+    checks: ['BP test match is excluded from character statistics']
+  };
+  const nextSortOrder = Number(db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS value FROM events').get().value);
+
+  withTransaction(() => {
+    db.prepare(`INSERT INTO events
+      (id, name, division, stage, stage_label, date, mode, format, schedule_image, stage_image, integrity_json, sort_order)
+      VALUES (?, ?, 'pc', 'test', ?, ?, '测试', 'BO3', ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        division = excluded.division,
+        stage = excluded.stage,
+        stage_label = excluded.stage_label,
+        date = excluded.date,
+        mode = excluded.mode,
+        format = excluded.format,
+        schedule_image = excluded.schedule_image,
+        stage_image = excluded.stage_image,
+        integrity_json = excluded.integrity_json`)
+      .run(eventId, 'BP 功能测试', '功能测试', '2026-09-02', scheduleImage, stageImage, JSON.stringify(integrity), nextSortOrder);
+    db.prepare('INSERT OR IGNORE INTO event_teams (event_id, team_id, sort_order) VALUES (?, ?, ?)')
+      .run(eventId, home.id, 0);
+    db.prepare('INSERT OR IGNORE INTO event_teams (event_id, team_id, sort_order) VALUES (?, ?, ?)')
+      .run(eventId, away.id, 1);
+    db.prepare(`INSERT INTO matches
+      (id, event_id, date, start_time, end_time, mode, format, matchup_home, matchup_away,
+       exclude_from_character_stats, sort_order)
+      VALUES (?, ?, ?, '00:00', '23:59', '测试', 'BO3', ?, ?, 1, 0)
+      ON CONFLICT(id) DO UPDATE SET
+        event_id = excluded.event_id,
+        date = excluded.date,
+        start_time = excluded.start_time,
+        end_time = excluded.end_time,
+        mode = excluded.mode,
+        format = excluded.format,
+        matchup_home = excluded.matchup_home,
+        matchup_away = excluded.matchup_away,
+        exclude_from_character_stats = 1`)
+      .run(matchId, eventId, '2026-09-02', home.display_name, away.display_name);
+    db.prepare(`INSERT INTO match_rooms (match_id, room, escape_team_id, hunter_team_id)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(match_id, room) DO UPDATE SET
+        escape_team_id = excluded.escape_team_id,
+        hunter_team_id = excluded.hunter_team_id`)
+      .run(matchId, 'A', home.id, away.id);
+    db.prepare(`INSERT INTO match_rooms (match_id, room, escape_team_id, hunter_team_id)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(match_id, room) DO UPDATE SET
+        escape_team_id = excluded.escape_team_id,
+        hunter_team_id = excluded.hunter_team_id`)
+      .run(matchId, 'B', away.id, home.id);
+  });
+  return { seeded: true, eventId, matchId, teams: [home.id, away.id] };
 }
 
 function importBpState() {
@@ -341,9 +566,13 @@ let migrationResult = null;
 
 function migrateLegacyData() {
   if (migrationResult) return migrationResult;
+  const tournaments = importTournaments();
   migrationResult = {
     bpConfig: importBpConfig({ rename: !IN_MEMORY }),
-    tournaments: importTournaments(),
+    characterProfiles: importCharacterProfiles(),
+    characterChangeHistory: importCharacterChangeHistory(),
+    tournaments,
+    bpTestMatch: ensureBpTestMatch(),
     bpState: importBpState(),
     materialLibrary: importMaterialLibrary(),
     obsPathMigration: importObsPathMigration(),
@@ -368,4 +597,13 @@ function writeAppSetting(key, value) {
     .run(key, JSON.stringify(value));
 }
 
-module.exports = { migrateLegacyData, importBpConfig, importTournaments, readAppSetting, writeAppSetting };
+module.exports = {
+  migrateLegacyData,
+  importBpConfig,
+  importCharacterProfiles,
+  importCharacterChangeHistory,
+  importTournaments,
+  ensureBpTestMatch,
+  readAppSetting,
+  writeAppSetting
+};

@@ -128,6 +128,60 @@ class MaterialLibrary {
       });
   }
 
+  listPage({ forceSync = false, directoryId = null, query = '', offset = 0, limit = 80 } = {}) {
+    if (forceSync) this.syncWatchedFolders({ force: true });
+    const all = Object.values(this.store.entries);
+    const byPath = new Map(all.map(entry => [pathKey(entry.path), entry]));
+    const directory = directoryId ? this.entry(directoryId) : null;
+    if (directory) assert(directory.kind === 'directory', '素材目录无效');
+    const normalizedQuery = String(query || '').trim().toLocaleLowerCase();
+    let candidates;
+    if (normalizedQuery) {
+      candidates = all.filter(entry => {
+        const extension = entry.kind === 'file' ? path.extname(entry.path).slice(1) : '';
+        return `${path.basename(entry.path)} ${extension} ${entry.path}`.toLocaleLowerCase().includes(normalizedQuery);
+      });
+    } else if (directory) {
+      const directoryKey = pathKey(directory.path);
+      candidates = all.filter(entry => entry.id !== directory.id && pathKey(path.dirname(entry.path)) === directoryKey);
+    } else {
+      candidates = all.filter(entry => !byPath.has(pathKey(path.dirname(entry.path))));
+    }
+    candidates.sort((left, right) => {
+      if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
+      return left.path.localeCompare(right.path, 'zh-CN', { numeric: true });
+    });
+    const safeOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
+    const safeLimit = Math.max(1, Math.min(200, Number.parseInt(limit, 10) || 80));
+    const childCounts = new Map();
+    for (const candidate of all) {
+      const parentKey = pathKey(path.dirname(candidate.path));
+      childCounts.set(parentKey, (childCounts.get(parentKey) || 0) + 1);
+    }
+    const describe = entry => ({
+      ...this.describe(entry),
+      childCount: entry.kind === 'directory' ? (childCounts.get(pathKey(entry.path)) || 0) : undefined
+    });
+    const breadcrumbs = [];
+    let cursor = directory;
+    while (cursor) {
+      breadcrumbs.unshift({ id: cursor.id, name: path.basename(cursor.path), path: cursor.path });
+      cursor = byPath.get(pathKey(path.dirname(cursor.path))) || null;
+    }
+    const entries = candidates.slice(safeOffset, safeOffset + safeLimit).map(describe);
+    return {
+      entries,
+      total: candidates.length,
+      fileTotal: all.filter(entry => entry.kind === 'file').length,
+      folderTotal: all.filter(entry => entry.kind === 'directory').length,
+      offset: safeOffset,
+      limit: safeLimit,
+      hasMore: safeOffset + entries.length < candidates.length,
+      directory: directory ? describe(directory) : null,
+      breadcrumbs
+    };
+  }
+
   walk(inputPath) {
     const root = path.resolve(inputPath);
     const rootStat = fs.statSync(root);
@@ -252,7 +306,7 @@ class MaterialLibrary {
       }
     }
     if (changed) this.persist();
-    return { added, skipped, roots, entries: this.list() };
+    return { added, skipped, roots };
   }
 
   createDocument(directoryPath, name) {
@@ -265,8 +319,9 @@ class MaterialLibrary {
     assert(!fs.existsSync(filePath), '同名文件已经存在');
     const handle = fs.openSync(filePath, 'wx');
     fs.closeSync(handle);
-    const result = this.addPaths([filePath]);
-    return { entry: result.entries.find(entry => pathKey(entry.path) === pathKey(filePath)), entries: result.entries };
+    this.addPaths([filePath]);
+    const entry = Object.values(this.store.entries).find(candidate => pathKey(candidate.path) === pathKey(filePath));
+    return { entry: this.describe(entry) };
   }
 
   rename(id, nextName) {
@@ -294,7 +349,7 @@ class MaterialLibrary {
       return relative ? path.join(nextPath, relative) : nextPath;
     });
     this.persist();
-    return { entry: this.describe(this.entry(id)), entries: this.list() };
+    return { entry: this.describe(this.entry(id)) };
   }
 
   remove(id, mode) {
@@ -330,7 +385,7 @@ class MaterialLibrary {
     }
     for (const candidate of affected) delete this.store.entries[candidate.id];
     this.persist();
-    return { removed: affected.length, selected: selected.length, mode, entries: this.list() };
+    return { removed: affected.length, selected: selected.length, mode };
   }
 }
 

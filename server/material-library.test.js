@@ -28,8 +28,8 @@ test('folder import stores every file and directory by absolute path', t => {
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const result = library.addPaths([files]);
   assert.equal(result.added, 4);
-  assert.equal(result.entries.every(entry => path.isAbsolute(entry.path)), true);
-  assert.equal(result.entries.filter(entry => entry.kind === 'file').length, 2);
+  assert.equal(library.list().every(entry => path.isAbsolute(entry.path)), true);
+  assert.equal(library.list().filter(entry => entry.kind === 'file').length, 2);
   assert.equal(library.addPaths([files]).added, 0);
 });
 
@@ -38,8 +38,8 @@ test('renaming an indexed folder updates every descendant path', t => {
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   library.addPaths([files]);
   const folder = library.list().find(entry => entry.path === files);
-  const result = library.rename(folder.id, 'renamed');
-  assert.equal(result.entries.every(entry => entry.path.includes(`${path.sep}renamed`)), true);
+  library.rename(folder.id, 'renamed');
+  assert.equal(library.list().every(entry => entry.path.includes(`${path.sep}renamed`)), true);
   assert.equal(fs.existsSync(path.join(directory, 'renamed', 'nested', 'notes.txt')), true);
 });
 
@@ -105,6 +105,41 @@ test('index-only removal inside a watched folder remains excluded', t => {
   library.remove(image.id, 'index');
   assert.equal(library.list({ forceSync: true }).some(entry => entry.path === image.path), false);
   assert.equal(fs.existsSync(image.path), true);
+});
+
+test('material pages return direct children, breadcrumbs, search and pagination metadata', t => {
+  const { directory, files, library } = fixture();
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  library.addPaths([files]);
+
+  const rootPage = library.listPage({ limit: 1 });
+  assert.equal(rootPage.entries.length, 1);
+  assert.equal(rootPage.entries[0].path, files);
+  assert.equal(rootPage.entries[0].childCount, 2);
+  assert.equal(rootPage.total, 1);
+  assert.equal(rootPage.fileTotal, 2);
+  assert.equal(rootPage.folderTotal, 2);
+  assert.equal(rootPage.hasMore, false);
+
+  const filesPage = library.listPage({ directoryId: rootPage.entries[0].id, limit: 1 });
+  assert.equal(filesPage.total, 2);
+  assert.equal(filesPage.entries.length, 1);
+  assert.equal(filesPage.hasMore, true);
+  assert.deepEqual(filesPage.breadcrumbs.map(entry => entry.name), ['files']);
+
+  const secondPage = library.listPage({ directoryId: rootPage.entries[0].id, offset: 1, limit: 1 });
+  assert.equal(secondPage.offset, 1);
+  assert.equal(secondPage.entries.length, 1);
+  assert.equal(secondPage.hasMore, false);
+
+  const nested = library.list().find(entry => entry.name === 'nested');
+  const nestedPage = library.listPage({ directoryId: nested.id });
+  assert.deepEqual(nestedPage.breadcrumbs.map(entry => entry.name), ['files', 'nested']);
+  assert.deepEqual(nestedPage.entries.map(entry => entry.name), ['notes.txt']);
+
+  const searchPage = library.listPage({ query: 'notes', limit: 1 });
+  assert.equal(searchPage.total, 1);
+  assert.equal(searchPage.entries[0].name, 'notes.txt');
 });
 
 test('startup removes unsafe drive watchers and their indexed descendants', t => {

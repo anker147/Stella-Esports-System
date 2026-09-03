@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-text="login.title">登录 · 星澜赛事导播系统</title>
   <link rel="stylesheet" href="assets/css/tokens.css">
-  <link rel="stylesheet" href="assets/css/login.css?v=13">
+  <link rel="stylesheet" href="assets/css/tooltip.css?v=1">
+  <link rel="stylesheet" href="assets/css/login.css?v=14">
 </head>
 <body>
   <img class="login-kv" src="assets/brand/kv-board.jpg" alt="" aria-hidden="true">
@@ -41,7 +42,7 @@
         <h2 class="login-card-title" data-text="login.cardTitle">登录控制台</h2>
         <div class="login-tabs" role="tablist" aria-label="登录身份">
           <button type="button" class="active" data-login-tab="user" data-text="login.tabUser">用户</button>
-          <button type="button" data-login-tab="developer" data-text="login.tabDeveloper">开发者</button>
+          <button type="button" data-login-tab="developer" data-text="login.tabDeveloper">管理员</button>
         </div>
         <p class="login-tab-hint" data-text="login.tabHint">按 Tab 键快速切换身份</p>
 
@@ -81,9 +82,19 @@
     </section>
   </main>
 
+  <dialog class="login-error-dialog" id="loginErrorDialog" aria-labelledby="loginErrorTitle">
+    <div class="login-error-dialog-body">
+      <span class="login-error-dialog-mark" aria-hidden="true">!</span>
+      <h2 id="loginErrorTitle" data-text="login.errorTitle">登录无法继续</h2>
+      <p id="loginErrorMessage" role="alert"></p>
+      <button class="login-error-dialog-close" id="loginErrorClose" type="button" data-text="login.errorClose">知道了</button>
+    </div>
+  </dialog>
+
   <footer class="login-declaration" data-text="login.declaration">本系统仅用于赛事导播，全部数据保存在本机。</footer>
 
   <script src="assets/js/text.js?v=1"></script>
-  <script src="assets/js/login.js?v=7"></script>
+  <script src="assets/js/tooltip.js?v=1"></script>
+  <script src="assets/js/login.js?v=12"></script>
 </body>
 </html>

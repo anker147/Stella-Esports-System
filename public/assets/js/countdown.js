@@ -7,6 +7,12 @@
     return Math.min(Math.max(Math.floor(number), min), max);
   }
 
+  function nonNegativeInteger(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(0, Math.floor(number));
+  }
+
   function currentRemaining(state) {
     if (!state) return 0;
     if (!state.running || !state.deadline) {
@@ -16,15 +22,25 @@
   }
 
   function formatFourDigits(seconds) {
-    const safe = Math.min(99 * 60 + 59, Math.max(0, Math.ceil(Number(seconds) || 0)));
-    const minutes = Math.floor(safe / 60);
-    const secs = safe % 60;
-    return `${String(minutes).padStart(2, '0').slice(-2)}${String(secs).padStart(2, '0')}`;
+    return formatClock(seconds).replaceAll(':', '');
   }
 
   function formatClock(seconds) {
-    const digits = formatFourDigits(seconds);
-    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+    const safe = Math.max(0, Math.ceil(Number(seconds) || 0));
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    const secs = safe % 60;
+    const minuteSeconds = `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    return hours > 0 ? `${String(hours).padStart(2, '0')}:${minuteSeconds}` : minuteSeconds;
+  }
+
+  function fitImages(root) {
+    root.style.transform = 'none';
+    window.requestAnimationFrame(() => {
+      const available = Math.max(1, window.innerWidth - root.offsetLeft - 24);
+      const scale = Math.min(1, available / Math.max(1, root.scrollWidth));
+      root.style.transform = scale < 1 ? `scale(${scale})` : 'none';
+    });
   }
 
   function renderImages(root, seconds) {
@@ -39,6 +55,7 @@
         }
         const img = new Image();
         img.alt = char;
+        img.addEventListener('load', () => fitImages(root));
         return img;
       }));
     }
@@ -50,6 +67,7 @@
       img.alt = char;
       img.src = `${ASSET_BASE}${char}.png`;
     });
+    fitImages(root);
   }
 
   for (let digit = 0; digit <= 9; digit += 1) {
@@ -59,6 +77,7 @@
 
   window.CountdownHub = {
     clamp,
+    nonNegativeInteger,
     currentRemaining,
     formatFourDigits,
     formatClock,

@@ -3,6 +3,7 @@
   const elements = {
     page: $('materialsPage'), search: $('materialSearch'), summary: $('materialSummary'), status: $('materialStatus'),
     grid: $('materialGrid'), browser: $('materialBrowser'), empty: $('materialEmpty'), breadcrumbs: $('materialBreadcrumbs'),
+    loadSentinel: $('materialLoadSentinel'),
     up: $('materialUp'), selectionRect: $('materialSelectionRect'), selectionBar: $('materialSelectionBar'),
     selectionCount: $('materialSelectionCount'), openSelected: $('openSelectedMaterial'), previewSelected: $('previewSelectedMaterial'),
     renameSelected: $('renameSelectedMaterial'), deleteSelected: $('deleteSelectedMaterials'),
@@ -33,22 +34,29 @@
   const audioExtensions = new Set(['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']);
   let entries = [];
   let currentDirectoryId = null;
+  let currentDirectoryEntry = null;
+  let breadcrumbs = [];
+  let totalEntries = 0;
+  let totalFiles = 0;
+  let totalFolders = 0;
+  let hasMoreEntries = false;
+  let materialLoading = false;
+  let materialInitialized = false;
+  let searchTimer = null;
+  let loadGeneration = 0;
+  let materialLoadController = null;
   let selectedIds = new Set();
   let selectionAnchorId = null;
   let renameTarget = null;
   let deleteTargetIds = [];
   let busy = false;
   let dragSelection = null;
-  let lastEntriesSignature = '';
   let migrationStatus = null;
   let selectedPathFolderId = null;
   let pendingOperation = null;
 
   async function request(url, options) {
-    const response = await fetch(url, options);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || t('common.requestFailed', { status: response.status }));
-    return payload;
+    return window.StellaDataCache.json(url, options);
   }
 
   function post(url, body = {}) {
@@ -270,53 +278,12 @@
     }
   }
 
-  function normalizePath(value) {
-    const normalized = String(value || '').replace(/\//g, '\\');
-    return normalized.length > 3 ? normalized.replace(/\\+$/, '') : normalized;
-  }
-
-  function pathKey(value) {
-    return normalizePath(value).toLocaleLowerCase('en-US');
-  }
-
-  function parentPath(value) {
-    const normalized = normalizePath(value);
-    if (/^[a-z]:\\$/i.test(normalized)) return '';
-    const index = normalized.lastIndexOf('\\');
-    if (index < 0) return '';
-    if (index === 2 && normalized[1] === ':') return normalized.slice(0, 3);
-    return normalized.slice(0, index);
-  }
-
-  function entryMap() {
-    return new Map(entries.map(entry => [pathKey(entry.path), entry]));
-  }
-
   function currentDirectory() {
-    return entries.find(entry => entry.id === currentDirectoryId && entry.kind === 'directory') || null;
-  }
-
-  function sortEntries(items) {
-    return [...items].sort((left, right) => {
-      if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-      return left.name.localeCompare(right.name, 'zh-CN', { numeric: true });
-    });
+    return currentDirectoryEntry;
   }
 
   function visibleEntries() {
-    const query = elements.search.value.trim().toLocaleLowerCase();
-    if (query) {
-      return sortEntries(entries.filter(entry => (
-        `${entry.name} ${entry.extension} ${entry.path}`.toLocaleLowerCase().includes(query)
-      )));
-    }
-    const map = entryMap();
-    const directory = currentDirectory();
-    if (directory) {
-      const directoryKey = pathKey(directory.path);
-      return sortEntries(entries.filter(entry => entry.id !== directory.id && pathKey(parentPath(entry.path)) === directoryKey));
-    }
-    return sortEntries(entries.filter(entry => !map.has(pathKey(parentPath(entry.path)))));
+    return entries;
   }
 
   function formatSize(size) {
@@ -348,8 +315,7 @@
   }
 
   function immediateChildCount(directory) {
-    const key = pathKey(directory.path);
-    return entries.filter(entry => entry.id !== directory.id && pathKey(parentPath(entry.path)) === key).length;
+    return directory.childCount || 0;
   }
 
   // 内置 iconfont 风格线性图标（离线可用）；换图标只需改这里的 path
@@ -389,6 +355,7 @@
       image.src = contentUrl(entry);
       image.alt = '';
       image.loading = 'lazy';
+      image.decoding = 'async';
       image.draggable = false;
       thumb.appendChild(image);
       return thumb;
@@ -455,14 +422,7 @@
     root.textContent = t('mt.rootName');
     root.addEventListener('click', () => navigateTo(null));
     const crumbs = [root];
-    const map = entryMap();
-    let cursor = currentDirectory();
-    const chain = [];
-    while (cursor) {
-      chain.unshift(cursor);
-      cursor = map.get(pathKey(parentPath(cursor.path)));
-    }
-    for (const entry of chain) {
+    for (const entry of breadcrumbs) {
       const separator = document.createElement('span');
       separator.textContent = '/';
       const button = document.createElement('button');
@@ -477,17 +437,15 @@
   }
 
   function render() {
-    if (currentDirectoryId && !currentDirectory()) currentDirectoryId = null;
     selectedIds = new Set([...selectedIds].filter(id => entries.some(entry => entry.id === id)));
     const visible = visibleEntries();
-    const files = entries.filter(entry => entry.kind === 'file').length;
-    const directories = entries.length - files;
     const searching = Boolean(elements.search.value.trim());
-    const locationText = searching ? t('mt.searchedCount', { count: visible.length }) : t('mt.currentDirCount', { count: visible.length });
-    elements.summary.textContent = t('mt.summaryLine', { location: locationText, files, folders: directories });
-    elements.empty.textContent = entries.length === 0 ? t('mt.empty') : (searching ? t('mt.noMatch') : t('mt.folderEmpty'));
+    const locationText = searching ? t('mt.searchedCount', { count: totalEntries }) : t('mt.currentDirCount', { count: totalEntries });
+    elements.summary.textContent = t('mt.summaryLine', { location: locationText, files: totalFiles, folders: totalFolders });
+    elements.empty.textContent = !totalEntries && !currentDirectory() && !searching ? t('mt.empty') : (searching ? t('mt.noMatch') : t('mt.folderEmpty'));
     elements.empty.hidden = visible.length > 0;
     elements.grid.replaceChildren(...visible.map(makeCard));
+    elements.loadSentinel.hidden = !hasMoreEntries;
     window.PageFX.stagger(elements.grid.children, { step: 30, cap: 12 });
     renderBreadcrumbs();
     syncSelection();
@@ -536,18 +494,16 @@
     syncSelection();
   }
 
-  function navigateTo(id) {
+  async function navigateTo(id) {
     currentDirectoryId = id;
     elements.search.value = '';
     clearSelection();
-    render();
+    await load('', { reset: true });
   }
 
   function navigateUp() {
-    const directory = currentDirectory();
-    if (!directory) return;
-    const parent = entryMap().get(pathKey(parentPath(directory.path)));
-    navigateTo(parent?.kind === 'directory' ? parent.id : null);
+    if (!currentDirectory()) return;
+    navigateTo(breadcrumbs.at(-2)?.id || null);
   }
 
   function openEntry(entry) {
@@ -556,22 +512,41 @@
     else if (entry.exists) openInSystem(entry);
   }
 
-  function entriesSignature(items) {
-    return items.map(entry => `${entry.id}|${entry.path}|${entry.kind}|${entry.exists}|${entry.size}|${entry.modifiedAt}`).join('\n');
-  }
-
-  async function load(message = '', { quiet = false, forceSync = false } = {}) {
+  async function load(message = '', { quiet = false, forceSync = false, reset = true } = {}) {
+    if (!reset && materialLoading) return;
+    const generation = reset ? ++loadGeneration : loadGeneration;
+    if (reset) materialLoadController?.abort();
+    const controller = new AbortController();
+    materialLoadController = controller;
+    materialLoading = true;
     try {
-      const payload = await request(forceSync ? '/api/materials?sync=1' : '/api/materials');
-      const signature = entriesSignature(payload.entries);
-      entries = payload.entries;
-      if (signature !== lastEntriesSignature) {
-        lastEntriesSignature = signature;
-        render();
-      }
+      const params = new URLSearchParams({
+        offset: reset ? '0' : String(entries.length),
+        limit: '80'
+      });
+      if (currentDirectoryId) params.set('directory', currentDirectoryId);
+      const query = elements.search.value.trim();
+      if (query) params.set('q', query);
+      if (forceSync) params.set('sync', '1');
+      const payload = await request(`/api/materials?${params}`, { signal: controller.signal });
+      if (generation !== loadGeneration) return;
+      entries = reset ? payload.entries : [...entries, ...payload.entries];
+      currentDirectoryEntry = payload.directory;
+      breadcrumbs = payload.breadcrumbs;
+      totalEntries = payload.total;
+      totalFiles = payload.fileTotal;
+      totalFolders = payload.folderTotal;
+      hasMoreEntries = payload.hasMore;
+      materialInitialized = true;
+      render();
       if (message) setStatus(message);
     } catch (error) {
-      if (!quiet) setStatus(error.message, true);
+      if (error.name !== 'AbortError' && !quiet) setStatus(error.message, true);
+    } finally {
+      if (generation === loadGeneration) {
+        materialLoading = false;
+        if (materialLoadController === controller) materialLoadController = null;
+      }
     }
   }
 
@@ -591,8 +566,7 @@
     setStatus(t(kind === 'folder' ? 'mt.waitingFolder' : 'mt.waitingFile'));
     try {
       const payload = await post('/api/materials/import', { kind });
-      entries = payload.entries;
-      render();
+      if (!payload.cancelled) await load('', { reset: true });
       setStatus(payload.cancelled ? t('mt.pickCancelled') : t('mt.imported', { added: payload.added, skipped: payload.skipped }));
     } catch (error) {
       setStatus(error.message, true);
@@ -656,11 +630,10 @@
     if (!deleteTargetIds.length) return;
     try {
       const payload = await post('/api/materials/bulk-delete', { ids: deleteTargetIds, mode });
-      entries = payload.entries;
       elements.deleteDialog.close();
       deleteTargetIds = [];
       selectedIds.clear();
-      render();
+      await load('', { reset: true });
       setStatus(mode === 'index'
         ? t('mt.removedIndexOnly', { count: payload.removed })
         : t('mt.removedWithFiles', { count: payload.removed }));
@@ -759,7 +732,8 @@
 
   elements.search.addEventListener('input', () => {
     clearSelection();
-    render();
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => load('', { reset: true }), 250);
   });
   elements.up.addEventListener('click', navigateUp);
   elements.refresh.addEventListener('click', () => load(t('mt.refreshedLog'), { forceSync: true }));
@@ -786,10 +760,9 @@
     if (!renameTarget) return;
     try {
       const payload = await post(`/api/materials/${encodeURIComponent(renameTarget.id)}/rename`, { name: elements.renameInput.value });
-      entries = payload.entries;
       elements.renameDialog.close();
       selectedIds = new Set([payload.entry.id]);
-      render();
+      await load('', { reset: true });
       setStatus(t('mt.renamed', { name: payload.entry.name }));
       renameTarget = null;
     } catch (error) {
@@ -826,10 +799,9 @@
         directoryPath: elements.documentDirectory.value,
         name: elements.documentName.value
       });
-      entries = payload.entries;
       elements.documentDialog.close();
       selectedIds = new Set([payload.entry.id]);
-      render();
+      await load('', { reset: true });
       setStatus(t('mt.docCreated', { name: payload.entry.name }));
     } catch (error) {
       setStatus(error.message, true);
@@ -850,17 +822,24 @@
     event.preventDefault();
     finishOperation(false);
   });
-  document.querySelector('[data-page="materials"]').addEventListener('click', () => {
+  function ensureInitialized() {
+    if (materialInitialized || materialLoading) return;
     load();
     loadMigrationStatus({ quiet: true });
+  }
+
+  const loadObserver = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting) && hasMoreEntries && !materialLoading) {
+      load('', { reset: false });
+    }
+  }, { root: elements.browser, rootMargin: '520px 0px' });
+  loadObserver.observe(elements.loadSentinel);
+
+  window.addEventListener('stella:page-change', event => {
+    if (event.detail?.page === 'materials') ensureInitialized();
   });
 
-  window.setInterval(() => {
-    if (document.visibilityState !== 'visible' || elements.page.hidden || busy) return;
-    if (document.querySelector('dialog[open]')) return;
-    load('', { quiet: true });
-  }, 4000);
-
-  load();
-  loadMigrationStatus({ quiet: true });
+  if (!elements.page.hidden) {
+    ensureInitialized();
+  }
 })();

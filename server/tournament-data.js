@@ -112,7 +112,8 @@ function buildDataset(eventRow) {
       mode: matchRow.mode,
       format: matchRow.format,
       matchup: [matchRow.matchup_home, matchRow.matchup_away].filter(Boolean),
-      winnerTeamId: matchRow.winner_team_id || null
+      winnerTeamId: matchRow.winner_team_id || null,
+      excludeFromCharacterStats: Boolean(matchRow.exclude_from_character_stats)
     };
     if (Object.keys(rooms).length) match.rooms = rooms;
     if (participants.length) {

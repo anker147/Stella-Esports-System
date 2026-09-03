@@ -25,6 +25,7 @@ body {
   align-items: flex-start;
   gap: 4px;
   height: 177px;
+  transform-origin: left top;
 }
 
 .time img {

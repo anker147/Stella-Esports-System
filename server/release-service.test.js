@@ -7,7 +7,7 @@ const { readReleaseData } = require('./release-service');
 
 test('project update log has a valid current version and ordered releases', () => {
   const data = readReleaseData();
-  assert.equal(data.currentVersion, '2.2.0');
+  assert.equal(data.currentVersion, '2.4.0');
   assert.equal(data.releases[0].version, data.currentVersion);
   assert.equal(data.releases.length >= 5, true);
 });

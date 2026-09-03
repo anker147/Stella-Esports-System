@@ -2,13 +2,38 @@
   const tabs = [...document.querySelectorAll('[data-login-tab]')];
   const formsBox = document.getElementById('loginForms');
   const status = document.getElementById('loginStatus');
+  const errorDialog = document.getElementById('loginErrorDialog');
+  const errorMessage = document.getElementById('loginErrorMessage');
+  const errorClose = document.getElementById('loginErrorClose');
   const forms = {
     user: document.getElementById('loginFormUser'),
     developer: document.getElementById('loginFormDeveloper')
   };
   const order = ['user', 'developer'];
+  const AUTH_NOTICE_KEY = 'stella.auth.notice';
+  const loginErrorTextKeys = Object.freeze({
+    ACCOUNT_DISABLED: 'login.accountDisabled',
+    SYSTEM_ACCESS_CLOSED: 'login.systemClosed',
+    INVALID_USER_CREDENTIALS: 'login.userInvalid',
+    INVALID_ADMIN_CREDENTIALS: 'login.adminInvalid'
+  });
   let active = 'user';
   let setupRequired = false;
+  let lastFocusedElement = null;
+
+  function closeErrorDialog() {
+    if (!errorDialog?.open) return;
+    errorDialog.close();
+    if (lastFocusedElement && document.contains(lastFocusedElement)) lastFocusedElement.focus();
+  }
+
+  function showErrorDialog(message) {
+    if (!errorDialog?.showModal || !errorMessage) return;
+    lastFocusedElement = document.activeElement;
+    errorMessage.textContent = message;
+    errorDialog.showModal();
+    errorClose?.focus();
+  }
 
   function switchTo(next) {
     if (next === active || !forms[next]) return;
@@ -78,18 +103,89 @@
       body: JSON.stringify(payload)
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) throw new Error(data.error || t('login.notConnected'));
+    if (!response.ok || !data.ok) {
+      const textKey = loginErrorTextKeys[data.code];
+      const message = textKey ? t(textKey) : (data.error || t('login.notConnected'));
+      const error = new Error(message);
+      error.code = data.code;
+      throw error;
+    }
     return data;
   }
 
   async function postLogin(payload) {
-    return postJson('/api/auth/login', payload);
+    return postJson('/api/auth/login', { ...payload, ...await readDeviceContext() });
+  }
+
+  function browserName() {
+    const userAgent = navigator.userAgent;
+    if (userAgent.includes('Edg/')) return 'Microsoft Edge';
+    if (userAgent.includes('Chrome/')) return 'Google Chrome';
+    if (userAgent.includes('Firefox/')) return 'Mozilla Firefox';
+    if (userAgent.includes('Safari/')) return 'Safari';
+    return '浏览器';
+  }
+
+  async function readDeviceContext() {
+    const storageKey = 'stella.device.id';
+    let deviceId = '';
+    try {
+      deviceId = localStorage.getItem(storageKey) || '';
+      if (!deviceId) {
+        deviceId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        localStorage.setItem(storageKey, deviceId);
+      }
+    } catch {
+      deviceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+    const traits = [
+      deviceId,
+      navigator.userAgent,
+      navigator.platform,
+      navigator.language,
+      (navigator.languages || []).join(','),
+      timeZone,
+      navigator.hardwareConcurrency || 0,
+      navigator.deviceMemory || 0,
+      `${screen.width}x${screen.height}x${screen.colorDepth}`,
+      navigator.maxTouchPoints || 0
+    ].join('|');
+    let deviceFingerprint = '';
+    if (crypto.subtle) {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(traits));
+      deviceFingerprint = [...new Uint8Array(digest)]
+        .map(byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+    return {
+      deviceId,
+      deviceFingerprint,
+      deviceName: `${navigator.platform || '未知平台'} · ${browserName()}`
+    };
   }
 
   function fail(message) {
     status.textContent = message;
     status.className = 'login-status error';
+    showErrorDialog(message);
   }
+
+  errorClose?.addEventListener('click', closeErrorDialog);
+  errorDialog?.addEventListener('cancel', event => {
+    event.preventDefault();
+    closeErrorDialog();
+  });
+  errorDialog?.addEventListener('click', event => {
+    if (event.target === errorDialog) closeErrorDialog();
+  });
+
+  try {
+    const notice = sessionStorage.getItem(AUTH_NOTICE_KEY);
+    sessionStorage.removeItem(AUTH_NOTICE_KEY);
+    if (notice === 'system-access-closed') fail(t('login.sessionClosedBySystem'));
+    else if (notice === 'session-revoked') fail(t('login.sessionRevoked'));
+  } catch {}
 
   forms.user.addEventListener('submit', async event => {
     event.preventDefault();
@@ -103,7 +199,7 @@
         remember: Boolean(forms.user.remember?.checked)
       });
       status.textContent = '';
-      window.location.href = '/';
+      window.location.href = '/?page=personalCenter';
     } catch (error) {
       fail(error.message);
     }
@@ -127,7 +223,7 @@
       }
       await postLogin({ role: 'developer', account, password, remember: true });
       status.textContent = '';
-      window.location.href = '/';
+      window.location.href = '/?page=personalCenter';
     } catch (error) {
       fail(error.message);
     }

@@ -514,6 +514,76 @@ body {
   font-size: 12px;
 }
 
+.login-error-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(27, 31, 38, 0.94);
+  color: #eef2f7;
+  box-shadow: 0 26px 70px rgba(4, 10, 22, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.login-error-dialog::backdrop {
+  background: rgba(4, 10, 22, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.login-error-dialog[open] {
+  animation: login-error-dialog-in 0.24s var(--nav-ease) both;
+}
+
+.login-error-dialog-body {
+  display: grid;
+  gap: 10px;
+  padding: 26px;
+}
+
+.login-error-dialog-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 138, 138, 0.16);
+  color: #ffabab;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.login-error-dialog h2 {
+  margin: 2px 0 0;
+  font-size: 17px;
+}
+
+.login-error-dialog p {
+  margin: 0;
+  color: rgba(238, 242, 247, 0.72);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.login-error-dialog-close {
+  justify-self: end;
+  min-width: 84px;
+  height: 36px;
+  margin-top: 6px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #eaf3ff;
+  color: #1c4270;
+  font-size: 13px;
+  font-weight: var(--f2-weight-semi);
+  cursor: pointer;
+}
+
+@keyframes login-error-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
 .login-hint {
   margin: 12px 0 0;
   color: rgba(238, 242, 247, 0.42);
@@ -556,8 +626,10 @@ body {
   .login-form,
   .login-field,
   .login-card .login-submit,
-  .login-tabs::before {
+  .login-tabs::before,
+  .login-error-dialog[open] {
     transition: none;
+    animation: none;
   }
 
   .brand-head,

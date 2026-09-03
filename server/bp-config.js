@@ -101,6 +101,14 @@ function loadConfig() {
   return config;
 }
 
+function reloadCharacterRoster() {
+  const escape = db.prepare("SELECT id FROM characters WHERE role = 'escape' AND enabled = 1 ORDER BY sort_order, id").all().map(row => row.id);
+  const hunter = db.prepare("SELECT id FROM characters WHERE role = 'hunter' AND enabled = 1 ORDER BY sort_order, id").all().map(row => row.id);
+  CONFIG.characters.escape.splice(0, CONFIG.characters.escape.length, ...escape);
+  CONFIG.characters.hunter.splice(0, CONFIG.characters.hunter.length, ...hunter);
+  return { escape: [...CONFIG.characters.escape], hunter: [...CONFIG.characters.hunter] };
+}
+
 const CONFIG = loadConfig();
 
 if (CONFIG.characters.escape.length === 0 || CONFIG.characters.hunter.length === 0
@@ -210,5 +218,6 @@ module.exports = {
   commentatorImageId,
   updateCommentatorImageId,
   commentatorLogoImageId,
-  updateCommentatorLogoImageId
+  updateCommentatorLogoImageId,
+  reloadCharacterRoster
 };

@@ -87,6 +87,64 @@ test('BP domain starts empty after being cleared, isolating past records', t => 
   assert.equal(fs.readdirSync(dbDir).some(name => name.startsWith('test.db')), true);
 });
 
+test('BP session summaries omit full state until one session is requested', t => {
+  const { directory, service } = fixture();
+  t.after(() => {
+    service.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const session = service.ensureSession('mobile-2026-07-25-qf-1', 1, 'A');
+  service.startSession(session.id);
+
+  const [summary] = service.listSessionSummaries();
+  assert.deepEqual(Object.keys(summary).sort(), [
+    'attempt', 'forfeit', 'gameNumber', 'id', 'matchId', 'result', 'room', 'status'
+  ]);
+  assert.equal('history' in summary, false);
+  assert.equal('slots' in summary, false);
+  assert.equal('timer' in summary, false);
+
+  const full = service.serialize(service.getSession(session.id));
+  assert.equal(Array.isArray(full.history), true);
+  assert.equal(typeof full.slots, 'object');
+  assert.equal(typeof full.timer, 'object');
+});
+
+test('persisted BP history is loaded only when its session is requested', t => {
+  const { directory, service } = fixture();
+  const session = service.ensureSession('mobile-2026-07-25-qf-1', 1, 'A');
+  service.close();
+  const reloaded = new BpService({ resolver: createTournamentResolver() });
+  t.after(() => {
+    reloaded.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  assert.equal(reloaded.sessions[session.id].history, null);
+  assert.equal(reloaded.listSessionSummaries().length, 1);
+  assert.equal(reloaded.sessions[session.id].history, null);
+  assert.equal(reloaded.getSession(session.id).history.length, 1);
+});
+
+test('BP history preserves the identity used for each operation', t => {
+  const { directory, service } = fixture();
+  t.after(() => {
+    service.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const actor = { userId: null, displayName: '赛事导播', identityKey: 'director' };
+  const session = service.ensureSession('mobile-2026-07-25-qf-1', 1, 'A', 1, actor);
+  service.startSession(session.id);
+
+  const history = service.serialize(service.getSession(session.id)).history;
+  assert.equal(history.at(-1).actorIdentityKey, 'director');
+  assert.equal(
+    db.prepare(`SELECT actor_identity_key FROM bp_session_history
+      WHERE session_id = ? ORDER BY seq DESC LIMIT 1`).get(session.id).actor_identity_key,
+    'director'
+  );
+});
+
 test('escape picks push independently and phase advances only after all four', async t => {
   const { directory, service } = fixture();
   t.after(() => {

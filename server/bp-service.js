@@ -23,6 +23,7 @@ function emptySlots() {
 function snapshot(session) {
   const copy = clone(session);
   delete copy.history;
+  delete copy.auditActor;
   return copy;
 }
 
@@ -55,7 +56,6 @@ class BpService extends EventEmitter {
       const sessionRows = db.prepare('SELECT * FROM bp_sessions').all();
       const slotRows = db.prepare('SELECT * FROM bp_session_slots').all();
       const resultRows = db.prepare('SELECT * FROM bp_session_results').all();
-      const historyRows = db.prepare('SELECT * FROM bp_session_history ORDER BY seq').all();
 
       const slotsBySession = new Map();
       for (const row of slotRows) {
@@ -77,17 +77,9 @@ class BpService extends EventEmitter {
             : {})
         });
       }
-      const historyBySession = new Map();
-      for (const row of historyRows) {
-        if (!historyBySession.has(row.session_id)) historyBySession.set(row.session_id, []);
-        historyBySession.get(row.session_id).push({
-          revision: row.revision,
-          timestamp: row.timestamp_ms,
-          action: row.action,
-          details: JSON.parse(row.details_json || '{}'),
-          snapshot: JSON.parse(row.snapshot_json || '{}')
-        });
-      }
+      const resultUpdatedSessions = new Set(db.prepare(
+        "SELECT DISTINCT session_id FROM bp_session_history WHERE action = 'result-updated'"
+      ).all().map(row => row.session_id));
 
       for (const row of sessionRows) {
         const slots = slotsBySession.get(row.id) || {};
@@ -126,10 +118,11 @@ class BpService extends EventEmitter {
           },
           createdAt: row.created_at,
           updatedAt: row.updated_at,
-          history: historyBySession.get(row.id) || []
+          auditActor: null,
+          history: null
         };
         if (session.result) session.result ||= null;
-        if (session.attempt > 1 && !session.history.some(entry => entry.action === 'result-updated')) session.result = null;
+        if (session.attempt > 1 && !resultUpdatedSessions.has(session.id)) session.result = null;
         sessions[session.id] = session;
       }
     } catch (error) {
@@ -176,6 +169,23 @@ class BpService extends EventEmitter {
     return forfeits;
   }
 
+  ensureHistory(session) {
+    if (Array.isArray(session.history)) return session.history;
+    session.history = db.prepare(`SELECT revision, timestamp_ms, actor_user_id, actor_display_name, actor_identity_key,
+      action, details_json, snapshot_json FROM bp_session_history
+      WHERE session_id = ? ORDER BY seq`).all(session.id).map(row => ({
+      revision: row.revision,
+      timestamp: row.timestamp_ms,
+      actorUserId: row.actor_user_id || null,
+      actorName: row.actor_display_name || '系统',
+      actorIdentityKey: row.actor_identity_key || (row.actor_user_id ? 'unknown' : 'system'),
+      action: row.action,
+      details: JSON.parse(row.details_json || '{}'),
+      snapshot: JSON.parse(row.snapshot_json || '{}')
+    }));
+    return session.history;
+  }
+
   persist(...subjects) {
     const targets = subjects.filter(Boolean);
     if (!targets.length) return;
@@ -203,7 +213,9 @@ class BpService extends EventEmitter {
         VALUES (?, ?, ?, ?, ?, ?, ?)`);
       const deleteHistory = db.prepare('DELETE FROM bp_session_history WHERE session_id = ?');
       const insertHistory = db.prepare(`INSERT INTO bp_session_history
-        (session_id, revision, timestamp_ms, action, details_json, snapshot_json) VALUES (?, ?, ?, ?, ?, ?)`);
+        (session_id, revision, timestamp_ms, actor_user_id, actor_display_name, actor_identity_key,
+          action, details_json, snapshot_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const upsertForfeit = db.prepare(`INSERT INTO bp_forfeits
         (match_id, room, forfeiting_team_id, winner_team_id, active, declared_at, revoked_at, session_states_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -229,6 +241,7 @@ class BpService extends EventEmitter {
           continue;
         }
         const session = subject;
+        this.ensureHistory(session);
         upsertSession.run(
           session.id, session.matchId, session.gameNumber, session.room, session.attempt ?? 1,
           session.replayOf || null, session.outputMode || 'nickname', session.status,
@@ -250,7 +263,9 @@ class BpService extends EventEmitter {
         }
         deleteHistory.run(session.id);
         for (const item of session.history || []) {
-          insertHistory.run(session.id, item.revision, item.timestamp ?? 0, item.action,
+          insertHistory.run(session.id, item.revision, item.timestamp ?? 0,
+            item.actorUserId || null, item.actorName || '系统',
+            item.actorIdentityKey || (item.actorUserId ? 'unknown' : 'system'), item.action,
             JSON.stringify(item.details || {}), JSON.stringify(item.snapshot || {}));
         }
       }
@@ -267,7 +282,7 @@ class BpService extends EventEmitter {
     assert(room === 'A' || room === 'B', '房间必须是A或B');
   }
 
-  createSession(matchId, gameNumber, room, attempt = 1) {
+  createSession(matchId, gameNumber, room, attempt = 1, auditActor = null) {
     this.validateContext(matchId, gameNumber, room);
     this.assertGameAvailable(matchId, gameNumber, room);
     const id = this.sessionId(matchId, gameNumber, room, attempt);
@@ -296,6 +311,7 @@ class BpService extends EventEmitter {
       },
       createdAt: now,
       updatedAt: now,
+      auditActor: auditActor ? { ...auditActor } : null,
       history: []
     };
     this.sessions[id] = session;
@@ -304,14 +320,21 @@ class BpService extends EventEmitter {
     return session;
   }
 
-  ensureSession(matchId, gameNumber, room, attempt = 1) {
+  ensureSession(matchId, gameNumber, room, attempt = 1, auditActor = null) {
     const id = this.sessionId(matchId, gameNumber, room, attempt);
-    return this.sessions[id] || this.createSession(matchId, gameNumber, room, attempt);
+    return this.sessions[id] || this.createSession(matchId, gameNumber, room, attempt, auditActor);
+  }
+
+  setAuditActor(id, auditActor) {
+    const session = this.getSession(id);
+    session.auditActor = auditActor ? { ...auditActor } : null;
+    return session;
   }
 
   getSession(id) {
     const session = this.sessions[id];
     assert(session, `BP记录不存在: ${id}`);
+    this.ensureHistory(session);
     return session;
   }
 
@@ -321,13 +344,30 @@ class BpService extends EventEmitter {
       .map(session => this.serialize(session));
   }
 
+  listSessionSummaries(matchId = null) {
+    return Object.values(this.sessions)
+      .filter(session => !matchId || session.matchId === matchId)
+      .map(session => ({
+        id: session.id,
+        matchId: session.matchId,
+        gameNumber: session.gameNumber,
+        room: session.room,
+        attempt: session.attempt,
+        status: session.status,
+        result: clone(session.result),
+        forfeit: clone(this.activeForfeit(session.matchId, session.room))
+      }));
+  }
+
   currentRemaining(session, now = Date.now()) {
     if (!session.timer.running || !session.timer.deadline) return session.timer.remainingSeconds;
     return Math.max(0, Math.ceil((session.timer.deadline - now) / 1000));
   }
 
   serialize(session) {
+    this.ensureHistory(session);
     const data = clone(session);
+    delete data.auditActor;
     data.timer.remainingSeconds = this.currentRemaining(session);
     data.phase = session.currentPhaseIndex >= 0 ? PHASES[session.currentPhaseIndex] || null : null;
     data.roomAssignment = {
@@ -404,11 +444,15 @@ class BpService extends EventEmitter {
   }
 
   record(session, action, details = {}) {
+    this.ensureHistory(session);
     session.revision += 1;
     session.updatedAt = Date.now();
     session.history.push({
       revision: session.revision,
       timestamp: session.updatedAt,
+      actorUserId: session.auditActor?.userId || null,
+      actorName: session.auditActor?.displayName || '系统',
+      actorIdentityKey: session.auditActor?.identityKey || (session.auditActor?.userId ? 'unknown' : 'system'),
       action,
       details: clone(details),
       snapshot: snapshot(session)

@@ -192,9 +192,7 @@
 
   async function load() {
     try {
-      const response = await fetch('/api/update-log');
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || t('up.loadFailed', { status: response.status }));
+      const data = await window.StellaDataCache.json('/api/update-log');
       elements.sidebarVersion.textContent = `v${data.currentVersion}`;
       elements.currentVersion.textContent = `v${data.currentVersion}`;
       elements.updatedAt.textContent = t('up.updatedAt', { date: formatDate(data.updatedAt) });
@@ -233,6 +231,13 @@
     }
   }
 
+  async function loadSidebarVersion() {
+    try {
+      const data = await window.StellaDataCache.json('/api/update-log');
+      elements.sidebarVersion.textContent = `v${data.currentVersion}`;
+    } catch {}
+  }
+
   elements.list.addEventListener('mouseenter', event => {
     pointerClientY = event.clientY;
     pointerOverList = true;
@@ -255,5 +260,6 @@
   }, { passive: false });
 
   document.querySelector('[data-page="updates"]').addEventListener('click', load);
-  load();
+  loadSidebarVersion();
+  if (!document.getElementById('updatesPage').hidden) load();
 })();

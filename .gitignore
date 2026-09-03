@@ -22,6 +22,8 @@ data/*.migrated-*
 .edge-test/
 .codex-artifacts/
 .codex-spreadsheet/
+.impeccable/review/
+.impeccable/mocks/
 .packaging-test/
 .zcode/
 .dotnet-home/
