@@ -13,6 +13,21 @@
     messageScroll: document.getElementById('communicationsMessageScroll'),
     messageList: document.getElementById('communicationsMessageList'),
     messageState: document.getElementById('communicationsMessageState'),
+    channelSearch: document.getElementById('communicationsChannelSearch'),
+    announcementBar: document.getElementById('communicationsAnnouncement'),
+    settingsOpen: document.getElementById('communicationsSettingsOpen'),
+    settingsDialog: document.getElementById('communicationsSettingsDialog'),
+    settingsClose: document.getElementById('communicationsSettingsClose'),
+    settingsCancel: document.getElementById('communicationsSettingsCancel'),
+    settingsForm: document.getElementById('communicationsSettingsForm'),
+    settingsName: document.getElementById('communicationsSettingsName'),
+    settingsDescription: document.getElementById('communicationsSettingsDescription'),
+    settingsAnnouncement: document.getElementById('communicationsSettingsAnnouncement'),
+    settingsPinned: document.getElementById('communicationsSettingsPinned'),
+    settingsMuted: document.getElementById('communicationsSettingsMuted'),
+    settingsFeedback: document.getElementById('communicationsSettingsFeedback'),
+    avatarInput: document.getElementById('communicationsAvatarInput'),
+    avatarRemove: document.getElementById('communicationsAvatarRemove'),
     contextMenu: document.getElementById('communicationsContextMenu'),
     announcement: document.getElementById('communicationsAnnouncement'),
     historyState: document.getElementById('communicationsHistoryState'),
@@ -70,12 +85,16 @@
     createMode: 'private',
     contextMenuMessageId: null,
     contextMenuTrigger: null,
-    contextMenuKeyboardOpened: false
+    contextMenuKeyboardOpened: false,
+    channelMenuTargetId: null,
+    channelQuery: ''
   };
 
-  function text(key, fallback, params) {
-    const translated = t(key, params);
-    return translated === key ? fallback : translated;
+  function node(tag, className, content) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (content !== undefined) element.textContent = String(content);
+    return element;
   }
 
   function api(url, options = {}) {
@@ -115,6 +134,30 @@
     return svg;
   }
 
+  const CHANNEL_KIND_ICONS = {
+    global: ['M1.8 3.2h12.4v7.6H7.6l-3.6 3.2v-3.2H1.8z', 'M4.8 6h6.4M4.8 8.4h4'],
+    identity: ['M8 1.6l5.2 2v3.6c0 3.3-2.3 5.5-5.2 6.8-2.9-1.3-5.2-3.5-5.2-6.8V3.6l5.2-2z', 'M5.4 7.8l1.7 1.7 3.4-3.6'],
+    private: ['M5.6 7.4a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.6 13.6c0-2.3 1.8-4.1 4-4.1s4 1.8 4 4.1', 'M11 7.2a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6M10.3 13.4c.3-1.7 1.6-3 3.3-3.4'],
+    custom: ['M8 4.2a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6zM2.6 13.2v-2.4a3.2 3.2 0 0 1 3.2-3.2h4.4a3.2 3.2 0 0 1 3.2 3.2v2.4', 'M5.8 13.2v-2M10.2 13.2v-2']
+  };
+
+  function channelKindIcon(kind) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.3');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const data of CHANNEL_KIND_ICONS[kind] || CHANNEL_KIND_ICONS.custom) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', data);
+      svg.appendChild(path);
+    }
+    return svg;
+  }
+
   function avatarElement(className, item, kind) {
     const avatar = document.createElement('span');
     avatar.className = className;
@@ -125,15 +168,8 @@
       avatar.appendChild(image);
       return avatar;
     }
-    if (kind === 'global') {
-      avatar.appendChild(createSvg(['M5.5 2.3L4 13.7M11.8 2.3l-1.5 11.4M2.2 6h12M1.7 10h12']));
-    } else if (kind === 'identity') {
-      avatar.appendChild(createSvg(['M8 2.2l4.8 1.9v3.6c0 3-2.2 4.9-4.8 6.2-2.6-1.3-4.8-3.2-4.8-6.2V4.1L8 2.2z', 'M5.8 8l1.4 1.4L10.5 6']));
-    } else if (kind === 'custom') {
-      avatar.appendChild(createSvg(['M5.2 7.2a2.1 2.1 0 1 0 0-4.2 2.1 2.1 0 0 0 0 4.2z', 'M11.2 7.7a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z', 'M1.8 13c.3-2.5 1.6-3.8 3.6-3.8s3.3 1.3 3.6 3.8', 'M9 10c.6-.4 1.3-.6 2.2-.6 1.8 0 2.8 1.2 3 3.3']));
-    } else {
-      avatar.textContent = initials(item?.displayName || item?.name);
-    }
+    avatar.classList.add('communications-avatar-generated', 'communications-avatar-' + kind);
+    avatar.appendChild(channelKindIcon(kind));
     return avatar;
   }
 
@@ -218,8 +254,14 @@
       ['private', state.channels.filter(channel => channel.kind === 'private')],
       ['custom', state.channels.filter(channel => channel.kind === 'custom')]
     ];
+    const query = state.channelQuery.trim().toLowerCase();
     for (const [key, channels] of groups) {
-      if (!channels.length) continue;
+      const ordered = channels
+        .filter(channel => !query || channel.name.toLowerCase().includes(query))
+        .slice()
+        .sort((left, right) => (right.pinned ? 1 : 0) - (left.pinned ? 1 : 0) || right.updatedAt - left.updatedAt);
+      if (!ordered.length && query) continue;
+      void channels;
       const section = document.createElement('section');
       section.className = 'communications-channel-group';
       const heading = document.createElement('div');
@@ -230,13 +272,22 @@
       count.textContent = String(channels.length);
       heading.append(label, count);
       section.appendChild(heading);
-      for (const channel of channels) {
+      for (const channel of ordered) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'communications-channel-row';
+        button.dataset.channelId = channel.id;
         button.classList.toggle('is-active', channel.id === state.selectedChannelId);
         button.setAttribute('aria-current', channel.id === state.selectedChannelId ? 'page' : 'false');
-        button.appendChild(avatarElement('communications-channel-avatar', channel, channel.kind));
+        const avatar = avatarElement('communications-channel-avatar', channel, channel.kind);
+        if (channel.pinned) {
+          const pin = document.createElement('span');
+          pin.className = 'communications-pin-badge';
+          pin.title = text('channels.pinLabel', '置顶');
+          pin.innerHTML = '<svg viewBox="0 0 24 24" data-icon="pin" data-icon-fill="true" aria-hidden="true"></svg>';
+          avatar.appendChild(pin);
+        }
+        button.appendChild(avatar);
         const copy = document.createElement('span');
         copy.className = 'communications-channel-row-copy';
         const name = document.createElement('strong');
@@ -244,11 +295,18 @@
         const summary = document.createElement('span');
         summary.textContent = channelSummary(channel);
         copy.append(name, summary);
+        if (channel.muted) {
+          const flag = document.createElement('span');
+          flag.className = 'communications-muted-flag';
+          flag.title = text('channels.muteLabel', '免打扰');
+          flag.innerHTML = '<svg viewBox="0 0 24 24" data-icon="bell-off" aria-hidden="true"></svg>';
+          copy.append(flag);
+        }
         button.appendChild(copy);
         if (channel.unreadCount > 0) {
           const unread = document.createElement('span');
-          unread.className = 'communications-unread';
-          unread.textContent = channel.unreadCount > 99 ? '99+' : String(channel.unreadCount);
+          unread.className = channel.muted ? 'communications-unread is-muted' : 'communications-unread';
+          unread.textContent = channel.muted ? '•' : channel.unreadCount > 99 ? '99+' : String(channel.unreadCount);
           unread.setAttribute('aria-label', text('channels.unreadCount', '{count} 条未读消息', { count: channel.unreadCount }));
           button.appendChild(unread);
         }
@@ -271,19 +329,167 @@
       elements.kind.hidden = true;
       return;
     }
-    const avatar = avatarElement('communications-current-avatar-inner', channel, channel.kind);
-    while (avatar.firstChild) elements.currentAvatar.appendChild(avatar.firstChild);
+    if (channel.avatarUrl) {
+      const image = document.createElement('img');
+      image.src = channel.avatarUrl;
+      image.alt = '';
+      elements.currentAvatar.replaceChildren(image);
+      elements.currentAvatar.classList.remove('communications-avatar-generated');
+      elements.currentAvatar.classList.remove('communications-avatar-global', 'communications-avatar-identity', 'communications-avatar-private', 'communications-avatar-custom');
+    } else {
+      elements.currentAvatar.replaceChildren(channelKindIcon(channel.kind));
+      elements.currentAvatar.classList.add('communications-avatar-generated');
+      elements.currentAvatar.classList.add('communications-avatar-' + channel.kind);
+    }
     elements.title.textContent = channel.name;
     elements.description.textContent = channel.description || channelSummary(channel);
     elements.kind.textContent = kindLabel(channel.kind);
     elements.kind.hidden = false;
+    renderAnnouncementBar(channel);
+  }
+
+  function renderAnnouncementBar(channel) {
+    const bar = elements.announcementBar;
+    if (!bar) return;
+    const announcement = String(channel?.announcement || '').trim();
+    bar.hidden = !announcement;
+    bar.replaceChildren(...(announcement
+      ? [node('span', 'communications-announcement-tag', text('channels.announcementTag', '公告')),
+         node('span', 'communications-announcement-text', announcement)]
+      : []));
+  }
+
+  function canManageSelectedChannel() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    return Boolean(channel && (channel.mine || channel.developerObserver));
+  }
+
+  function openChannelSettings() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    const canManage = canManageSelectedChannel();
+    elements.settingsName.value = channel.name;
+    elements.settingsName.disabled = !canManage;
+    elements.settingsDescription.value = channel.description;
+    elements.settingsDescription.disabled = !canManage;
+    elements.settingsAnnouncement.value = channel.announcement || '';
+    elements.settingsAnnouncement.disabled = !canManage;
+    elements.settingsPinned.checked = Boolean(channel.pinned);
+    elements.settingsMuted.checked = Boolean(channel.muted);
+    elements.avatarRemove.disabled = !canManage || !channel.avatarUrl;
+    elements.avatarInput.disabled = !canManage;
+    setSettingsAvatarPreview(channel);
+    setFeedback('');
+    elements.settingsFeedback.textContent = '';
+    elements.settingsDialog.showModal();
+  }
+
+  function setSettingsFeedback(message) {
+    const line = document.getElementById('communicationsSettingsFeedback');
+    if (line) line.textContent = message || '';
+  }
+
+  function setSettingsAvatarPreview(channel) {
+    const preview = document.getElementById('communicationsSettingsAvatar');
+    if (!preview) return;
+    if (channel?.avatarUrl) {
+      const image = document.createElement('img');
+      image.src = channel.avatarUrl;
+      image.alt = '';
+      preview.replaceChildren(image);
+      return;
+    }
+    preview.className = 'communications-settings-avatar communications-avatar-generated communications-avatar-' + (channel?.kind || 'custom');
+    preview.replaceChildren(channelKindIcon(channel?.kind || 'custom'));
+  }
+
+  function setFeedback(message) {
+    const line = document.getElementById('communicationsSettingsFeedback');
+    if (line) line.textContent = message || '';
+  }
+
+  async function saveChannelSettings(event) {
+    event.preventDefault();
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    const canManage = canManageSelectedChannel();
+    try {
+      if (canManage) {
+        const updated = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: elements.settingsName.value,
+            description: elements.settingsDescription.value,
+            announcement: elements.settingsAnnouncement.value
+          })
+        });
+        updateChannel(updated.channel);
+      }
+      const prefs = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pinned: elements.settingsPinned.checked,
+          muted: elements.settingsMuted.checked
+        })
+      });
+      const current = state.channels.find(item => item.id === channel.id);
+      if (current) {
+        current.pinned = prefs.pinned;
+        current.muted = prefs.muted;
+      }
+      elements.settingsDialog.close('saved');
+      renderChannels();
+      renderConversationHeader();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  }
+
+  async function uploadChannelAvatar(file) {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel || !file) return;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('读取图片失败'));
+      reader.readAsDataURL(file);
+    });
+    try {
+      const result = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/avatar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl })
+      });
+      channel.avatarUrl = result.avatarUrl;
+      setSettingsAvatarPreview(channel);
+      renderChannels();
+      renderConversationHeader();
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  }
+
+  async function removeChannelAvatar() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    try {
+      const result = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/avatar', { method: 'DELETE' });
+      channel.avatarUrl = result.avatarUrl;
+      setSettingsAvatarPreview(channel);
+      renderChannels();
+      renderConversationHeader();
+    } catch (error) {
+      setFeedback(error.message);
+    }
   }
 
   function actionButton(action, options = {}) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `communications-message-action ${action.className || ''}`.trim();
-    button.append(createSvg(action.paths));
+    if (Array.isArray(action.paths)) button.append(createSvg(action.paths));
     const caption = document.createElement('span');
     caption.textContent = options.contextMenu ? (action.contextLabel || action.label) : action.label;
     button.appendChild(caption);
@@ -528,7 +734,18 @@
     if (!message.recalled || message.developerRecallVisible) {
       const content = document.createElement('span');
       content.className = 'communications-message-content';
-      content.textContent = message.content;
+      const mentionPattern = /(^|\s)(@[^\s@，。！？；：、]+)/g;
+      String(message.content || '').split(mentionPattern).forEach(part => {
+        if (!part) return;
+        if (part.startsWith('@') && part.length > 1) {
+          const mention = document.createElement('span');
+          mention.className = 'communications-mention';
+          mention.textContent = part;
+          content.appendChild(mention);
+        } else {
+          content.appendChild(document.createTextNode(part));
+        }
+      });
       bubble.appendChild(content);
     }
     body.append(meta, bubble);
@@ -603,10 +820,86 @@
     elements.contextMenu.style.removeProperty('left');
     elements.contextMenu.style.removeProperty('top');
     document.querySelector('.communications-message-row.is-context-target')?.classList.remove('is-context-target');
+    document.querySelector('.communications-channel-row.is-context-target')?.classList.remove('is-context-target');
     state.contextMenuMessageId = null;
     state.contextMenuTrigger = null;
     state.contextMenuKeyboardOpened = false;
+    state.channelMenuTargetId = null;
     if (restoreFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
+  }
+
+  function openChannelMenu(channel, row, point) {
+    closeContextMenu();
+    row.classList.add('is-context-target');
+    state.channelMenuTargetId = channel.id;
+    const togglePin = {
+      key: 'pin',
+      label: text('channels.pinLabel', '置顶'),
+      handler: () => toggleChannelPref(channel, 'pinned')
+    };
+    const toggleMute = {
+      key: 'mute',
+      label: text('channels.muteLabel', '免打扰'),
+      handler: () => toggleChannelPref(channel, 'muted')
+    };
+    const markRead = {
+      key: 'read',
+      label: text('channels.markRead', '标记为已读'),
+      handler: () => markChannelReadFromMenu(channel)
+    };
+    const settings = {
+      key: 'settings',
+      label: text('channels.settingsTitle', '频道设置'),
+      handler: () => openChannelSettings()
+    };
+    elements.contextMenu.append(
+      actionButton(togglePin, { contextMenu: true }),
+      actionButton(toggleMute, { contextMenu: true }),
+      actionButton(markRead, { contextMenu: true }),
+      actionButton(settings, { contextMenu: true })
+    );
+    elements.contextMenu.hidden = false;
+    positionContextMenu(point.x, point.y);
+    requestAnimationFrame(() => contextMenuItems()[0]?.focus({ preventScroll: true }));
+  }
+
+  async function toggleChannelPref(channel, field) {
+    closeContextMenu();
+    try {
+      const next = {};
+      next[field] = !channel[field];
+      const result = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next)
+      });
+      const current = state.channels.find(item => item.id === channel.id);
+      if (current) {
+        current.pinned = result.pinned;
+        current.muted = result.muted;
+      }
+      renderChannels();
+    } catch (error) {
+      await window.StellaDialog?.alert?.({ title: text('channels.prefFailed', '设置失败'), message: error.message, tone: 'danger' });
+    }
+  }
+
+  async function markChannelReadFromMenu(channel) {
+    closeContextMenu();
+    try {
+      await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const current = state.channels.find(item => item.id === channel.id);
+      if (current) {
+        current.unreadCount = 0;
+        renderChannels();
+      }
+    } catch (error) {
+      await window.StellaDialog?.alert?.({ title: text('channels.prefFailed', '设置失败'), message: error.message, tone: 'danger' });
+    }
   }
 
   function positionContextMenu(clientX, clientY) {
@@ -1060,8 +1353,18 @@
         scheduleRealtimeRefresh(JSON.parse(event.data));
       } catch {}
     });
-    source.onopen = () => setLiveState('live');
-    source.onerror = () => setLiveState('error');
+    let everErrored = false;
+    source.onopen = () => {
+      setLiveState('live');
+      if (!everErrored) return;
+      everErrored = false;
+      // 断线重连后全量补拉，弥合窗口期错过的消息
+      loadBootstrap({ force: true, preserveConversation: true, preservePosition: true, scrollBottom: false }).catch(() => {});
+    };
+    source.onerror = () => {
+      everErrored = true;
+      setLiveState('error');
+    };
   }
 
   function contactOption(contact, mode) {
@@ -1214,6 +1517,28 @@
   elements.contextMenu.addEventListener('contextmenu', event => event.preventDefault());
   elements.paste.addEventListener('click', pasteFromClipboard);
   elements.editCancel.addEventListener('click', () => cancelEditing());
+  elements.channelList.addEventListener('contextmenu', event => {
+    const row = event.target instanceof Element ? event.target.closest('.communications-channel-row') : null;
+    if (!row) return;
+    event.preventDefault();
+    const channel = state.channels.find(item => item.id === row.dataset.channelId);
+    if (!channel) return;
+    openChannelMenu(channel, row, { x: event.clientX, y: event.clientY });
+  });
+  elements.channelSearch.addEventListener('input', () => {
+    state.channelQuery = elements.channelSearch.value;
+    renderChannels();
+  });
+  elements.settingsOpen.addEventListener('click', () => openChannelSettings());
+  elements.settingsClose.addEventListener('click', () => elements.settingsDialog.close());
+  elements.settingsCancel.addEventListener('click', () => elements.settingsDialog.close());
+  elements.settingsForm.addEventListener('submit', saveChannelSettings);
+  elements.avatarInput.addEventListener('change', () => {
+    const file = elements.avatarInput.files?.[0];
+    elements.avatarInput.value = '';
+    if (file) uploadChannelAvatar(file);
+  });
+  elements.avatarRemove.addEventListener('click', removeChannelAvatar);
   elements.createOpen.addEventListener('click', openCreateDialog);
   elements.createClose.addEventListener('click', () => elements.dialog.close());
   elements.createCancel.addEventListener('click', () => elements.dialog.close());
@@ -1262,8 +1587,12 @@
     state.active = event.detail?.page === 'channels';
     if (!state.active) closeContextMenu();
     if (!state.active) return;
-    if (!state.initialized) loadBootstrap({ anchorUnread: true });
-    else loadBootstrap({ force: true, anchorUnread: true, scrollBottom: false });
+    const bootstrapOptions = state.initialized
+      ? { force: true, anchorUnread: true, scrollBottom: false }
+      : { anchorUnread: true, scrollBottom: false };
+    loadBootstrap(bootstrapOptions).then(() => {
+      if (state.active) startEvents();
+    });
   });
 
   window.addEventListener('stella:identity-change', () => {
@@ -1281,7 +1610,9 @@
     const channelId = event.detail?.channelId;
     if (!channelId) return;
     state.active = true;
-    loadBootstrap({ force: true, channelId, anchorUnread: true, scrollBottom: false });
+    loadBootstrap({ force: true, channelId, anchorUnread: true, scrollBottom: false }).then(() => {
+      if (state.active) startEvents();
+    });
   });
 
   const initialButton = document.querySelector('[data-page="channels"].active');

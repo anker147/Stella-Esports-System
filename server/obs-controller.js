@@ -93,6 +93,36 @@ class ObsController extends EventEmitter {
     await this.client.request('SetSceneItemEnabled', { sceneName, sceneItemId, sceneItemEnabled: enabled });
   }
 
+  // 在全部场景中定位源所在场景（取第一个命中的），返回 { sceneName, sceneItemId, sceneItemEnabled } 或 null
+  async locateSource(sourceName) {
+    const sceneResult = await this.client.request('GetSceneList');
+    for (const scene of sceneResult.scenes || []) {
+      try {
+        const itemResult = await this.client.request('GetSceneItemList', { sceneName: scene.sceneName });
+        const hit = (itemResult.sceneItems || []).find(item => item.sourceName === sourceName);
+        if (hit) {
+          return { sceneName: scene.sceneName, sceneItemId: hit.sceneItemId, sceneItemEnabled: Boolean(hit.sceneItemEnabled) };
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  async setSourceVisible(sourceName, enabled) {
+    const located = await this.locateSource(sourceName);
+    if (!located) throw new Error(`OBS 中未找到源：${sourceName}`);
+    await this.client.request('SetSceneItemEnabled', {
+      sceneName: located.sceneName,
+      sceneItemId: located.sceneItemId,
+      sceneItemEnabled: Boolean(enabled)
+    });
+    return { ...located, sceneItemEnabled: Boolean(enabled) };
+  }
+
+  async sourceVisible(sourceName) {
+    return this.locateSource(sourceName);
+  }
+
   characterFile(kind, characterId) {
     const folder = kind === 'ban' ? 'Ban' : 'Pick';
     const fileName = characterId || '占位';
@@ -109,16 +139,20 @@ class ObsController extends EventEmitter {
     return player?.nickname || '';
   }
 
-  runOperation(label, task) {
+  runOperation(label, task, actor = null) {
+    if (!this.client.connected && !this.client.connecting) {
+      this.lastError = 'OBS 未连接';
+      return Promise.reject(new Error('OBS 未连接，请在 BP 控制台连接 OBS 后重试'));
+    }
     return this.queue.add(async () => {
       try {
         const result = await task();
         this.lastError = null;
-        this.emit('operation', { label, ok: true, timestamp: Date.now() });
+        this.emit('operation', { label, ok: true, timestamp: Date.now(), actor });
         return result;
       } catch (error) {
         this.lastError = error.message;
-        this.emit('operation', { label, ok: false, error: error.message, timestamp: Date.now() });
+        this.emit('operation', { label, ok: false, error: error.message, timestamp: Date.now(), actor });
         throw error;
       }
     });
@@ -127,6 +161,7 @@ class ObsController extends EventEmitter {
   pushSlot(session, slotId) {
     const config = SLOT_CONFIG[slotId];
     const slot = session.slots[slotId];
+    const actor = session.auditActor || null;
     return this.runOperation(`push:${session.id}:${slotId}`, async () => {
       const imageFile = this.characterFile(config.kind, slot.characterId);
       if (config.kind === 'ban') {
@@ -158,12 +193,13 @@ class ObsController extends EventEmitter {
         this.setVisible(config.textGroup, config.textSource, true)
       ]);
       await wait(this.transitionMs);
-    });
+    }, actor);
   }
 
   clearSlot(session, slotId) {
     const config = SLOT_CONFIG[slotId];
     const slot = session.slots[slotId];
+    const actor = session.auditActor || null;
     return this.runOperation(`clear:${session.id}:${slotId}`, async () => {
       const imageFile = this.characterFile(config.kind, null);
       if (config.kind === 'ban') {
@@ -194,7 +230,7 @@ class ObsController extends EventEmitter {
         this.setVisible(config.textGroup, config.textSource, true)
       ]);
       await wait(this.transitionMs);
-    });
+    }, actor);
   }
 
   setTimer(seconds) {
@@ -219,12 +255,17 @@ class ObsController extends EventEmitter {
     const match = this.resolver.getMatch(session.matchId);
     const tournament = this.resolver.getTournamentByMatch(session.matchId);
     const roundNumber = tournament.matches.findIndex(item => item.id === session.matchId) + 1;
-    const [, month, day] = tournament.event.date.split('-').map(Number);
+    const roundLabels = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    const dateParts = String(tournament.event.date || '').split('-').map(Number);
+    const month = Number.isInteger(dateParts[1]) ? dateParts[1] : '--';
+    const day = Number.isInteger(dateParts[2]) ? dateParts[2] : '--';
     return {
       division: tournament.event.division === 'pc' ? '端游赛区' : '手游赛区',
-      round: `第${['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'][roundNumber]}轮`,
+      round: roundNumber >= 1 && roundNumber < roundLabels.length
+        ? `第${roundLabels[roundNumber]}轮`
+        : `第${roundNumber}轮`,
       game: `MATCH ${session.gameNumber}`,
-      info: `${month}-${day} ${match.startTime} ${tournament.event.format}`
+      info: `${month}-${day} ${match.startTime || ''} ${tournament.event.format || ''}`
     };
   }
 
@@ -355,7 +396,7 @@ class ObsController extends EventEmitter {
     });
   }
 
-  syncMatch(session) {
+  syncMatch(session, actor = null) {
     return this.runOperation(`match:${session.id}`, async () => {
       const match = this.resolver.getMatch(session.matchId);
       const assignment = match.rooms[session.room];
@@ -368,10 +409,10 @@ class ObsController extends EventEmitter {
         this.setInput(OBS_INPUTS.matchData.hunterTeamLogo, { file: this.assetPath(hunterTeam.logos.hunter.obsFile).replaceAll('\\', '/') }),
         ...this.matchInputUpdates(session)
       ]);
-    });
+    }, actor);
   }
 
-  syncSession(session) {
+  syncSession(session, actor = null) {
     return this.runOperation(`sync:${session.id}`, async () => {
       const match = this.resolver.getMatch(session.matchId);
       const assignment = match.rooms[session.room];
@@ -398,7 +439,7 @@ class ObsController extends EventEmitter {
         if (config.textSource) updates.push(this.setInput(config.textSource, { text: this.playerNickname(session, slotId) }));
       }
       await Promise.all(updates);
-    });
+    }, actor);
   }
 }
 

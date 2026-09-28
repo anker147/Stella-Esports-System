@@ -1,13 +1,16 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <link rel="preload" href="/assets/data/ui-text.json?v=3" as="fetch">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title data-text="bo.title">BP Dynamic Overlay</title>
-  <link rel="stylesheet" href="/assets/css/bp-overlay.css?v=6">
+  <link rel="stylesheet" href="/assets/css/bp-overlay.css?v=9">
 </head>
 <body>
   <main class="viewport">
+      <div class="preview-shell" id="previewShell" hidden></div>
     <section class="bp-stage" id="bpStage" aria-label="动态 BP" data-text-aria="bo.stageAria">
       <video class="base-video" id="bpBaseVideo" autoplay muted loop playsinline preload="auto" aria-hidden="true">
         <source src="/assets/match-intro/zhuifeng-base.mp4" type="video/mp4">
@@ -66,7 +69,7 @@
       </div>
     </section>
   </main>
-  <script src="/assets/js/text.js?v=1"></script>
-  <script src="/assets/js/bp-overlay.js?v=4"></script>
+  <script defer src="/assets/js/text.js?v=9"></script>
+  <script defer src="/assets/js/bp-overlay.js?v=9"></script>
 </body>
 </html>

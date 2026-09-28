@@ -8,6 +8,9 @@ data/bp-state.json.*
 data/bp-presentation.json
 data/material-library.json
 data/obs-path-migration.json
+data/backups/
+public/assets/event-media/
+.impeccable/
 data/app.db
 data/app.db-shm
 data/app.db-wal

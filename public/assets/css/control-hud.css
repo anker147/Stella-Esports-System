@@ -1,0 +1,290 @@
+/* HUD 中心 HUB 卡化 */
+.hud-center-page {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+  padding: 20px 24px 24px;
+}
+
+.hud-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+.hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color 160ms var(--nav-ease), box-shadow 160ms var(--nav-ease), transform 160ms var(--nav-ease);
+}
+
+.hub-card:hover:not(.is-placeholder) {
+  border-color: rgba(0, 120, 212, 0.45);
+  box-shadow: 0 10px 28px rgba(15, 35, 60, 0.10);
+  transform: translateY(-2px);
+}
+
+.hub-card.is-placeholder {
+  cursor: default;
+  opacity: 0.62;
+  filter: saturate(0.4);
+}
+
+.hub-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.hub-card-logo {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 11px;
+  background: rgba(244, 248, 253, 0.9);
+  color: var(--f2-blue-active);
+}
+
+.hub-card-logo svg {
+  width: 24px;
+  height: 24px;
+}
+
+.hub-card.is-placeholder .hub-card-logo,
+.hub-card-logo.is-gray {
+  color: var(--f2-text-tertiary);
+  background: rgba(246, 247, 248, 0.9);
+}
+
+.hub-card-copy {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hub-card-copy h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.hub-card-copy p {
+  margin: 0;
+  color: var(--f2-text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.hub-card-switch {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.hub-card-foot {
+  margin: auto 0 0;
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+}
+
+.hub-card-foot.is-live {
+  color: var(--f2-green);
+}
+
+.hub-soon-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid rgba(15, 35, 60, 0.14);
+  border-radius: 999px;
+  background: rgba(246, 247, 248, 0.9);
+  color: var(--f2-text-tertiary);
+  font-size: 10.5px;
+}
+
+.hud-hub-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.hud-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(15, 35, 60, 0.08);
+}
+
+.hud-dialog-head .hub-card-copy h2 {
+  font-size: 17px;
+}
+
+.hud-dialog-close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--f2-text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.hud-dialog-body {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+
+.hud-dialog-preview {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 380px;
+  border: 1px solid rgba(15, 35, 60, 0.1);
+  border-radius: 12px;
+  background:
+    linear-gradient(45deg, rgba(15, 35, 60, 0.05) 25%, transparent 25%, transparent 75%, rgba(15, 35, 60, 0.05) 75%),
+    linear-gradient(45deg, rgba(15, 35, 60, 0.05) 25%, transparent 25%, transparent 75%, rgba(15, 35, 60, 0.05) 75%),
+    #f8fafc;
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  overflow: hidden;
+}
+
+.hud-dialog-preview iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 380px;
+  border: 0;
+  background: transparent;
+}
+
+.hud-dialog-preview-note {
+  color: var(--f2-text-tertiary);
+  font-size: 12px;
+}
+
+.hud-dialog-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.hud-link-block {
+  display: grid;
+  gap: 6px;
+}
+
+.hud-link-label {
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+  font-weight: var(--f2-weight-semi);
+}
+
+.hud-copy-status {
+  min-height: 14px;
+  color: var(--f2-green);
+  font-size: 11px;
+}
+
+.hud-copy-status.is-error {
+  color: var(--f2-red);
+}
+
+.hud-quick-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.hud-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.hud-quick-grid .btn {
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.hud-side-note {
+  margin: 0;
+  color: var(--f2-text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.hud-countdown-clock {
+  margin: 4px 0 0;
+  color: var(--f2-text-primary);
+  font: 700 30px/1 var(--f2-font-mono);
+  text-align: center;
+}
+
+@media (max-width: 1240px) {
+  .hud-hub-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .hud-hub-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-dialog-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* BP 控制台操作提示 */
+.bp-toast-anchor {
+  min-height: 0;
+}
+
+.bp-toast {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin-bottom: 10px;
+  padding: 10px 16px;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(15, 35, 60, 0.12);
+  color: var(--f2-text-primary);
+  font-size: 12.5px;
+  animation: bp-toast-in 180ms var(--nav-ease);
+}
+
+.bp-toast.error {
+  border-color: rgba(209, 52, 56, 0.35);
+  background: rgba(253, 244, 244, 0.97);
+  color: var(--f2-red);
+}
+
+@keyframes bp-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

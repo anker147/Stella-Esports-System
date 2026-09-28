@@ -203,6 +203,28 @@ function writeChangeRecords(database, character) {
   return character.changesToAdd.length;
 }
 
+function updateCharacterChange(database = defaultDb, characterId, changeId, source = {}) {
+  const record = source && typeof source === 'object' ? source : {};
+  const changedOn = cleanText(record.date, '修改记录日期', 10, true);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(changedOn)) throw new Error('修改记录日期格式无效');
+  const title = cleanText(record.title, '修改记录标题', 120, true);
+  const content = cleanText(record.content, '修改记录详情', 4000, true);
+  const numericId = Number(changeId);
+  if (!Number.isInteger(numericId)) throw new Error('修改记录不存在');
+  const existing = database.prepare('SELECT id FROM character_change_history WHERE id = ? AND character_id = ?')
+    .get(numericId, characterId);
+  if (!existing) throw new Error('修改记录不存在');
+  try {
+    database.prepare(`UPDATE character_change_history
+      SET changed_on = ?, title = ?, content = ? WHERE id = ? AND character_id = ?`)
+      .run(changedOn, title, content, numericId, characterId);
+  } catch (error) {
+    if (String(error.message).includes('UNIQUE')) throw new Error('相同日期与标题的修改记录已存在');
+    throw error;
+  }
+  return { id: numericId, date: changedOn, title, content };
+}
+
 function runTransaction(database, callback) {
   database.exec('BEGIN');
   try {
@@ -426,7 +448,9 @@ function profileFor(character) {
     nickname: character.nickname || character.id,
     name: character.display_name || character.id,
     releaseDate: character.release_date_text || null,
+    sortOrder: character.sort_order ?? null,
     changes: (character.changes || []).map(change => ({
+      id: change.id,
       date: change.changed_on || null,
       title: change.title,
       content: change.content || null
@@ -461,7 +485,7 @@ function readCharacters(database) {
     skillsByCharacter.set(skill.character_id, skills);
   }
   const changesByCharacter = new Map();
-  for (const change of database.prepare(`SELECT character_id, changed_on, title, content, source_order
+  for (const change of database.prepare(`SELECT id, character_id, changed_on, title, content, source_order
     FROM character_change_history
     ORDER BY character_id, changed_on DESC, source_order, id`).all()) {
     const changes = changesByCharacter.get(change.character_id) || [];
@@ -631,6 +655,7 @@ function buildCharacterStats(characters, rows, now = Date.now()) {
         ...character.profile,
         id: character.id,
         role: character.role,
+        sortOrder: character.sortOrder,
         rank: index + 1,
         uses: character.uses,
         bans: character.bans,
@@ -678,5 +703,6 @@ module.exports = {
   readCharacterPortrait,
   readCharacterSkillIcon,
   baseCharacter,
-  normalizeCharacterInput
+  normalizeCharacterInput,
+  updateCharacterChange
 };

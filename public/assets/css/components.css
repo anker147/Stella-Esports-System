@@ -33,12 +33,19 @@ input {
   border-radius: var(--f2-radius-sm);
   font-weight: var(--f2-weight-semi);
   cursor: pointer;
-  transition: background var(--f2-transition-fast), border-color var(--f2-transition-fast), transform 0.08s ease;
+  transition: background var(--f2-transition-fast), border-color var(--f2-transition-fast), transform 0.16s var(--nav-ease);
   white-space: nowrap;
 }
 
 .btn[hidden] {
   display: none;
+}
+
+/* Icon-kit close glyph: scales with the button's font size like the old
+   text "×" did. */
+.close-glyph {
+  width: 1em;
+  height: 1em;
 }
 
 .btn:active {
@@ -116,4 +123,15 @@ input {
   margin: 4px 0 0;
   color: var(--f2-text-secondary);
   font-size: var(--f2-font-caption);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .input {
+    transition: none;
+  }
+
+  .btn:active {
+    transform: none;
+  }
 }

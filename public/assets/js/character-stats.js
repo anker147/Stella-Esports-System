@@ -476,17 +476,95 @@
     changes.forEach(change => {
       const card = document.createElement('article');
       card.className = 'character-existing-change-card';
+      card.dataset.changeId = change.id != null ? String(change.id) : '';
+      const top = document.createElement('span');
+      top.className = 'character-existing-change-top';
       const time = document.createElement('time');
       time.dateTime = change.date || '';
       time.textContent = change.date ? change.date.replaceAll('-', '.') : t('characterStats.noRecord');
+      top.append(time);
+      if (canManageCharacters && change.id != null) {
+        const editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.className = 'character-change-edit-btn';
+        editButton.textContent = t('characterStats.editChange');
+        editButton.addEventListener('click', () => startChangeEdit(card, change, character));
+        top.append(editButton);
+      }
       const title = document.createElement('strong');
       title.textContent = change.title || t('characterStats.noRecord');
       const content = document.createElement('p');
       content.textContent = change.content || t('characterStats.changeDetailUnavailable');
-      card.append(time, title, content);
+      card.append(top, title, content);
       list.append(card);
     });
     elements.editor.existingChanges.replaceChildren(heading, list);
+  }
+
+  async function saveChangeEdit(change, character, form) {
+    const date = form.querySelector('[data-change-edit="date"]').value;
+    const title = form.querySelector('[data-change-edit="title"]').value.trim();
+    const content = form.querySelector('[data-change-edit="content"]').value.trim();
+    const errorLine = form.querySelector('.character-change-edit-error');
+    if (!date || !title || !content) {
+      errorLine.textContent = t('characterStats.changeEditIncomplete');
+      return;
+    }
+    try {
+      await mutate(`/api/admin/characters/${encodeURIComponent(character.id)}/changes/${change.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, title, content })
+      });
+      await load(true);
+      const updated = managedCharacters.find(item => item.id === character.id);
+      renderExistingChanges(updated || character);
+    } catch (error) {
+      errorLine.textContent = error.message;
+    }
+  }
+
+  function startChangeEdit(card, change, character) {
+    if (card.dataset.editing === '1') return;
+    card.dataset.editing = '1';
+    const form = document.createElement('div');
+    form.className = 'character-change-edit';
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'input';
+    dateInput.dataset.changeEdit = 'date';
+    dateInput.value = change.date || '';
+    const titleInput = document.createElement('input');
+    titleInput.className = 'input';
+    titleInput.dataset.changeEdit = 'title';
+    titleInput.maxLength = 120;
+    titleInput.placeholder = t('characterStats.changeTitlePlaceholder');
+    titleInput.value = change.title || '';
+    const contentInput = document.createElement('textarea');
+    contentInput.className = 'input';
+    contentInput.dataset.changeEdit = 'content';
+    contentInput.rows = 4;
+    contentInput.maxLength = 4000;
+    contentInput.placeholder = t('characterStats.changeContentPlaceholder');
+    contentInput.value = change.content || '';
+    const errorLine = document.createElement('p');
+    errorLine.className = 'character-change-edit-error';
+    const actions = document.createElement('div');
+    actions.className = 'character-change-edit-actions';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn-secondary';
+    cancelButton.textContent = t('common.cancel');
+    cancelButton.addEventListener('click', () => renderExistingChanges(character));
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn-primary';
+    saveButton.textContent = t('common.save');
+    saveButton.addEventListener('click', () => saveChangeEdit(change, character, form));
+    actions.append(cancelButton, saveButton);
+    form.append(dateInput, titleInput, contentInput, errorLine, actions);
+    card.replaceChildren(form);
+    dateInput.focus();
   }
 
   function renumberChangeDrafts() {
@@ -506,7 +584,16 @@
       const label = document.createElement('span');
       label.textContent = role === 'escape' ? t('characterStats.escapeSide') : t('characterStats.hunterSide');
       group.append(label);
-      managedCharacters.filter(character => character.role === role).forEach(character => {
+      const releaseKey = value => {
+        const match = String(value || '').match(/(\d{4})\u5E74(\d{1,2})\u6708(\d{1,2})\u65E5/);
+        return match ? Number(match[1]) * 10000 + Number(match[2]) * 100 + Number(match[3]) : Number.MAX_SAFE_INTEGER;
+      };
+      managedCharacters.filter(character => character.role === role)
+        .slice()
+        .sort((left, right) => releaseKey(left.releaseDate) - releaseKey(right.releaseDate)
+          || (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
+          || String(left.nickname || left.id).localeCompare(String(right.nickname || right.id), 'zh-CN'))
+        .forEach(character => {
         const button = document.createElement('button');
         button.className = 'character-manager-item';
         if (animate && !motionPreference.matches) {
@@ -638,6 +725,7 @@
         body: JSON.stringify(payload)
       });
       const message = editingCharacter ? t('characterStats.updateSuccess') : t('characterStats.createSuccess');
+      window.StellaDataCache?.invalidate('/api/bp/bootstrap');
       await load(true);
       populateEditor(managedCharacters.find(character => character.id === result.character.id) || null);
       elements.editor.status.textContent = message;
@@ -1095,10 +1183,18 @@
   function connectEvents() {
     events?.close();
     events = new EventSource('/api/bp/events');
+    let everErrored = false;
+    events.onerror = () => { everErrored = true; };
     events.addEventListener('session', event => {
       const payload = JSON.parse(event.data);
       if (relevantReasons.has(payload.reason)) scheduleRefresh();
     });
+    // After a reconnect, force a refresh to catch stat changes missed offline.
+    events.onopen = () => {
+      if (!everErrored) return;
+      everErrored = false;
+      scheduleRefresh();
+    };
   }
 
   function activate() {

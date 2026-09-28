@@ -25,7 +25,7 @@ test('system settings page exposes only the laboratory content surface', () => {
   const script = fs.readFileSync(path.join(root, 'public', 'assets', 'js', 'operations-center.js'), 'utf8');
   const section = html.match(/<section class="page-view" id="systemSettingsPage"[\s\S]*?<\/section>/)?.[0] || '';
   assert.doesNotMatch(section, /data-operations-toolbar/);
-  assert.match(script, /panel\('实验室功能'/);
-  assert.match(script, /启用新版 BP 界面/);
+  assert.match(script, /panel\(text\('ops\.labTitle'/);
+  assert.match(script, /text\('ops\.labNewBp'/);
   assert.doesNotMatch(script.match(/function renderSettings\(data\) \{[\s\S]*?return fragment;\n  \}/)?.[0] || '', /运行策略|访问与会话|素材索引/);
 });

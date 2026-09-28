@@ -71,7 +71,7 @@ test('schema v3 migrates legacy profile JSON into normalized user tables', () =>
     assert.equal(result.status, 0, result.stderr || result.stdout);
 
     migratedDb = new DatabaseSync(dbPath);
-    assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 23);
+    assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 35);
     const loginColumns = migratedDb.prepare('PRAGMA table_info(user_login_history)').all().map(column => column.name);
     assert(loginColumns.includes('ip_address'));
     assert(loginColumns.includes('device_fingerprint'));
@@ -222,7 +222,7 @@ test('schema v7 migrates presence state into manual preference and heartbeat fie
     assert.equal(result.status, 0, result.stderr || result.stdout);
 
     migratedDb = new DatabaseSync(dbPath);
-    assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 23);
+    assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 35);
     assert.deepEqual(
       migratedDb.prepare(`SELECT user_id, status, manual_status, last_heartbeat_at,
         activity_count, working_context_id FROM user_presence ORDER BY user_id`).all().map(row => ({ ...row })),

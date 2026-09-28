@@ -701,6 +701,15 @@ body:not(.auth-developer) [data-developer-page] {
   border: 1px solid var(--f2-border);
   border-radius: var(--f2-radius-md);
   background: #fff;
+  box-shadow: var(--f2-shadow-sm);
+  transition: border-color 140ms var(--nav-ease), box-shadow 140ms var(--nav-ease),
+    transform 140ms var(--nav-ease);
+}
+
+.person-card:hover {
+  border-color: rgba(0, 120, 212, 0.35);
+  box-shadow: var(--f2-shadow-hover);
+  transform: translateY(-1px);
 }
 
 .person-avatar {
@@ -925,25 +934,13 @@ body:not(.auth-developer) [data-developer-page] {
   height: 16px;
   flex: 0 0 12px;
   opacity: 0.42;
+  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.accounts-sort-icon path {
-  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1), stroke 150ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.accounts-sort-heading[aria-sort="none"] .accounts-sort-icon path {
-  opacity: 0.55;
-}
-
-.accounts-sort-heading[aria-sort="ascending"] .sort-arrow-up,
-.accounts-sort-heading[aria-sort="descending"] .sort-arrow-down {
-  stroke: var(--f2-blue);
+.accounts-sort-heading[aria-sort="ascending"] .accounts-sort-icon,
+.accounts-sort-heading[aria-sort="descending"] .accounts-sort-icon {
   opacity: 1;
-}
-
-.accounts-sort-heading[aria-sort="ascending"] .sort-arrow-down,
-.accounts-sort-heading[aria-sort="descending"] .sort-arrow-up {
-  opacity: 0.2;
+  color: var(--f2-blue);
 }
 
 .accounts-table tbody tr:last-child td {

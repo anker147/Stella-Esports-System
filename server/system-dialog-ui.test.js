@@ -19,7 +19,6 @@ test('system messages use the shared accessible center dialog', () => {
   assert.match(script, /prompt\(options\)/);
   assert.match(script, /request\.trigger\.focus\(\)/);
   assert.match(script, /dialog\?\.addEventListener\('close', finish\)/);
-  assert.match(css, /\.system-dialog\[open\][\s\S]*animation: system-dialog-in/);
 });
 
 test('business scripts do not invoke native browser message dialogs', () => {

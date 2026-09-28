@@ -30,6 +30,8 @@
   let serverOffset = 0;
   let visible = false;
   let lastDigits = '';
+  const previewMode = new URLSearchParams(window.location.search).get('preview') === '1';
+  if (previewMode) document.body.classList.add('bp-preview');
 
   const digitSource = digit => `/assets/match-intro/bp-countdown/${digit}.png`;
   const serverNow = () => Date.now() + serverOffset;
@@ -45,6 +47,11 @@
     watchdogTimer = null;
     visible = false;
     activeIntroEpoch = null;
+    if (previewMode) {
+      document.body.classList.add('overlay-valid');
+      stage.style.animation = 'none';
+      return;
+    }
     document.body.classList.remove('overlay-valid');
     stage.style.animation = 'none';
   }
@@ -228,6 +235,17 @@
     if (Number.isFinite(presentation.serverTime)) serverOffset = presentation.serverTime - Date.now();
     if (!presentation.dynamicEnabled || !presentation.snapshot || presentation.visibility === 'hidden') {
       invalidate();
+      if (previewMode && presentation.snapshot) {
+        try {
+          preloadSnapshot(presentation.snapshot).then(() => {
+            if (token !== applyToken) return;
+            renderSnapshot(presentation.snapshot);
+            stage.classList.remove('playing');
+            void stage.offsetWidth;
+            stage.classList.add('playing');
+          });
+        } catch {}
+      }
       return;
     }
     try {
@@ -264,10 +282,36 @@
         invalidate();
       }
     });
-    events.onerror = invalidate;
+    let everErrored = false;
+    events.onerror = () => {
+      everErrored = true;
+      invalidate();
+    };
+    // 断线重连成功后主动拉一次当前呈现，重连瞬间恢复画面而不是等下一条推送
+    events.onopen = async () => {
+      if (!everErrored) return;
+      everErrored = false;
+      try {
+        const response = await fetch('/api/bp/presentation', { cache: 'no-store' });
+        if (response.ok) applyPresentation(await response.json());
+      } catch {}
+    };
   }
 
   for (let digit = 0; digit <= 9; digit += 1) preloadImage(digitSource(digit)).catch(() => {});
+  {
+    const inObs = typeof window.obsstudio === 'object';
+    const previewShell = document.getElementById('previewShell');
+    if (previewShell && (previewMode || !inObs)) {
+      previewShell.dataset.note = previewMode ? 'BP 呈现预览' : 'BP 呈现待机中 · 等待导播推送';
+      previewShell.hidden = false;
+    }
+  }
+  if (previewMode) {
+    video.autoplay = false;
+    video.pause();
+    video.currentTime = 0;
+  }
   updateTimer();
   connect();
   window.addEventListener('beforeunload', () => {

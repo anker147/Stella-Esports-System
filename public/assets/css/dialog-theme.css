@@ -1,0 +1,100 @@
+/* ============================================================
+   全站弹窗统一主题：亚克力材质 + 220ms 标准入场 + 退场动画。
+   本文件在所有页面样式之后加载，统一收敛历史弹窗的材质与动画差异。
+   已达标的 schedule-dialog / event-editor-dialog 不在此列，保持原样。
+   ============================================================ */
+
+dialog.confirm-dialog,
+dialog.character-dialog,
+dialog.result-image-dialog,
+dialog.material-preview-dialog,
+dialog.material-path-dialog,
+dialog.communications-dialog,
+dialog.character-editor-dialog,
+dialog.profile-dialog,
+dialog.account-dialog,
+dialog.system-dialog,
+dialog.operations-team-dialog {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 22px;
+  background: rgba(245, 250, 255, 0.82);
+  backdrop-filter: blur(28px) saturate(145%);
+  box-shadow: 0 30px 90px rgba(12, 34, 58, 0.28), inset 0 1px rgba(255, 255, 255, 0.9);
+  color: var(--f2-text-primary);
+}
+
+/* 角色详情/角色修改详情弹窗自带阵营渐变底色（逃生蓝/追捕红），保留原材质不参与统一 */
+dialog.confirm-dialog::backdrop,
+dialog.character-dialog::backdrop,
+dialog.result-image-dialog::backdrop,
+dialog.material-preview-dialog::backdrop,
+dialog.material-path-dialog::backdrop,
+dialog.communications-dialog::backdrop,
+dialog.character-editor-dialog::backdrop,
+dialog.character-change-detail-dialog::backdrop,
+dialog.character-detail-dialog::backdrop,
+dialog.profile-dialog::backdrop,
+dialog.account-dialog::backdrop,
+dialog.system-dialog::backdrop,
+dialog.operations-team-dialog::backdrop {
+  background: rgba(15, 25, 40, 0.43);
+  backdrop-filter: blur(5px);
+}
+
+dialog.confirm-dialog[open],
+dialog.character-dialog[open],
+dialog.result-image-dialog[open],
+dialog.material-preview-dialog[open],
+dialog.material-path-dialog[open],
+dialog.communications-dialog[open],
+dialog.character-editor-dialog[open],
+dialog.character-change-detail-dialog[open],
+dialog.character-detail-dialog[open],
+dialog.profile-dialog[open],
+dialog.account-dialog[open],
+dialog.system-dialog[open] {
+  animation: dialog-theme-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+dialog[open].dialog-closing {
+  animation: dialog-theme-exit 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+}
+
+@keyframes dialog-theme-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+@keyframes dialog-theme-exit {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.confirm-dialog[open],
+  dialog.character-dialog[open],
+  dialog.result-image-dialog[open],
+  dialog.material-preview-dialog[open],
+  dialog.material-path-dialog[open],
+  dialog.communications-dialog[open],
+  dialog.character-editor-dialog[open],
+  dialog.character-change-detail-dialog[open],
+  dialog.character-detail-dialog[open],
+  dialog.profile-dialog[open],
+  dialog.account-dialog[open],
+  dialog.system-dialog[open],
+  dialog[open].dialog-closing {
+    animation: none;
+  }
+}
+
+/* 键盘焦点可见：弹窗内可交互元素统一焦点环（鼠标点击不触发） */
+dialog[open] :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--f2-blue, #0078d4);
+  outline-offset: 2px;
+}

@@ -491,3 +491,44 @@ test('forfeit awards two wins, locks BP and can be fully revoked', t => {
   assert.equal(restored.history.at(-2).action, 'forfeit-declared');
   assert.equal(restored.history.at(-1).action, 'forfeit-revoked');
 });
+
+test('persist failure rolls the in-memory session back to the database state', t => {
+  const { directory, service } = fixture();
+  t.after(() => {
+    service.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  const session = service.ensureSession('mobile-2026-07-25-qf-1', 1, 'A');
+  service.startSession(session.id);
+  const before = db.prepare('SELECT revision, status FROM bp_sessions WHERE id = ?').get(session.id);
+  const events = [];
+  service.on('session', payload => events.push(payload));
+  const originalWrite = service.writePersistedState;
+  service.writePersistedState = () => { throw new Error('injected persist failure'); };
+  try {
+    const currentSlotId = db.prepare(
+      "SELECT ps.slot_id FROM bp_phase_slots ps JOIN bp_phases p ON p.id = ps.phase_id WHERE p.sort_order = (SELECT MIN(sort_order) FROM bp_phases) ORDER BY ps.sort_order LIMIT 1").get().slot_id;
+    const slotRole = db.prepare('SELECT role FROM bp_slots WHERE id = ?').get(currentSlotId).role;
+    const characterId = db.prepare(
+      'SELECT id FROM characters WHERE role = ? AND enabled = 1 ORDER BY sort_order LIMIT 1').get(slotRole).id;
+    assert.throws(
+      () => service.updateSlot(session.id, { slotId: currentSlotId, field: 'character', characterId }),
+      /injected persist failure/
+    );
+  } finally {
+    service.writePersistedState = originalWrite;
+  }
+
+  const restored = service.getSession(session.id);
+  const after = db.prepare('SELECT revision, status FROM bp_sessions WHERE id = ?').get(session.id);
+  assert.equal(after.revision, before.revision);
+  assert.equal(restored.revision, before.revision);
+  assert.equal(restored.status, before.status);
+  const currentSlotId = db.prepare(
+    "SELECT ps.slot_id FROM bp_phase_slots ps JOIN bp_phases p ON p.id = ps.phase_id WHERE p.sort_order = (SELECT MIN(sort_order) FROM bp_phases) ORDER BY ps.sort_order LIMIT 1").get().slot_id;
+  assert.equal(restored.slots[currentSlotId]?.characterId ?? null, null);
+  const rollbacks = events.filter(event => event.reason === 'state-rolled-back');
+  assert.equal(rollbacks.length, 1);
+  assert.equal(rollbacks[0].session.revision, before.revision);
+});

@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { db: defaultDb } = require('./db');
+const { db: defaultDb, runTransaction } = require('./db');
 const { IDENTITY_LABELS } = require('./permissions-service');
 
 const MESSAGE_LIMIT = 500;
@@ -14,38 +14,38 @@ function assert(condition, message, code = 'COMMUNICATION_INVALID') {
   throw error;
 }
 
-function transaction(database, fn) {
-  database.exec('BEGIN');
-  try {
-    const result = fn();
-    database.exec('COMMIT');
-    return result;
-  } catch (error) {
-    database.exec('ROLLBACK');
-    throw error;
-  }
-}
+const transaction = runTransaction;
 
 function identityLabel(key) {
   return IDENTITY_LABELS[key] || key || '未知身份';
 }
 
-function userCard(database, userId) {
-  const row = database.prepare(`SELECT users.id, users.username, users.display_name,
+function userCards(database, userIds) {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  const cards = new Map();
+  if (!unique.length) return cards;
+  const placeholders = unique.map(() => '?').join(',');
+  const rows = database.prepare(`SELECT users.id, users.username, users.display_name,
       users.role, profiles.identity_key, profiles.title, avatars.sha256 AS avatar_sha256
     FROM users
     LEFT JOIN user_profiles profiles ON profiles.user_id = users.id
     LEFT JOIN user_avatars avatars ON avatars.user_id = users.id
-    WHERE users.id = ?`).get(userId);
-  if (!row) return null;
-  return {
-    id: row.id,
-    account: row.username,
-    displayName: row.display_name || row.username,
-    identityKey: row.identity_key || (row.role === 'developer' ? 'developer' : row.role === 'admin' ? 'administrator' : 'guest'),
-    title: row.title || '',
-    avatarUrl: row.avatar_sha256 ? `/api/profiles/${row.id}/avatar?v=${row.avatar_sha256}` : null
-  };
+    WHERE users.id IN (${placeholders})`).all(...unique);
+  for (const row of rows) {
+    cards.set(row.id, {
+      id: row.id,
+      account: row.username,
+      displayName: row.display_name || row.username,
+      identityKey: row.identity_key || (row.role === 'developer' ? 'developer' : row.role === 'admin' ? 'administrator' : 'guest'),
+      title: row.title || '',
+      avatarUrl: row.avatar_sha256 ? `/api/profiles/${row.id}/avatar?v=${row.avatar_sha256}` : null
+    });
+  }
+  return cards;
+}
+
+function userCard(database, userId) {
+  return userCards(database, [userId]).get(userId) || null;
 }
 
 function channelById(database, channelId) {
@@ -114,9 +114,10 @@ function updateReadTracker(database, session, channel, messageId) {
 }
 
 function membersForChannel(database, channelId) {
-  return database.prepare(`SELECT user_id FROM communication_channel_members
-    WHERE channel_id = ? ORDER BY joined_at, user_id`).all(channelId)
-    .map(row => userCard(database, row.user_id)).filter(Boolean);
+  const ids = database.prepare(`SELECT user_id FROM communication_channel_members
+    WHERE channel_id = ? ORDER BY joined_at, user_id`).all(channelId).map(row => row.user_id);
+  const cards = userCards(database, ids);
+  return ids.map(id => cards.get(id)).filter(Boolean);
 }
 
 function canAuditMessages(session) {
@@ -131,17 +132,36 @@ function messageEditHistory(database, messageId) {
   }));
 }
 
-function messageRow(database, row, session) {
+function plusOneStats(database, messageIds, viewerId) {
+  const stats = { plusOneCounts: new Map(), plusOneMine: new Set() };
+  if (!messageIds.length) return stats;
+  const placeholders = messageIds.map(() => '?').join(',');
+  for (const row of database.prepare(`SELECT message_id, COUNT(*) AS n FROM communication_message_plus_ones
+    WHERE message_id IN (${placeholders}) GROUP BY message_id`).all(...messageIds)) {
+    stats.plusOneCounts.set(row.message_id, row.n);
+  }
+  for (const row of database.prepare(`SELECT message_id FROM communication_message_plus_ones
+    WHERE message_id IN (${placeholders}) AND user_id = ?`).all(...messageIds, viewerId)) {
+    stats.plusOneMine.add(row.message_id);
+  }
+  return stats;
+}
+
+function messageRow(database, row, session, stats = null, senders = null) {
   if (!row) return null;
-  const sender = row.sender_user_id ? userCard(database, row.sender_user_id) : null;
+  const sender = row.sender_user_id
+    ? (senders ? (senders.get(row.sender_user_id) || null) : userCard(database, row.sender_user_id))
+    : null;
   const viewerId = session?.userId;
   const mine = row.sender_user_id === viewerId;
   const recalled = Boolean(row.recalled_at);
   const auditVisible = recalled && canAuditMessages(session);
-  const plusOneCount = database.prepare(`SELECT COUNT(*) AS n FROM communication_message_plus_ones
-    WHERE message_id = ?`).get(row.id).n;
-  const plusOneByMe = Boolean(database.prepare(`SELECT 1 FROM communication_message_plus_ones
-    WHERE message_id = ? AND user_id = ?`).get(row.id, viewerId));
+  const plusOneCount = stats ? (stats.plusOneCounts.get(row.id) || 0)
+    : database.prepare(`SELECT COUNT(*) AS n FROM communication_message_plus_ones
+      WHERE message_id = ?`).get(row.id).n;
+  const plusOneByMe = stats ? stats.plusOneMine.has(row.id)
+    : Boolean(database.prepare(`SELECT 1 FROM communication_message_plus_ones
+      WHERE message_id = ? AND user_id = ?`).get(row.id, viewerId));
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -175,8 +195,51 @@ function messageRow(database, row, session) {
   };
 }
 
-function serializeChannel(database, session, channel) {
-  const tracker = readTracker(database, session, channel);
+// 批量预取一批频道的序列化上下文（tracker、偏好、各频道最后一条可见消息、加一统计），
+// 把逐频道 7 到 8 条查询压缩为每频道 1 条加固定几条全局查询
+function prepareChannelContext(database, session, channels) {
+  if (!channels.length) {
+    return { trackers: new Map(), prefs: new Map(), lastMessages: new Map(), lastMessageStats: plusOneStats(database, [], session.userId) };
+  }
+  const ids = channels.map(channel => channel.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const memberRows = new Map(database.prepare(`SELECT channel_id, last_read_message_id FROM communication_channel_members
+    WHERE user_id = ? AND channel_id IN (${placeholders})`).all(session.userId, ...ids)
+    .map(row => [row.channel_id, Number(row.last_read_message_id) || 0]));
+  const observerRows = new Map(database.prepare(`SELECT channel_id, last_read_message_id FROM communication_channel_observers
+    WHERE user_id = ? AND channel_id IN (${placeholders})`).all(session.userId, ...ids)
+    .map(row => [row.channel_id, Number(row.last_read_message_id) || 0]));
+  const trackers = new Map();
+  for (const channel of channels) {
+    const isMember = memberRows.has(channel.id);
+    const observerPath = developerChannelAccess(session) && !isMember && channel.kind !== 'global';
+    if (observerPath) ensureObserver(database, channel.id, session.userId);
+    else ensureMember(database, channel.id, session.userId);
+    const kind = observerPath ? 'observer' : 'member';
+    const from = observerPath ? observerRows : memberRows;
+    trackers.set(channel.id, { kind, lastReadMessageId: from.get(channel.id) || 0 });
+  }
+  const prefs = new Map(database.prepare(`SELECT channel_id, pinned, muted FROM communication_channel_prefs
+    WHERE user_id = ? AND channel_id IN (${placeholders})`).all(session.userId, ...ids)
+    .map(row => [row.channel_id, row]));
+  const lastMessages = new Map();
+  for (const row of database.prepare(`SELECT m.* FROM communication_messages m
+    JOIN (SELECT channel_id, MAX(id) AS max_id FROM communication_messages
+      WHERE channel_id IN (${placeholders}) AND NOT EXISTS (
+        SELECT 1 FROM communication_message_deletions deletions
+        WHERE deletions.message_id = communication_messages.id AND deletions.user_id = ?
+      ) GROUP BY channel_id) last
+    ON last.channel_id = m.channel_id AND last.max_id = m.id`).all(...ids, session.userId)) {
+    lastMessages.set(row.channel_id, row);
+  }
+  const lastMessageStats = plusOneStats(database, [...lastMessages.values()].map(row => row.id), session.userId);
+  return { trackers, prefs, lastMessages, lastMessageStats };
+}
+
+function serializeChannel(database, session, channel, context = null) {
+  const prepared = context || prepareChannelContext(database, session, [channel]);
+  const tracker = prepared.trackers.get(channel.id)
+    || { kind: 'member', lastReadMessageId: 0 };
   const members = channel.kind === 'private' || channel.kind === 'custom'
     ? membersForChannel(database, channel.id) : [];
   const developerObserver = tracker.kind === 'observer';
@@ -184,25 +247,15 @@ function serializeChannel(database, session, channel) {
     ? (developerObserver ? null : members.find(member => member.id !== session.userId) || null) : null;
   const privateAuditName = channel.kind === 'private' && developerObserver
     ? members.map(member => member.displayName).join(' ↔ ') : '';
-  const last = database.prepare(`SELECT * FROM communication_messages
-    WHERE channel_id = ? AND NOT EXISTS (
-      SELECT 1 FROM communication_message_deletions deletions
-      WHERE deletions.message_id = communication_messages.id AND deletions.user_id = ?
-    ) ORDER BY id DESC LIMIT 1`).get(channel.id, session.userId);
-  const unread = database.prepare(`SELECT COUNT(*) AS n FROM communication_messages
+  const statsQuery = database.prepare(`SELECT COUNT(*) AS n, MIN(id) AS first_id FROM communication_messages
     WHERE channel_id = ? AND id > ? AND sender_user_id IS NOT ? AND recalled_at IS NULL
       AND NOT EXISTS (
         SELECT 1 FROM communication_message_deletions deletions
         WHERE deletions.message_id = communication_messages.id AND deletions.user_id = ?
-      )`).get(channel.id, tracker.lastReadMessageId, session.userId, session.userId).n;
-  const firstUnread = database.prepare(`SELECT id FROM communication_messages
-    WHERE channel_id = ? AND id > ? AND sender_user_id IS NOT ? AND recalled_at IS NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM communication_message_deletions deletions
-        WHERE deletions.message_id = communication_messages.id AND deletions.user_id = ?
-      ) ORDER BY id LIMIT 1`).get(
-    channel.id, tracker.lastReadMessageId, session.userId, session.userId
-  );
+      )`).get(channel.id, tracker.lastReadMessageId, session.userId, session.userId);
+  const prefs = prepared.prefs.get(channel.id) || { pinned: 0, muted: 0 };
+  const ownAvatarUrl = channel.avatar
+    ? `/api/communications/channels/${encodeURIComponent(channel.id)}/avatar?v=${channel.avatar_updated_at || 0}` : null;
   return {
     id: channel.id,
     kind: channel.kind,
@@ -210,15 +263,20 @@ function serializeChannel(database, session, channel) {
     description: channel.description,
     identityKey: channel.identity_key || null,
     identityLabel: channel.identity_key ? identityLabel(channel.identity_key) : null,
-    avatarUrl: counterpart?.avatarUrl || null,
+    avatarUrl: channel.kind === 'private'
+      ? (counterpart?.avatarUrl || ownAvatarUrl || null)
+      : (ownAvatarUrl || counterpart?.avatarUrl || null),
+    announcement: channel.announcement || '',
+    pinned: Boolean(prefs.pinned),
+    muted: Boolean(prefs.muted),
     ownerUserId: channel.owner_user_id || null,
     mine: channel.owner_user_id === session.userId,
     developerObserver,
     members,
     memberCount: members.length,
-    unreadCount: unread,
-    firstUnreadMessageId: firstUnread?.id || null,
-    lastMessage: messageRow(database, last, session),
+    unreadCount: statsQuery.n,
+    firstUnreadMessageId: statsQuery.first_id || null,
+    lastMessage: messageRow(database, prepared.lastMessages.get(channel.id) || null, session, prepared.lastMessageStats),
     updatedAt: channel.updated_at
   };
 }
@@ -234,7 +292,8 @@ function visibleChannels(database, session) {
         OR (channels.kind = 'identity' AND channels.identity_key = ?)
         OR members.user_id IS NOT NULL`).all(session.userId, session.activeIdentityKey);
   const priority = { global: 0, identity: 1, private: 2, custom: 3 };
-  return rows.map(row => serializeChannel(database, session, row))
+  const context = prepareChannelContext(database, session, rows);
+  return rows.map(row => serializeChannel(database, session, row, context))
     .sort((left, right) => priority[left.kind] - priority[right.kind]
       || right.updatedAt - left.updatedAt || left.name.localeCompare(right.name, 'zh-CN'));
 }
@@ -311,7 +370,9 @@ function listMessages(database, session, channelId, options = {}) {
     WHERE ${visibleWhere} AND id < ? LIMIT 1`).get(channel.id, session.userId, firstId));
   const hasNewer = Boolean(lastId && database.prepare(`SELECT 1 FROM communication_messages
     WHERE ${visibleWhere} AND id > ? LIMIT 1`).get(channel.id, session.userId, lastId));
-  const messages = rows.map(row => messageRow(database, row, session));
+  const messageStats = plusOneStats(database, rows.map(row => row.id), session.userId);
+  const senders = userCards(database, rows.map(row => row.sender_user_id));
+  const messages = rows.map(row => messageRow(database, row, session, messageStats, senders));
   if (options.markRead !== false && messages.length) {
     markChannelRead(database, session, channel.id, messages.at(-1).id);
   }
@@ -383,6 +444,82 @@ function createPrivateChannel(database = defaultDb, session, targetUserId) {
   });
 }
 
+function canManageChannelSettings(database, session, channel) {
+  if (developerChannelAccess(session)) return true;
+  return channel.kind === 'custom' && channel.owner_user_id === session.userId;
+}
+
+function updateChannelSettings(database = defaultDb, session, channelId, input = {}) {
+  const channel = requireChannel(database, session, channelId);
+  assert(canManageChannelSettings(database, session, channel), '只有频道创建者可以修改频道设置');
+  const record = input && typeof input === 'object' ? input : {};
+  const updates = {};
+  if (record.name !== undefined) {
+    const name = String(record.name).trim();
+    assert(Array.from(name).length >= 2 && Array.from(name).length <= 30, '频道名称应为 2 至 30 个字符');
+    updates.name = name;
+  }
+  if (record.description !== undefined) {
+    const description = String(record.description).trim();
+    assert(Array.from(description).length <= 100, '频道说明不能超过 100 个字符');
+    updates.description = description;
+  }
+  if (record.announcement !== undefined) {
+    const announcement = String(record.announcement).trim();
+    assert(Array.from(announcement).length <= 500, '频道公告不能超过 500 个字符');
+    updates.announcement = announcement;
+  }
+  assert(Object.keys(updates).length, '没有需要修改的内容');
+  const keys = Object.keys(updates);
+  transaction(database, () => {
+    database.prepare(`UPDATE communication_channels SET ${keys.map(key => key + ' = ?').join(', ')}, updated_at = ? WHERE id = ?`)
+      .run(...keys.map(key => updates[key]), Date.now(), channelId);
+  });
+  return serializeChannel(database, session, channelById(database, channelId));
+}
+
+function setChannelAvatar(database = defaultDb, session, channelId, dataUrl) {
+  const channel = requireChannel(database, session, channelId);
+  assert(canManageChannelSettings(database, session, channel), '只有频道创建者可以修改频道头像');
+  const match = typeof dataUrl === 'string'
+    ? dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/) : null;
+  assert(match, '频道头像仅支持 PNG、JPG 或 WebP 图片');
+  const data = Buffer.from(match[2], 'base64');
+  assert(data.length > 0 && data.length <= 512 * 1024, '频道头像不能超过 512KB');
+  const now = Date.now();
+  database.prepare('UPDATE communication_channels SET avatar = ?, avatar_mime = ?, avatar_updated_at = ?, updated_at = ? WHERE id = ?')
+    .run(data, match[1], now, now, channelId);
+  return { avatarUrl: '/api/communications/channels/' + encodeURIComponent(channelId) + '/avatar?v=' + now };
+}
+
+function clearChannelAvatar(database = defaultDb, session, channelId) {
+  const channel = requireChannel(database, session, channelId);
+  assert(canManageChannelSettings(database, session, channel), '只有频道创建者可以修改频道头像');
+  const now = Date.now();
+  database.prepare('UPDATE communication_channels SET avatar = NULL, avatar_mime = NULL, avatar_updated_at = ?, updated_at = ? WHERE id = ?')
+    .run(now, now, channelId);
+  return { avatarUrl: null };
+}
+
+function readChannelAvatar(database = defaultDb, channelId) {
+  const row = database.prepare('SELECT avatar, avatar_mime, avatar_updated_at FROM communication_channels WHERE id = ?')
+    .get(channelId);
+  if (!row || !row.avatar || !row.avatar_mime) return null;
+  return { data: row.avatar, mime: row.avatar_mime, updatedAt: row.avatar_updated_at || 0 };
+}
+
+function updateChannelPreferences(database = defaultDb, session, channelId, input = {}) {
+  requireChannel(database, session, channelId);
+  const record = input && typeof input === 'object' ? input : {};
+  const pinned = record.pinned ? 1 : 0;
+  const muted = record.muted ? 1 : 0;
+  database.prepare(`INSERT INTO communication_channel_prefs (channel_id, user_id, pinned, muted)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (channel_id, user_id) DO UPDATE SET pinned = excluded.pinned, muted = excluded.muted`)
+    .run(channelId, session.userId, pinned, muted);
+  return { pinned: Boolean(pinned), muted: Boolean(muted) };
+}
+
 function createCustomChannel(database = defaultDb, session, input = {}) {
   const name = String(input.name || '').trim();
   const description = String(input.description || '').trim();
@@ -405,7 +542,7 @@ function createCustomChannel(database = defaultDb, session, input = {}) {
   });
 }
 
-function sendMessage(database = defaultDb, session, channelId, rawContent) {
+function sendMessage(database = defaultDb, session, channelId, rawContent, hooks = {}) {
   const channel = requireChannel(database, session, channelId);
   const content = normalizedMessageContent(rawContent);
   const sender = userCard(database, session.userId);
@@ -418,7 +555,10 @@ function sendMessage(database = defaultDb, session, channelId, rawContent) {
       .run(channel.id, session.userId, sender.displayName, session.activeIdentityKey, content, now);
     database.prepare('UPDATE communication_channels SET updated_at = ? WHERE id = ?').run(now, channel.id);
     updateReadTracker(database, session, channel, Number(inserted.lastInsertRowid));
-    return database.prepare('SELECT * FROM communication_messages WHERE id = ?').get(inserted.lastInsertRowid);
+    const row = database.prepare('SELECT * FROM communication_messages WHERE id = ?').get(inserted.lastInsertRowid);
+    // 通知写入与消息共用事务（runTransaction 嵌套感知）：通知失败整条发送回滚
+    if (typeof hooks.afterInsert === 'function') hooks.afterInsert(messageRow(database, row, session));
+    return row;
   });
   return messageRow(database, result, session);
 }
@@ -464,9 +604,11 @@ function recallMessage(database = defaultDb, session, messageId) {
   assert(row.sender_user_id === session.userId, '只能撤回自己发送的消息', 'MESSAGE_FORBIDDEN');
   assert(!row.recalled_at, '消息已经撤回');
   const now = Date.now();
-  database.prepare(`UPDATE communication_messages
-    SET recalled_at = ?, recalled_by_user_id = ? WHERE id = ?`).run(now, session.userId, row.id);
-  database.prepare('UPDATE communication_channels SET updated_at = ? WHERE id = ?').run(now, row.channel_id);
+  transaction(database, () => {
+    database.prepare(`UPDATE communication_messages
+      SET recalled_at = ?, recalled_by_user_id = ? WHERE id = ?`).run(now, session.userId, row.id);
+    database.prepare('UPDATE communication_channels SET updated_at = ? WHERE id = ?').run(now, row.channel_id);
+  });
   return messageRow(database,
     database.prepare('SELECT * FROM communication_messages WHERE id = ?').get(row.id), session);
 }
@@ -516,5 +658,10 @@ module.exports = {
   recallMessage,
   sendMessage,
   setMessageUrgent,
-  toggleMessagePlusOne
+  toggleMessagePlusOne,
+  setChannelAvatar,
+  clearChannelAvatar,
+  readChannelAvatar,
+  updateChannelSettings,
+  updateChannelPreferences
 };

@@ -64,9 +64,9 @@
   async function canLeaveDirtyEditor() {
     if (!accountDirty && !identityDirty) return true;
     return window.StellaDialog.confirm({
-      title: '放弃未保存的修改',
-      message: '当前权限修改尚未保存，确定放弃这些修改吗？',
-      confirmText: '放弃修改',
+      title: t('permissions.dirtyTitle'),
+      message: t('permissions.dirtyMessage'),
+      confirmText: t('permissions.dirtyConfirm'),
       tone: 'danger'
     });
   }
@@ -93,7 +93,7 @@
     const dependencies = permission.dependsOn || [];
     if (!dependencies.length) return '';
     const labels = dependencies.map(key => snapshot.catalog.find(item => item.key === key)?.label || key);
-    return ` 前置权限：${labels.join('、')}。`;
+    return text('permissions.prerequisiteList', ' 前置权限：{labels}。', { labels: labels.join('、') });
   }
 
   function selectorButton(title, subtitle, active, click) {
@@ -124,7 +124,7 @@
     if (!accounts.length) {
       const empty = document.createElement('div');
       empty.className = 'permissions-selector-item';
-      empty.textContent = '没有匹配的账号';
+      empty.textContent = text('permissions.noMatchingAccounts', '没有匹配的账号');
       elements.accountList.replaceChildren(empty);
     }
   }
@@ -144,7 +144,7 @@
     const account = selectedAccount();
     if (!account) return;
     const count = effectiveForDraft(account, accountIdentityKey).length;
-    elements.accountEffective.textContent = `${count} / ${snapshot.catalog.length} 项有效`;
+    elements.accountEffective.textContent = text('permissions.accountEffectiveCount', '{count} / {total} 项有效', { count, total: snapshot.catalog.length });
   }
 
   function renderAccountContext(account) {
@@ -152,7 +152,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `permissions-context-chip${key === accountIdentityKey ? ' is-active' : ''}`;
-      button.textContent = `${identityLabel(key)}预览`;
+      button.textContent = text('permissions.previewAction', '{label}预览', { label: identityLabel(key) });
       button.addEventListener('click', () => {
         accountIdentityKey = key;
         renderAccountEditor();
@@ -170,7 +170,7 @@
     code.textContent = permission.key;
     strong.append(code);
     const description = document.createElement('p');
-    description.textContent = `${permission.description}${dependencyCopy(permission)}${inherited == null ? '' : ` 当前身份${inherited ? '默认允许' : '默认不允许'}。`}`;
+    description.textContent = `${permission.description}${dependencyCopy(permission)}${inherited == null ? '' : inherited ? text('permissions.inheritedAllow', ' 当前身份默认允许。') : text('permissions.inheritedDeny', ' 当前身份默认不允许。')}`;
     copy.append(strong, description);
     return copy;
   }
@@ -186,7 +186,7 @@
       const title = document.createElement('h3');
       title.textContent = group.label;
       const count = document.createElement('span');
-      count.textContent = `${permissions.length} 项`;
+      count.textContent = text('permissions.permissionCount', '{count} 项', { count: permissions.length });
       heading.append(title, count);
       section.append(heading, ...permissions.map(rowFactory));
       return section;
@@ -197,13 +197,13 @@
     const control = document.createElement('div');
     control.className = 'permission-mode';
     control.setAttribute('role', 'radiogroup');
-    control.setAttribute('aria-label', `${permission.label}账号例外`);
+    control.setAttribute('aria-label', text('permissions.accountOverrideAria', '{label}账号例外', { label: permission.label }));
     ['inherit', 'grant', 'deny'].forEach(mode => {
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.mode = mode;
       button.setAttribute('role', 'radio');
-      button.textContent = { inherit: '继承', grant: '允许', deny: '拒绝' }[mode];
+      button.textContent = { inherit: text('permissions.modeInherit', '继承'), grant: text('permissions.modeGrant', '允许'), deny: text('permissions.modeDeny', '拒绝') }[mode];
       const active = (accountDraft.get(permission.key) || 'inherit') === mode;
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-checked', String(active));
@@ -211,7 +211,7 @@
         accountDraft.set(permission.key, mode);
         accountDirty = true;
         elements.accountSave.disabled = false;
-        setStatus(elements.accountStatus, '有未保存的账号权限修改');
+        setStatus(elements.accountStatus, text('permissions.accountUnsaved', '有未保存的账号权限修改'));
         control.querySelectorAll('button').forEach(item => {
           const selected = item.dataset.mode === mode;
           item.classList.toggle('is-active', selected);
@@ -229,7 +229,10 @@
     if (!account) return;
     if (!account.identityKeys.includes(accountIdentityKey)) accountIdentityKey = account.identityKeys[0];
     elements.accountHeading.textContent = account.displayName;
-    elements.accountMeta.textContent = `${account.account} · ${account.status === 'active' ? '账号已启用' : '账号已停用'} · 明确拒绝优先于允许与继承`;
+    elements.accountMeta.textContent = text('permissions.accountMeta', '{account} · {state} · 明确拒绝优先于允许与继承', {
+      account: account.account,
+      state: account.status === 'active' ? text('permissions.accountActive', '账号已启用') : text('permissions.accountDisabled', '账号已停用')
+    });
     renderAccountContext(account);
     const inherited = new Set(snapshot.identities.find(item => item.key === accountIdentityKey)?.permissions || []);
     renderGroups(elements.accountMatrix, permission => {
@@ -260,7 +263,7 @@
   function renderIdentityList() {
     elements.identityList.replaceChildren(...snapshot.identities.map(identity => selectorButton(
       identity.label,
-      identity.immutable ? '系统固有全权限' : `${identity.accountCount} 个账号 · ${identity.permissions.length} 项权限`,
+      identity.immutable ? text('permissions.builtinIdentity', '系统固有全权限') : text('permissions.identityStats', '{accounts} 个账号 · {permissions} 项权限', { accounts: identity.accountCount, permissions: identity.permissions.length }),
       identity.key === selectedIdentityKey,
       () => selectIdentity(identity.key)
     )));
@@ -271,9 +274,9 @@
     if (!identity) return;
     elements.identityHeading.textContent = identity.label;
     elements.identityMeta.textContent = identity.immutable
-      ? '开发者身份由系统固有保护，权限不可移除。'
-      : `保存后会影响所有拥有该身份的 ${identity.accountCount} 个账号。`;
-    elements.identityCount.textContent = `${identityDraft.size} / ${snapshot.catalog.length} 项启用`;
+      ? text('permissions.developerProtected', '开发者身份由系统固有保护，权限不可移除。')
+      : text('permissions.identitySaveImpact', '保存后会影响所有拥有该身份的 {count} 个账号。', { count: identity.accountCount });
+    elements.identityCount.textContent = text('permissions.identityEnabledCount', '{count} / {total} 项启用', { count: identityDraft.size, total: snapshot.catalog.length });
     renderGroups(elements.identityMatrix, permission => {
       const row = document.createElement('div');
       row.className = 'permission-row';
@@ -284,15 +287,15 @@
       input.checked = identity.immutable || identityDraft.has(permission.key);
       input.disabled = identity.immutable;
       const state = document.createElement('span');
-      state.textContent = input.checked ? '已启用' : '未启用';
+      state.textContent = input.checked ? text('permissions.stateEnabled', '已启用') : text('permissions.stateDisabled', '未启用');
       input.addEventListener('change', () => {
         if (input.checked) identityDraft.add(permission.key);
         else identityDraft.delete(permission.key);
-        state.textContent = input.checked ? '已启用' : '未启用';
+        state.textContent = input.checked ? text('permissions.stateEnabled', '已启用') : text('permissions.stateDisabled', '未启用');
         identityDirty = true;
         elements.identitySave.disabled = false;
-        elements.identityCount.textContent = `${identityDraft.size} / ${snapshot.catalog.length} 项启用`;
-        setStatus(elements.identityStatus, '有未保存的身份权限修改');
+        elements.identityCount.textContent = text('permissions.identityEnabledCount', '{count} / {total} 项启用', { count: identityDraft.size, total: snapshot.catalog.length });
+        setStatus(elements.identityStatus, text('permissions.identityUnsaved', '有未保存的身份权限修改'));
       });
       label.append(input, state);
       row.append(permissionCopy(permission, null), label);
@@ -325,7 +328,7 @@
       description.textContent = `${groupFor(permission.group)} · ${permission.description}${dependencyCopy(permission)}`;
       const risk = document.createElement('span');
       risk.className = `permission-risk${permission.risk === 'high' ? ' is-high' : ''}`;
-      risk.textContent = permission.risk === 'high' ? '高风险' : '常规';
+      risk.textContent = permission.risk === 'high' ? text('permissions.riskHigh', '高风险') : text('permissions.riskNormal', '常规');
       row.append(name, description, risk);
       return row;
     }));
@@ -341,7 +344,7 @@
       description.textContent = rule.description;
       const lock = document.createElement('span');
       lock.className = 'permission-lock';
-      lock.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="7" width="9.6" height="6.8" rx="1.2"/><path d="M5.3 7V5.1a2.7 2.7 0 0 1 5.4 0V7"/></svg><span>强制执行</span>';
+      lock.innerHTML = `<svg viewBox="0 0 24 24" data-icon="lock" aria-hidden="true"></svg><span>${text('permissions.enforced', '强制执行')}</span>`;
       row.append(title, description, lock);
       return row;
     }));
@@ -359,7 +362,7 @@
   async function load(force = false) {
     if (loaded && !force) return;
     elements.page.setAttribute('aria-busy', 'true');
-    setStatus(elements.pageStatus, '正在读取权限策略…');
+    setStatus(elements.pageStatus, text('permissions.loadingPolicy', '正在读取权限策略…'));
     try {
       snapshot = await requestJson('/api/admin/permissions', { force });
       clearDirty();
@@ -367,7 +370,7 @@
       loaded = true;
       setStatus(elements.pageStatus, '');
     } catch (error) {
-      setStatus(elements.pageStatus, `读取权限策略失败：${error.message}`, 'error');
+      setStatus(elements.pageStatus, text('permissions.loadFailed', '读取权限策略失败：{message}', { message: error.message }), 'error');
     } finally {
       elements.page.removeAttribute('aria-busy');
     }
@@ -411,7 +414,7 @@
       if (mode === 'deny') denies.push(key);
     });
     elements.accountSave.disabled = true;
-    setStatus(elements.accountStatus, '正在保存账号权限…');
+    setStatus(elements.accountStatus, text('permissions.savingAccount', '正在保存账号权限…'));
     try {
       snapshot = await requestJson(`/api/admin/permissions/accounts/${encodeURIComponent(account.id)}`, {
         method: 'PUT',
@@ -420,11 +423,11 @@
       });
       accountDirty = false;
       render();
-      setStatus(elements.accountStatus, '账号权限已保存', 'success');
+      setStatus(elements.accountStatus, text('permissions.accountSaved', '账号权限已保存'), 'success');
       window.dispatchEvent(new CustomEvent('stella:permissions-change'));
     } catch (error) {
       elements.accountSave.disabled = false;
-      setStatus(elements.accountStatus, `保存失败：${error.message}`, 'error');
+      setStatus(elements.accountStatus, text('permissions.saveFailed', '保存失败：{message}', { message: error.message }), 'error');
     }
   });
 
@@ -432,7 +435,7 @@
     const identity = selectedIdentity();
     if (!identity || identity.immutable) return;
     elements.identitySave.disabled = true;
-    setStatus(elements.identityStatus, '正在保存身份权限…');
+    setStatus(elements.identityStatus, text('permissions.savingIdentity', '正在保存身份权限…'));
     try {
       snapshot = await requestJson(`/api/admin/permissions/identities/${encodeURIComponent(identity.key)}`, {
         method: 'PUT',
@@ -441,11 +444,11 @@
       });
       identityDirty = false;
       render();
-      setStatus(elements.identityStatus, '身份权限已保存', 'success');
+      setStatus(elements.identityStatus, text('permissions.identitySaved', '身份权限已保存'), 'success');
       window.dispatchEvent(new CustomEvent('stella:permissions-change'));
     } catch (error) {
       elements.identitySave.disabled = false;
-      setStatus(elements.identityStatus, `保存失败：${error.message}`, 'error');
+      setStatus(elements.identityStatus, text('permissions.saveFailed', '保存失败：{message}', { message: error.message }), 'error');
     }
   });
 

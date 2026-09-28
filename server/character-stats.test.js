@@ -53,6 +53,7 @@ test('character profiles are read from normalized database tables', () => {
   assert.equal(character.skills[0].name, '机关大师');
   assert.equal(character.skills.length, 3);
   assert.deepEqual(character.changes, [{
+    id: 1,
     date: '2025-06-26',
     title: '天赋增强',
     content: '新增保底机制'

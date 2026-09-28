@@ -1,6 +1,6 @@
 const { EventEmitter } = require('events');
 const { CONFIG, ESCAPE_CHARACTERS, HUNTER_CHARACTERS, PHASES, SLOT_CONFIG } = require('./bp-config');
-const { db, withTransaction } = require('./db');
+const { db, withTransaction, cachedStatement } = require('./db');
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -37,6 +37,7 @@ class BpService extends EventEmitter {
     this.commentatorImage = commentatorImage ? clone(commentatorImage) : null;
     this.sessions = this.loadSessions();
     this.forfeits = this.loadForfeits();
+    this.bootstrapVersion = 0;
     this.transitionTimers = new Map();
     this.lastDisplayedSeconds = new Map();
     this.tickTimer = setInterval(() => this.tick(), tickMs);
@@ -48,6 +49,79 @@ class BpService extends EventEmitter {
     clearInterval(this.tickTimer);
     for (const timer of this.transitionTimers.values()) clearTimeout(timer);
     this.transitionTimers.clear();
+  }
+
+  normalizeSlots(slots) {
+    for (const [slotId, config] of Object.entries(SLOT_CONFIG)) {
+      if (!slots[slotId]) {
+        slots[slotId] = config.kind === 'ban'
+          ? { characterId: null }
+          : { characterId: null, playerId: null, playerText: null };
+      } else if (config.kind === 'ban') {
+        slots[slotId] = { characterId: slots[slotId].characterId || null };
+      }
+    }
+    return slots;
+  }
+
+  resultFromDbRow(row) {
+    return {
+      winnerRole: row.winner_role,
+      winnerTeamId: row.winner_team_id,
+      decidedAt: row.decided_at,
+      ...(row.image_file_name != null
+        ? { image: { fileName: row.image_file_name, filePath: row.image_file_path, uploadedAt: row.image_uploaded_at } }
+        : {})
+    };
+  }
+
+  hydrateSession(row, slots, result, resultUpdated) {
+    const session = {
+      id: row.id,
+      matchId: row.match_id,
+      gameNumber: row.game_number,
+      room: row.room,
+      attempt: row.attempt,
+      replayOf: row.replay_of || null,
+      outputMode: !row.output_mode || row.output_mode === 'officialId' ? 'nickname' : row.output_mode,
+      commentatorImage: row.commentator_image_id
+        ? { id: row.commentator_image_id, name: row.commentator_image_name }
+        : null,
+      result: result ? clone(result) : null,
+      revision: row.revision,
+      status: row.status,
+      currentPhaseIndex: row.current_phase_index,
+      slots,
+      timer: {
+        durationSeconds: row.timer_duration_seconds,
+        remainingSeconds: row.timer_remaining_seconds,
+        running: Boolean(row.timer_running),
+        deadline: row.timer_deadline_ms ?? null,
+        transitionPending: Boolean(row.timer_transition_pending)
+      },
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      auditActor: null,
+      history: null
+    };
+    if (session.attempt > 1 && !resultUpdated) session.result = null;
+    return session;
+  }
+
+  // 按数据库重建单个会话（write-through 回滚用）：库中无此会话返回 null
+  reloadSessionFromDb(id) {
+    const row = db.prepare('SELECT * FROM bp_sessions WHERE id = ?').get(id);
+    if (!row) return null;
+    const slotRows = db.prepare('SELECT * FROM bp_session_slots WHERE session_id = ?').all(id);
+    const resultRow = db.prepare('SELECT * FROM bp_session_results WHERE session_id = ?').get(id) || null;
+    const resultUpdated = Boolean(db.prepare(
+      "SELECT 1 FROM bp_session_history WHERE session_id = ? AND action = 'result-updated' LIMIT 1").get(id));
+    const slots = this.normalizeSlots(Object.fromEntries(slotRows.map(srow => [srow.slot_id, {
+      characterId: srow.character_id || null,
+      playerId: srow.player_id || null,
+      playerText: srow.player_text || null
+    }])));
+    return this.hydrateSession(row, slots, resultRow ? this.resultFromDbRow(resultRow) : null, resultUpdated);
   }
 
   loadSessions() {
@@ -68,66 +142,22 @@ class BpService extends EventEmitter {
       }
       const resultsBySession = new Map();
       for (const row of resultRows) {
-        resultsBySession.set(row.session_id, {
-          winnerRole: row.winner_role,
-          winnerTeamId: row.winner_team_id,
-          decidedAt: row.decided_at,
-          ...(row.image_file_name != null
-            ? { image: { fileName: row.image_file_name, filePath: row.image_file_path, uploadedAt: row.image_uploaded_at } }
-            : {})
-        });
+        resultsBySession.set(row.session_id, this.resultFromDbRow(row));
       }
       const resultUpdatedSessions = new Set(db.prepare(
         "SELECT DISTINCT session_id FROM bp_session_history WHERE action = 'result-updated'"
       ).all().map(row => row.session_id));
 
       for (const row of sessionRows) {
-        const slots = slotsBySession.get(row.id) || {};
-        for (const [slotId, config] of Object.entries(SLOT_CONFIG)) {
-          if (!slots[slotId]) {
-            slots[slotId] = config.kind === 'ban'
-              ? { characterId: null }
-              : { characterId: null, playerId: null, playerText: null };
-          } else if (config.kind === 'ban') {
-            slots[slotId] = { characterId: slots[slotId].characterId || null };
-          }
-        }
+        const slots = this.normalizeSlots(slotsBySession.get(row.id) || {});
         const result = resultsBySession.get(row.id) || null;
-        const session = {
-          id: row.id,
-          matchId: row.match_id,
-          gameNumber: row.game_number,
-          room: row.room,
-          attempt: row.attempt,
-          replayOf: row.replay_of || null,
-          outputMode: !row.output_mode || row.output_mode === 'officialId' ? 'nickname' : row.output_mode,
-          commentatorImage: row.commentator_image_id
-            ? { id: row.commentator_image_id, name: row.commentator_image_name }
-            : null,
-          result: result ? clone(result) : null,
-          revision: row.revision,
-          status: row.status,
-          currentPhaseIndex: row.current_phase_index,
-          slots,
-          timer: {
-            durationSeconds: row.timer_duration_seconds,
-            remainingSeconds: row.timer_remaining_seconds,
-            running: Boolean(row.timer_running),
-            deadline: row.timer_deadline_ms ?? null,
-            transitionPending: Boolean(row.timer_transition_pending)
-          },
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-          auditActor: null,
-          history: null
-        };
-        if (session.result) session.result ||= null;
-        if (session.attempt > 1 && !resultUpdatedSessions.has(session.id)) session.result = null;
-        sessions[session.id] = session;
+        sessions[row.id] = this.hydrateSession(row, slots, result, resultUpdatedSessions.has(row.id));
       }
     } catch (error) {
       console.warn(`BP 会话加载失败，已重置 BP 域数据: ${error.message}`);
       db.exec('DELETE FROM bp_session_history; DELETE FROM bp_session_results; DELETE FROM bp_session_slots; DELETE FROM bp_sessions;');
+      this.persistedHistoryCounts?.clear();
+      this.bootstrapVersion = (this.bootstrapVersion || 0) + 1;
       return {};
     }
     return sessions;
@@ -169,6 +199,10 @@ class BpService extends EventEmitter {
     return forfeits;
   }
 
+  getBootstrapVersion() {
+    return this.bootstrapVersion || 0;
+  }
+
   ensureHistory(session) {
     if (Array.isArray(session.history)) return session.history;
     session.history = db.prepare(`SELECT revision, timestamp_ms, actor_user_id, actor_display_name, actor_identity_key,
@@ -183,14 +217,58 @@ class BpService extends EventEmitter {
       details: JSON.parse(row.details_json || '{}'),
       snapshot: JSON.parse(row.snapshot_json || '{}')
     }));
+    // 从库里装载历史时同步锚定增量持久化计数，避免重启后第一次 persist 把已有历史重复插入
+    this.persistedHistoryCounts ||= new Map();
+    this.persistedHistoryCounts.set(session.id, session.history.length);
     return session.history;
   }
 
   persist(...subjects) {
     const targets = subjects.filter(Boolean);
     if (!targets.length) return;
+    try {
+      this.writePersistedState(targets);
+    } catch (error) {
+      // 落库失败：withTransaction 已把库回滚到操作前，这里按库重载内存并广播纠正，
+      // 保证内存永不领先于数据库；错误继续上抛由调用方响应用户
+      this.rollbackFromDb(targets);
+      throw error;
+    }
+    // 数据版本：bootstrap 缓存与失效判定依赖此计数，任何持久化写入都必须推进
+    this.bootstrapVersion = (this.bootstrapVersion || 0) + 1;
+  }
+
+  // 写库失败回滚：从库重载受影响会话（库中已不存在的直接从内存移除），弃赛记录整体重载
+  rollbackFromDb(subjects) {
+    let forfeitsReloaded = false;
+    for (const subject of subjects) {
+      if (!subject) continue;
+      if (subject.events) {
+        if (!forfeitsReloaded) {
+          this.forfeits = this.loadForfeits();
+          forfeitsReloaded = true;
+        }
+        continue;
+      }
+      const fresh = this.reloadSessionFromDb(subject.id);
+      const pendingTimer = this.transitionTimers.get(subject.id);
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        this.transitionTimers.delete(subject.id);
+      }
+      if (fresh) {
+        this.sessions[fresh.id] = fresh;
+        this.emitSession(fresh, 'state-rolled-back');
+      } else {
+        delete this.sessions[subject.id];
+      }
+    }
+  }
+
+  writePersistedState(targets) {
     withTransaction(() => {
-      const upsertSession = db.prepare(`INSERT INTO bp_sessions
+      // 持久化是 BP 全部写操作的热路径：固定 SQL 全部走语句缓存，避免每次事务重复解析
+      const upsertSession = cachedStatement(`INSERT INTO bp_sessions
         (id, match_id, game_number, room, attempt, replay_of, output_mode, status, current_phase_index,
          commentator_image_id, commentator_image_name, timer_duration_seconds, timer_remaining_seconds,
          timer_running, timer_deadline_ms, timer_transition_pending, created_at, updated_at, revision)
@@ -204,27 +282,27 @@ class BpService extends EventEmitter {
           timer_running = excluded.timer_running, timer_deadline_ms = excluded.timer_deadline_ms,
           timer_transition_pending = excluded.timer_transition_pending, created_at = excluded.created_at,
           updated_at = excluded.updated_at, revision = excluded.revision`);
-      const deleteSlots = db.prepare('DELETE FROM bp_session_slots WHERE session_id = ?');
-      const insertSlot = db.prepare(
+      const deleteSlots = cachedStatement('DELETE FROM bp_session_slots WHERE session_id = ?');
+      const insertSlot = cachedStatement(
         'INSERT INTO bp_session_slots (session_id, slot_id, character_id, player_id, player_text) VALUES (?, ?, ?, ?, ?)');
-      const deleteResult = db.prepare('DELETE FROM bp_session_results WHERE session_id = ?');
-      const insertResult = db.prepare(`INSERT INTO bp_session_results
+      const deleteResult = cachedStatement('DELETE FROM bp_session_results WHERE session_id = ?');
+      const insertResult = cachedStatement(`INSERT INTO bp_session_results
         (session_id, winner_role, winner_team_id, decided_at, image_file_name, image_file_path, image_uploaded_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)`);
-      const deleteHistory = db.prepare('DELETE FROM bp_session_history WHERE session_id = ?');
-      const insertHistory = db.prepare(`INSERT INTO bp_session_history
+      const deleteHistory = cachedStatement('DELETE FROM bp_session_history WHERE session_id = ?');
+      const insertHistory = cachedStatement(`INSERT INTO bp_session_history
         (session_id, revision, timestamp_ms, actor_user_id, actor_display_name, actor_identity_key,
           action, details_json, snapshot_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-      const upsertForfeit = db.prepare(`INSERT INTO bp_forfeits
+      const upsertForfeit = cachedStatement(`INSERT INTO bp_forfeits
         (match_id, room, forfeiting_team_id, winner_team_id, active, declared_at, revoked_at, session_states_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (match_id, room) DO UPDATE SET
           forfeiting_team_id = excluded.forfeiting_team_id, winner_team_id = excluded.winner_team_id,
           active = excluded.active, declared_at = excluded.declared_at, revoked_at = excluded.revoked_at,
           session_states_json = excluded.session_states_json`);
-      const deleteForfeitEvents = db.prepare('DELETE FROM bp_forfeit_events WHERE match_id = ? AND room = ?');
-      const insertForfeitEvent = db.prepare(`INSERT INTO bp_forfeit_events
+      const deleteForfeitEvents = cachedStatement('DELETE FROM bp_forfeit_events WHERE match_id = ? AND room = ?');
+      const insertForfeitEvent = cachedStatement(`INSERT INTO bp_forfeit_events
         (match_id, room, seq, action, timestamp_ms, forfeiting_team_id, winner_team_id)
         VALUES (?, ?, ?, ?, ?, ?, ?)`);
 
@@ -261,13 +339,21 @@ class BpService extends EventEmitter {
             session.result.decidedAt ?? 0, session.result.image?.fileName || null,
             session.result.image?.filePath || null, session.result.image?.uploadedAt ?? null);
         }
-        deleteHistory.run(session.id);
-        for (const item of session.history || []) {
+        // 历史改为增量追加：只写上次持久化之后的新条目，替代原先每次保存全删重插
+        this.persistedHistoryCounts ||= new Map();
+        const historyItems = session.history || [];
+        let persistedCount = this.persistedHistoryCounts.get(session.id) || 0;
+        if (historyItems.length < persistedCount) {
+          deleteHistory.run(session.id);
+          persistedCount = 0;
+        }
+        for (const item of historyItems.slice(persistedCount)) {
           insertHistory.run(session.id, item.revision, item.timestamp ?? 0,
             item.actorUserId || null, item.actorName || '系统',
             item.actorIdentityKey || (item.actorUserId ? 'unknown' : 'system'), item.action,
             JSON.stringify(item.details || {}), JSON.stringify(item.snapshot || {}));
         }
+        this.persistedHistoryCounts.set(session.id, historyItems.length);
       }
     });
   }
@@ -280,6 +366,35 @@ class BpService extends EventEmitter {
     this.resolver.getMatch(matchId);
     assert(Number.isInteger(gameNumber) && gameNumber >= 1 && gameNumber <= 3, 'BO3局数必须是1、2或3');
     assert(room === 'A' || room === 'B', '房间必须是A或B');
+  }
+
+  isTestMatch(matchId) {
+    return matchId === 'bp-interface-test-match';
+  }
+
+  // 测试场专用：清掉该场全部 BP 数据（会话/历史/结果/槽位/弃赛/赛果回写），返回是否清理过
+  purgeTestMatchData(matchId) {
+    if (!this.isTestMatch(matchId)) return false;
+    db.prepare('DELETE FROM bp_session_history WHERE session_id LIKE ?').run(`${matchId}:%`);
+    db.prepare('DELETE FROM bp_session_results WHERE session_id LIKE ?').run(`${matchId}:%`);
+    db.prepare('DELETE FROM bp_session_slots WHERE session_id LIKE ?').run(`${matchId}:%`);
+    db.prepare('DELETE FROM bp_sessions WHERE id LIKE ?').run(`${matchId}:%`);
+    db.prepare('DELETE FROM bp_forfeits WHERE match_id = ?').run(matchId);
+    db.prepare('DELETE FROM bp_forfeit_events WHERE match_id = ?').run(matchId);
+    db.prepare('UPDATE matches SET winner_team_id = NULL WHERE id = ?').run(matchId);
+    for (const id of Object.keys(this.sessions)) {
+      if (id.startsWith(`${matchId}:`)) delete this.sessions[id];
+    }
+    return true;
+  }
+
+  ensureSession(matchId, gameNumber, room, attempt = 1, auditActor = null) {
+    if (this.isTestMatch(matchId)) {
+      this.purgeTestMatchData(matchId);
+      return this.createSession(matchId, gameNumber, room, attempt, auditActor);
+    }
+    const id = this.sessionId(matchId, gameNumber, room, attempt);
+    return this.sessions[id] || this.createSession(matchId, gameNumber, room, attempt, auditActor);
   }
 
   createSession(matchId, gameNumber, room, attempt = 1, auditActor = null) {
@@ -318,11 +433,6 @@ class BpService extends EventEmitter {
     this.record(session, 'session-created');
     this.persist(session);
     return session;
-  }
-
-  ensureSession(matchId, gameNumber, room, attempt = 1, auditActor = null) {
-    const id = this.sessionId(matchId, gameNumber, room, attempt);
-    return this.sessions[id] || this.createSession(matchId, gameNumber, room, attempt, auditActor);
   }
 
   setAuditActor(id, auditActor) {
@@ -364,10 +474,15 @@ class BpService extends EventEmitter {
     return Math.max(0, Math.ceil((session.timer.deadline - now) / 1000));
   }
 
-  serialize(session) {
+  serialize(session, options = {}) {
     this.ensureHistory(session);
     const data = clone(session);
     delete data.auditActor;
+    // 推送链路带宽控制：historyLimit 裁剪历史（0 为全剥，N 为保留最近 N 条）；
+    // 不传则保留完整历史（状态端点、导出、restore 场景）
+    if (options.historyLimit !== undefined) {
+      data.history = options.historyLimit > 0 ? data.history.slice(-options.historyLimit) : [];
+    }
     data.timer.remainingSeconds = this.currentRemaining(session);
     data.phase = session.currentPhaseIndex >= 0 ? PHASES[session.currentPhaseIndex] || null : null;
     data.roomAssignment = {
@@ -459,8 +574,10 @@ class BpService extends EventEmitter {
     });
   }
 
-  emitSession(session, reason, details = {}) {
-    this.emit('session', { session: this.serialize(session), reason, details });
+  // 推送带宽控制：historyLimit 缺省 20（历史面板渲染与恢复所需的窗口），
+  // tick 等高频链路传 0 全剥；完整历史走 /history 端点按需拉取
+  emitSession(session, reason, details = {}, historyLimit = 20) {
+    this.emit('session', { session: this.serialize(session, { historyLimit }), reason, details });
   }
 
   startSession(id) {
@@ -643,13 +760,21 @@ class BpService extends EventEmitter {
         current.timer.deadline = null;
         current.timer.remainingSeconds = 0;
         this.record(current, 'bp-completed');
-        this.persist(current);
+        try {
+          this.persist(current);
+        } catch {
+          return; // 回滚与纠正广播已在 persist 内完成
+        }
         this.emitSession(current, 'bp-completed');
         return;
       }
       this.startTimer(current);
       this.record(current, 'phase-started', { phaseId: PHASES[current.currentPhaseIndex].id });
-      this.persist(current);
+      try {
+        this.persist(current);
+      } catch {
+        return; // 回滚与纠正广播已在 persist 内完成
+      }
       this.emitSession(current, 'phase-started');
       this.emit('timer', { session: this.serialize(current), seconds: current.timer.durationSeconds });
     }, this.zeroPulseMs);
@@ -670,15 +795,21 @@ class BpService extends EventEmitter {
       const remaining = this.currentRemaining(session, now);
       if (remaining !== this.lastDisplayedSeconds.get(session.id)) {
         this.lastDisplayedSeconds.set(session.id, remaining);
-        this.emit('timer', { session: this.serialize(session), seconds: remaining });
-        this.emitSession(session, 'timer-tick');
+        // 每秒时钟推送走精简序列化（无历史）：tick 是唯一的高频广播链路
+        this.emit('timer', { session: this.serialize(session, { historyLimit: 0 }), seconds: remaining });
+        this.emitSession(session, 'timer-tick', {}, 0);
       }
       if (remaining === 0) {
         session.timer.running = false;
         session.timer.deadline = null;
         session.timer.remainingSeconds = 0;
         this.record(session, 'timer-expired', { phaseId: PHASES[session.currentPhaseIndex]?.id });
-        this.persist(session);
+        try {
+          this.persist(session);
+        } catch {
+          // 回滚与纠正广播已在 persist 内完成，本地 session 引用已失效，跳过本次广播
+          continue;
+        }
         this.emitSession(session, 'timer-expired');
       }
     }

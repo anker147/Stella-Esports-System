@@ -648,7 +648,8 @@ test('authentication protects control pages and APIs while preserving OBS output
   const accessDb = new DatabaseSync(dbPath);
   assert.equal(accessDb.prepare("SELECT status FROM users WHERE username = 'operator'").get().status, 'active');
   assert.equal(JSON.parse(accessDb.prepare("SELECT value_json FROM app_settings WHERE key = 'system.access.open'").get().value_json), false);
-  const storedSessions = JSON.parse(accessDb.prepare("SELECT value_json FROM app_settings WHERE key = 'auth.sessions'").get().value_json);
+  const storedSessions = accessDb.prepare('SELECT data_json FROM auth_sessions').all()
+    .map(row => JSON.parse(row.data_json));
   assert.equal(storedSessions.length, 1);
   assert.equal(storedSessions[0].role, 'developer');
   const operatorPresence = accessDb.prepare('SELECT status, last_heartbeat_at FROM user_presence WHERE user_id = ?')
@@ -993,5 +994,71 @@ test('authentication protects control pages and APIs while preserving OBS output
   });
 
   response = await fetch(`${baseUrl}/api/update-log`, { headers: { Cookie: operatorCookie } });
+  assert.equal(response.status, 401);
+});
+
+test('login failures trigger rate limiting before correct credentials are accepted', { timeout: 20000 }, async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-auth-rate-'));
+  const dbPath = path.join(directory, 'data', 'app.db');
+  const port = 39000 + Math.floor(Math.random() * 1500);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      STELLA_DATA_DIR: path.join(directory, 'data'),
+      STELLA_DB_PATH: dbPath,
+      STELLA_DEFAULTS_DIR: path.resolve(__dirname, '..', 'defaults', 'data')
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
+  });
+  let output = '';
+  child.stdout.on('data', chunk => { output += chunk; });
+  child.stderr.on('data', chunk => { output += chunk; });
+  t.after(async () => {
+    if (child.exitCode === null) {
+      child.kill();
+      await new Promise(resolve => child.once('exit', resolve));
+    }
+    fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  await waitForHealth(baseUrl, child).catch(error => {
+    throw new Error(`${error.message}\n${output}`);
+  });
+
+  let response = await fetch(`${baseUrl}/api/auth/setup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'rate-test-password' })
+  });
+  assert.equal(response.status, 201);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'developer', account: 'administrator', password: `wrong-${attempt}` })
+    });
+    assert.equal(response.status, 401, `attempt ${attempt} should be a normal 401`);
+  }
+
+  // 锁定期间正确密码同样 429
+  response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'developer', account: 'administrator', password: 'rate-test-password' })
+  });
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'LOGIN_RATE_LIMITED');
+
+  // 未触发限速的账号不受影响
+  response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'developer', account: 'missing-account', password: 'whatever' })
+  });
   assert.equal(response.status, 401);
 });

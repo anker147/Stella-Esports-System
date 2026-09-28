@@ -465,3 +465,33 @@ body,
   .slot-reveal,
   .slot-clear { animation-duration: 1ms !important; animation-delay: 0ms !important; }
 }
+
+/* HUD 预览模式：无快照时的静态底 */
+.preview-shell {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 80% at 50% 40%, rgba(72, 128, 208, 0.16), transparent 70%),
+    #101216;
+}
+
+.preview-shell::after {
+  content: attr(data-note);
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.4);
+  font: 600 22px/1 var(--f2-font-mono, monospace);
+  letter-spacing: 4px;
+}
+
+/* 预览模式：舞台始终可见，遮罩壳垫底 */
+.bp-preview .bp-stage {
+  opacity: 1;
+  z-index: 2;
+}
+
+.bp-preview .preview-shell {
+  z-index: 0;
+}

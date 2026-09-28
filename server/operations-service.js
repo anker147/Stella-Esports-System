@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { db: defaultDb } = require('./db');
 const { laboratorySettings } = require('./laboratory-settings');
+const { resolveScheduleEvent } = require('./event-management-service');
 
 const PUBLIC_VIEWS = new Set([
   'personal', 'events', 'schedule', 'teams', 'players', 'resources', 'matches', 'hud'
@@ -31,6 +32,7 @@ function pageOptions(options = {}) {
     offset: clampInteger(options.offset, 0, 0, 100000),
     query: String(options.query || '').trim().slice(0, 80),
     eventId: String(options.eventId || '').trim().slice(0, 100),
+    managedEventId: String(options.managedEventId || '').trim().slice(0, 100),
     division: ['pc', 'mobile'].includes(options.division) ? options.division : '',
     role: ['escape', 'hunter'].includes(options.role) ? options.role : '',
     teamId: String(options.teamId || '').trim().slice(0, 100)
@@ -99,15 +101,11 @@ function scheduleFilters(options) {
   const params = [];
   if (options.query) {
     const pattern = `%${options.query}%`;
-    clauses.push(`(e.name LIKE ? OR m.matchup_home LIKE ? OR m.matchup_away LIKE ? OR m.id LIKE ?)`);
+    clauses.push(`(te.name LIKE ? OR m.matchup_home LIKE ? OR m.matchup_away LIKE ? OR m.id LIKE ?)`);
     params.push(pattern, pattern, pattern, pattern);
   }
-  if (options.eventId) {
-    clauses.push('m.event_id = ?');
-    params.push(options.eventId);
-  }
   if (options.division) {
-    clauses.push('e.division = ?');
+    clauses.push('te.division = ?');
     params.push(options.division);
   }
   return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
@@ -115,11 +113,17 @@ function scheduleFilters(options) {
 
 function listSchedule(database, rawOptions = {}) {
   const options = pageOptions(rawOptions);
+  const context = resolveScheduleEvent(database, options.managedEventId);
   const filters = scheduleFilters(options);
   const total = Number(database.prepare(`SELECT COUNT(*) AS count
-    FROM matches m JOIN events e ON e.id = m.event_id ${filters.sql}`).get(...filters.params)?.count || 0);
+    FROM tournament_schedule_links link
+    JOIN tournament_events te ON te.id = link.tournament_event_id
+    JOIN matches m ON m.id = link.match_id
+    WHERE link.tournament_event_id = ?${filters.sql ? ` AND ${filters.sql.slice(6)}` : ''}`)
+    .get(context.id, ...filters.params)?.count || 0);
   const items = database.prepare(`${EFFECTIVE_SESSIONS_CTE}
-    SELECT m.id, m.event_id, e.name AS event_name, e.division, e.stage_label, e.stage,
+    SELECT m.id, m.event_id AS source_event_id, te.id AS tournament_event_id,
+      te.name AS event_name, te.division, te.stage,
       m.date, m.start_time, m.end_time, m.mode, m.format,
       COALESCE(home.display_name, m.matchup_home) AS home_name,
       COALESCE(away.display_name, m.matchup_away) AS away_name,
@@ -129,20 +133,22 @@ function listSchedule(database, rawOptions = {}) {
       COUNT(DISTINCT es.id) AS game_count,
       COUNT(DISTINCT result.session_id) AS completed_game_count,
       MAX(es.updated_at) AS latest_activity_at
-    FROM matches m
-    JOIN events e ON e.id = m.event_id
+    FROM tournament_schedule_links link
+    JOIN tournament_events te ON te.id = link.tournament_event_id
+    JOIN matches m ON m.id = link.match_id
     LEFT JOIN teams home ON home.id = m.matchup_home
     LEFT JOIN teams away ON away.id = m.matchup_away
     LEFT JOIN teams winner ON winner.id = m.winner_team_id
     LEFT JOIN match_rooms room ON room.match_id = m.id
     LEFT JOIN effective_sessions es ON es.match_id = m.id
     LEFT JOIN bp_session_results result ON result.session_id = es.id
-    ${filters.sql}
+    WHERE link.tournament_event_id = ?${filters.sql ? ` AND ${filters.sql.slice(6)}` : ''}
     GROUP BY m.id
-    ORDER BY COALESCE(m.date, e.date, '9999-12-31'), COALESCE(m.start_time, '99:99'), m.sort_order
-    LIMIT ? OFFSET ?`).all(...filters.params, options.limit, options.offset).map(row => ({
+    ORDER BY COALESCE(m.date, te.start_date, '9999-12-31'), COALESCE(m.start_time, '99:99'), m.sort_order
+    LIMIT ? OFFSET ?`).all(context.id, ...filters.params, options.limit, options.offset).map(row => ({
       id: row.id,
-      eventId: row.event_id,
+      eventId: row.tournament_event_id,
+      sourceEventId: row.source_event_id,
       eventName: row.event_name,
       division: row.division,
       stage: row.stage_label || row.stage,
@@ -159,7 +165,19 @@ function listSchedule(database, rawOptions = {}) {
       completedGameCount: Number(row.completed_game_count || 0),
       latestActivityAt: row.latest_activity_at
     }));
-  return { total, limit: options.limit, offset: options.offset, hasMore: options.offset + items.length < total, items };
+  return {
+    context: {
+      managedEventId: context.id,
+      eventName: context.name,
+      status: context.status,
+      priority: context.priority
+    },
+    total,
+    limit: options.limit,
+    offset: options.offset,
+    hasMore: options.offset + items.length < total,
+    items
+  };
 }
 
 function listTeams(database, rawOptions = {}) {
@@ -187,7 +205,7 @@ function listTeams(database, rawOptions = {}) {
     FROM teams t
     LEFT JOIN players p ON p.team_id = t.id
     LEFT JOIN event_teams et ON et.team_id = t.id
-    LEFT JOIN matches m ON m.winner_team_id = t.id
+    LEFT JOIN matches m ON m.winner_team_id = t.id AND m.id != 'bp-interface-test-match'
     LEFT JOIN team_logos escape_logo ON escape_logo.team_id = t.id AND escape_logo.kind = 'escape'
     LEFT JOIN team_logos hunter_logo ON hunter_logo.team_id = t.id AND hunter_logo.kind = 'hunter'
     ${where}
@@ -325,6 +343,202 @@ function listMatchRecords(database, rawOptions = {}) {
       replayCount: Number(row.replay_count || 0)
     }));
   return { total, limit: options.limit, offset: options.offset, hasMore: options.offset + items.length < total, items };
+}
+
+function teamDetail(database, rawTeamId) {
+  const teamId = String(rawTeamId || '').trim().slice(0, 100);
+  if (!teamId) {
+    const error = new Error('缺少战队 ID');
+    error.code = 'TEAM_ID_REQUIRED';
+    throw error;
+  }
+  const team = database.prepare('SELECT id, display_name, division, aliases_json FROM teams WHERE id = ?').get(teamId);
+  if (!team) {
+    const error = new Error('战队不存在');
+    error.code = 'TEAM_NOT_FOUND';
+    throw error;
+  }
+  let aliases = [];
+  if (team.aliases_json) {
+    try {
+      const parsed = JSON.parse(team.aliases_json);
+      if (Array.isArray(parsed)) aliases = parsed.map(item => String(item)).filter(Boolean);
+    } catch { aliases = []; }
+  }
+  // 历史赛程的 matchup_home/matchup_away 可能存显示名而非队伍 id,先建名字到 id 的解析表
+  const teamIdByName = new Map();
+  for (const row of database.prepare('SELECT id, display_name, aliases_json FROM teams').all()) {
+    const names = [row.id, row.display_name];
+    if (row.aliases_json) {
+      try {
+        const parsed = JSON.parse(row.aliases_json);
+        if (Array.isArray(parsed)) names.push(...parsed.map(item => String(item)));
+      } catch { /* 别名解析失败只影响名字匹配 */ }
+    }
+    for (const name of names) {
+      if (name) teamIdByName.set(String(name).toLowerCase(), row.id);
+    }
+  }
+  const selfVariants = [...new Set([team.id, team.display_name, ...aliases]
+    .map(value => String(value).toLowerCase()).filter(Boolean))];
+  const variantPlaceholders = selfVariants.map(() => '?').join(', ');
+  const roster = database.prepare(`SELECT player_id, nickname, official_id, registered_nickname,
+      registered_official_id, role, slot, is_substitute
+    FROM players WHERE team_id = ?
+    ORDER BY role, is_substitute, slot, nickname`).all(teamId).map(row => ({
+    id: row.player_id,
+    nickname: row.nickname,
+    officialId: row.official_id,
+    registeredNickname: row.registered_nickname,
+    registeredOfficialId: row.registered_official_id,
+    role: row.role,
+    slot: Number(row.slot || 0),
+    substitute: Boolean(row.is_substitute)
+  }));
+  const events = database.prepare(`SELECT e.id, e.name, e.division, e.date, e.stage_label, e.stage, e.mode, e.format
+    FROM event_teams et JOIN events e ON e.id = et.event_id
+    WHERE et.team_id = ?
+    ORDER BY COALESCE(e.date, '9999-12-31'), e.sort_order, e.name`).all(teamId).map(row => ({
+    id: row.id,
+    name: row.name,
+    division: row.division,
+    date: row.date,
+    stage: row.stage_label || row.stage,
+    mode: row.mode,
+    format: row.format
+  }));
+  const records = database.prepare(`${EFFECTIVE_SESSIONS_CTE}
+    SELECT m.id, e.name AS event_name, m.date, m.start_time,
+      m.matchup_home, m.matchup_away, m.winner_team_id,
+      GROUP_CONCAT(result.winner_team_id) AS game_winners,
+      MAX(result.decided_at) AS decided_at
+    FROM matches m
+    JOIN events e ON e.id = m.event_id
+    LEFT JOIN effective_sessions es ON es.match_id = m.id
+    LEFT JOIN bp_session_results result ON result.session_id = es.id
+    WHERE m.id != 'bp-interface-test-match'
+      AND (LOWER(m.matchup_home) IN (${variantPlaceholders}) OR LOWER(m.matchup_away) IN (${variantPlaceholders}))
+    GROUP BY m.id
+    ORDER BY COALESCE(result.decided_at, 0) DESC, COALESCE(m.date, '') DESC, m.sort_order DESC
+    LIMIT 8`).all(...selfVariants, ...selfVariants).map(row => {
+    const resolveId = value => teamIdByName.get(String(value ?? '').toLowerCase()) || null;
+    const homeId = resolveId(row.matchup_home);
+    const awayId = resolveId(row.matchup_away);
+    let homeWins = 0;
+    let awayWins = 0;
+    for (const winner of String(row.game_winners || '').split(',')) {
+      const winnerId = resolveId(winner);
+      if (!winnerId) continue;
+      if (winnerId === homeId) homeWins += 1;
+      else if (winnerId === awayId) awayWins += 1;
+    }
+    return {
+      id: row.id,
+      eventName: row.event_name,
+      date: row.date,
+      startTime: row.start_time,
+      home: { id: homeId, name: row.matchup_home },
+      away: { id: awayId, name: row.matchup_away },
+      score: { home: homeWins, away: awayWins },
+      decided: row.winner_team_id != null,
+      won: row.winner_team_id === teamId,
+      decidedAt: row.decided_at
+    };
+  });
+  const totals = database.prepare(`SELECT COUNT(*) AS played,
+      COALESCE(SUM(CASE WHEN m.winner_team_id = ? THEN 1 ELSE 0 END), 0) AS wins
+    FROM matches m
+    WHERE m.id != 'bp-interface-test-match' AND m.winner_team_id IS NOT NULL
+      AND (LOWER(m.matchup_home) IN (${variantPlaceholders}) OR LOWER(m.matchup_away) IN (${variantPlaceholders}))`)
+    .get(teamId, ...selfVariants, ...selfVariants);
+  const played = Number(totals?.played || 0);
+  const wins = Number(totals?.wins || 0);
+
+  // 角色使用统计:有效局中该队阵营的 pick 槽位(阵营由 match_rooms 决定)
+  const sideExpression = `CASE WHEN LOWER(mr.escape_team_id) IN (${variantPlaceholders}) THEN 'escape'
+    WHEN LOWER(mr.hunter_team_id) IN (${variantPlaceholders}) THEN 'hunter' END`;
+  const teamRoomsClause = `(LOWER(mr.escape_team_id) IN (${variantPlaceholders}) OR LOWER(mr.hunter_team_id) IN (${variantPlaceholders}))`;
+  const totalGames = Number(database.prepare(`${EFFECTIVE_SESSIONS_CTE}
+    SELECT COUNT(DISTINCT es.id) AS total
+    FROM effective_sessions es
+    JOIN match_rooms mr ON mr.match_id = es.match_id AND mr.room = es.room
+    WHERE es.match_id != 'bp-interface-test-match' AND ${teamRoomsClause}`)
+    .get(...selfVariants, ...selfVariants)?.total || 0);
+  const common = database.prepare(`${EFFECTIVE_SESSIONS_CTE}
+    SELECT s.character_id AS id, COALESCE(c.nickname, s.character_id) AS nickname,
+      COUNT(DISTINCT es.id) AS uses,
+      COUNT(DISTINCT CASE WHEN LOWER(r.winner_team_id) IN (${variantPlaceholders}) THEN es.id END) AS wins
+    FROM effective_sessions es
+    JOIN match_rooms mr ON mr.match_id = es.match_id AND mr.room = es.room
+    JOIN bp_session_slots s ON s.session_id = es.id
+      AND s.character_id IS NOT NULL
+      AND s.slot_id LIKE (${sideExpression} || '-pick-%')
+    LEFT JOIN characters c ON c.id = s.character_id
+    LEFT JOIN bp_session_results r ON r.session_id = es.id
+    WHERE es.match_id != 'bp-interface-test-match' AND ${teamRoomsClause}
+    GROUP BY s.character_id
+    ORDER BY uses DESC, nickname
+    LIMIT 8`).all(...selfVariants, ...selfVariants, ...selfVariants, ...selfVariants, ...selfVariants)
+    .map(row => {
+      const uses = Number(row.uses || 0);
+      const charWins = Number(row.wins || 0);
+      return {
+        id: row.id,
+        nickname: row.nickname,
+        uses,
+        winRate: uses ? charWins / uses : null,
+        usageRate: totalGames ? uses / totalGames : null
+      };
+    });
+  const latestSession = database.prepare(`${EFFECTIVE_SESSIONS_CTE}
+    SELECT es.id AS session_id, es.match_id, es.game_number, mr.escape_team_id, mr.hunter_team_id,
+      m.matchup_home, m.matchup_away, m.date, e.name AS event_name
+    FROM effective_sessions es
+    JOIN match_rooms mr ON mr.match_id = es.match_id AND mr.room = es.room
+    JOIN matches m ON m.id = es.match_id
+    JOIN events e ON e.id = m.event_id
+    LEFT JOIN bp_session_results r ON r.session_id = es.id
+    WHERE es.match_id != 'bp-interface-test-match' AND ${teamRoomsClause}
+    ORDER BY COALESCE(r.decided_at, 0) DESC, COALESCE(m.date, '') DESC, es.game_number DESC
+    LIMIT 1`).get(...selfVariants, ...selfVariants);
+  let latestLineup = null;
+  if (latestSession) {
+    const side = selfVariants.includes(String(latestSession.escape_team_id || '').toLowerCase()) ? 'escape' : 'hunter';
+    const lineupRows = database.prepare(`SELECT s.character_id AS id, COALESCE(c.nickname, s.character_id) AS nickname,
+        c.portrait_url AS portrait
+      FROM bp_session_slots s
+      LEFT JOIN characters c ON c.id = s.character_id
+      WHERE s.session_id = ? AND s.character_id IS NOT NULL AND s.slot_id LIKE ?
+      ORDER BY s.slot_id`).all(latestSession.session_id, `${side}-pick-%`);
+    const seenCharacters = new Set();
+    const lineup = lineupRows.filter(item => {
+      if (seenCharacters.has(item.id)) return false;
+      seenCharacters.add(item.id);
+      return true;
+    });
+    const resolveDisplayName = value => {
+      const resolved = teamIdByName.get(String(value ?? '').toLowerCase());
+      return resolved ? database.prepare('SELECT display_name FROM teams WHERE id = ?').get(resolved)?.display_name || value : value;
+    };
+    latestLineup = {
+      matchId: latestSession.match_id,
+      side,
+      lineup,
+      eventName: latestSession.event_name,
+      date: latestSession.date,
+      matchupHome: resolveDisplayName(latestSession.matchup_home) || 'TBD',
+      matchupAway: resolveDisplayName(latestSession.matchup_away) || 'TBD'
+    };
+  }
+
+  return {
+    team: { id: team.id, name: team.display_name, division: team.division, aliases },
+    roster,
+    events,
+    records,
+    totals: { played, wins, winRate: played ? wins / played : null },
+    characters: { totalGames, common, latest: latestLineup }
+  };
 }
 
 function dataConfiguration(database) {
@@ -482,6 +696,11 @@ function personalSnapshot(database, options = {}) {
     ORDER BY ABS(julianday(COALESCE(m.date, e.date)) - julianday(?)), m.sort_order LIMIT 4`).all(today);
   const recentActions = userId ? database.prepare(`SELECT timestamp_ms, action, success, actor_identity_key
     FROM account_operation_logs WHERE actor_user_id = ? ORDER BY timestamp_ms DESC LIMIT 6`).all(userId) : [];
+  const activity = userId ? database.prepare(`SELECT date(timestamp_ms / 1000, 'unixepoch', 'localtime') AS day,
+      COUNT(*) AS total
+    FROM account_operation_logs
+    WHERE actor_user_id = ? AND timestamp_ms >= ?
+    GROUP BY day ORDER BY day`).all(userId, Date.now() - 182 * 86400000) : [];
   return {
     user: user ? { id: user.id, account: user.username, displayName: user.display_name || user.username } : null,
     today,
@@ -493,7 +712,14 @@ function personalSnapshot(database, options = {}) {
       action: row.action,
       success: Boolean(row.success),
       identityKey: row.actor_identity_key || 'unknown'
-    }))
+    })),
+    activity: activity.map(row => ({ day: row.day, count: Number(row.total) })),
+    todos: [
+      { id: 'bp-room', page: 'schedule', title: 'A/B 房控制', description: '赛程管理的比赛编辑弹窗内设置 BP 房间' },
+      { id: 'commentator', page: 'schedule', title: '解说组图与兑换码', description: '赛程管理的比赛编辑弹窗底部选择并同步 OBS' },
+      { id: 'start-bp', page: 'schedule', title: '开始 BP', description: '赛程管理对阵卡上直接发起 BP 控制台' },
+      { id: 'obs-websocket', page: 'hudCenter', title: 'OBS WebSocket 连接', description: '已迁移至 HUD 中心页面' }
+    ]
   };
 }
 
@@ -528,5 +754,6 @@ module.exports = {
   listSchedule,
   listTeams,
   listPlayers,
-  listMatchRecords
+  listMatchRecords,
+  teamDetail
 };

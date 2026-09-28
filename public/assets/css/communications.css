@@ -71,7 +71,7 @@
   background: #fff;
   color: var(--f2-text-secondary);
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
+  transition: border-color 140ms var(--nav-ease), background 140ms var(--nav-ease), color 140ms var(--nav-ease), transform 140ms var(--nav-ease);
 }
 
 .communications-icon-button svg {
@@ -136,7 +136,7 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease;
+  transition: background 140ms var(--nav-ease), color 140ms var(--nav-ease);
 }
 
 .communications-channel-row:hover {
@@ -1169,6 +1169,401 @@
 
   .communications-context-menu,
   .communications-message-menu-items {
+    animation: none;
+  }
+}
+
+
+/* ===== 频道 QQ 化：美术头像 / 搜索 / 公告 / 设置 / @高亮 / 免打扰 ===== */
+.communications-avatar-generated {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: var(--f2-weight-semibold, 600);
+  border-radius: 10px;
+}
+
+.communications-channel-avatar.communications-avatar-generated {
+  border-radius: 10px;
+}
+
+.communications-current-avatar.communications-avatar-generated {
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+.communications-avatar-global { background: linear-gradient(135deg, #2b88d8, #16629f); }
+.communications-avatar-identity { background: linear-gradient(135deg, #14a08c, #0c7566); }
+.communications-avatar-private { background: linear-gradient(135deg, #8b7ce8, #5f51b8); }
+.communications-avatar-custom { background: linear-gradient(135deg, #f0a13c, #d1741f); }
+
+.communications-channel-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 12px 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--f2-text-tertiary);
+}
+
+.communications-channel-search:focus-within {
+  border-color: rgba(0, 120, 212, 0.45);
+}
+
+.communications-channel-search svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.communications-channel-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--f2-text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.communications-unread.is-muted {
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--f2-text-tertiary);
+  font-size: 0;
+}
+
+.communications-announcement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 120, 212, 0.22);
+  border-radius: 10px;
+  background: rgba(0, 120, 212, 0.06);
+}
+
+.communications-announcement-tag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--f2-blue);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: var(--f2-weight-semibold, 600);
+}
+
+.communications-announcement-text {
+  overflow: hidden;
+  color: var(--f2-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.communications-mention {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgba(0, 120, 212, 0.12);
+  color: var(--f2-blue);
+  font-weight: var(--f2-weight-semibold, 600);
+}
+
+.communications-settings-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.communications-settings-avatar {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(15, 35, 60, 0.1);
+  border-radius: 14px;
+  background: #f2f6f8;
+  color: #fff;
+  font-size: 22px;
+  font-weight: var(--f2-weight-semibold, 600);
+}
+
+.communications-settings-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.communications-settings-avatar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.communications-settings-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 22px 16px;
+  overflow-y: auto;
+}
+
+.communications-settings-body .form-stack {
+  display: grid;
+  gap: 6px;
+  color: var(--f2-text-secondary);
+  font-size: 12px;
+  font-weight: var(--f2-weight-semibold, 600);
+}
+
+.communications-settings-body .input {
+  font-weight: 400;
+}
+
+.communications-settings-toggles {
+  display: flex;
+  gap: 22px;
+}
+
+.communications-settings-feedback {
+  min-height: 16px;
+  color: var(--f2-red);
+  font-size: 12px;
+}
+
+.communications-foot-space {
+  flex: 1;
+}
+
+
+/* ===== 频道 QQ 化：美术头像 / 角标 / 行强化 ===== */
+.communications-avatar-generated {
+  color: #fff;
+  border-radius: 10px;
+}
+
+.communications-channel-avatar.communications-avatar-generated {
+  border-radius: 10px;
+}
+
+.communications-current-avatar.communications-avatar-generated {
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+.communications-avatar-generated svg {
+  width: 56%;
+  height: 56%;
+}
+
+.communications-avatar-global { background: linear-gradient(135deg, #3aa0e8, #1b6cb5); }
+.communications-avatar-identity { background: linear-gradient(135deg, #26b3a0, #0e8a7a); }
+.communications-avatar-private { background: linear-gradient(135deg, #9b8cf0, #6a58c9); }
+.communications-avatar-custom { background: linear-gradient(135deg, #f2a649, #dd8a2b); }
+
+.communications-channel-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  overflow: visible;
+}
+
+.communications-channel-avatar img {
+  border-radius: inherit;
+}
+
+.communications-current-avatar {
+  border-radius: 12px;
+  overflow: visible;
+}
+
+.communications-current-avatar img {
+  border-radius: inherit;
+}
+
+.communications-pin-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--f2-blue);
+  color: #fff;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.communications-pin-badge svg {
+  width: 9px;
+  height: 9px;
+}
+
+.communications-channel-row {
+  position: relative;
+  border-radius: 10px;
+  min-height: 56px;
+}
+
+.communications-channel-row:hover {
+  transform: translateY(-1px);
+}
+
+.communications-channel-row.is-active {
+  background: rgba(0, 120, 212, 0.09);
+  box-shadow: inset 3px 0 0 var(--f2-blue);
+}
+
+.communications-channel-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.communications-channel-name-row strong {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.communications-muted-flag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--f2-text-tertiary);
+}
+
+.communications-muted-flag svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .communications-channel-row,
+  .communications-channel-row:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+
+/* ===== 弹窗亚克力升级（创建/设置共用）+ 设置弹窗结构 ===== */
+.communications-dialog {
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  background: rgba(245, 250, 255, 0.82);
+  backdrop-filter: blur(28px) saturate(145%);
+  box-shadow: 0 30px 90px rgba(12, 34, 58, 0.28), inset 0 1px rgba(255, 255, 255, 0.9);
+  color: var(--f2-text-primary);
+}
+
+.communications-dialog::backdrop {
+  background: rgba(15, 25, 40, 0.43);
+  backdrop-filter: blur(5px);
+}
+
+.communications-dialog[open] {
+  animation: communications-dialog-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.communications-dialog.dialog-closing {
+  animation: dialog-theme-exit 140ms var(--nav-ease) both;
+  pointer-events: none;
+}
+
+@keyframes communications-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+.communications-dialog-form {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: inherit;
+}
+
+.communications-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px 12px;
+}
+
+.communications-dialog-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.communications-dialog-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--f2-text-secondary);
+  font-size: 15px;
+  cursor: pointer;
+  transition: color 140ms var(--nav-ease), border-color 140ms var(--nav-ease);
+}
+
+.communications-dialog-close:hover {
+  color: var(--f2-text-primary);
+  border-color: rgba(0, 120, 212, 0.35);
+}
+
+.communications-settings-body .input {
+  font-weight: 400;
+}
+
+.communications-settings-body textarea.input {
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.communications-settings-toggles {
+  display: flex;
+  gap: 22px;
+}
+
+.communications-settings-feedback {
+  min-height: 16px;
+  color: var(--f2-red);
+  font-size: 12px;
+}
+
+.communications-foot-space {
+  flex: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .communications-dialog[open],
+  .communications-dialog.dialog-closing {
     animation: none;
   }
 }

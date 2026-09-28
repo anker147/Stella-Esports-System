@@ -460,6 +460,35 @@ body {
   box-shadow: none;
 }
 
+/* 键盘焦点可见：鼠标点击不出现焦点环，Tab 导航必须可见 */
+.login-field .input:focus-visible {
+  outline: 2px solid var(--f2-blue);
+  outline-offset: 2px;
+}
+
+body:has(.login-page) :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--f2-blue);
+  outline-offset: 2px;
+}
+
+.login-submit[disabled] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* 减弱动效偏好：入场与过渡动画折叠为瞬时（含 .login-page 之外的错误弹窗） */
+@media (prefers-reduced-motion: reduce) {
+  .login-page *,
+  .login-page *::before,
+  .login-page *::after,
+  .login-error-dialog,
+  .login-error-dialog * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .login-field .input::placeholder {
   color: rgba(238, 242, 247, 0.38);
 }

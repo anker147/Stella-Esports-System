@@ -189,6 +189,8 @@
 
   forms.user.addEventListener('submit', async event => {
     event.preventDefault();
+    const submit = forms.user.querySelector('button[type="submit"]');
+    submit.disabled = true;
     const account = forms.user.account.value.trim();
     const password = forms.user.password.value;
     try {
@@ -202,11 +204,15 @@
       window.location.href = '/?page=personalCenter';
     } catch (error) {
       fail(error.message);
+    } finally {
+      submit.disabled = false;
     }
   });
 
   forms.developer.addEventListener('submit', async event => {
     event.preventDefault();
+    const submit = forms.developer.querySelector('button[type="submit"]');
+    submit.disabled = true;
     const account = forms.developer.account.value.trim();
     const password = forms.developer.password.value;
     try {
@@ -226,11 +232,14 @@
       window.location.href = '/?page=personalCenter';
     } catch (error) {
       fail(error.message);
+    } finally {
+      submit.disabled = false;
     }
   });
 
   fetch('/api/auth/status')
     .then(response => response.json())
+    .then(data => window.Text.ready.then(() => data))
     .then(data => {
       if (!data.setupRequired) return;
       setupRequired = true;

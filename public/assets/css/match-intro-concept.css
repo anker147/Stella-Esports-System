@@ -106,7 +106,7 @@ body {
 
 .matchup-background {
   z-index: 1;
-  background: url("/assets/match-intro/matchup-background.png") center / cover no-repeat;
+  background: url("/assets/match-intro/matchup-background.jpg") center / cover no-repeat;
   transform: scale(1.035);
 }
 

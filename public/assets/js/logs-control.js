@@ -22,7 +22,7 @@
   const beijingTime = value => new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
 
   const actionLabels = {};
-  for (const [key, value] of Object.entries(window.UI_TEXT)) {
+  for (const [key, value] of Object.entries(window.UI_TEXT || {})) {
     if (key.startsWith('bp.logActions.')) actionLabels[key.slice('bp.logActions.'.length)] = value;
   }
 
@@ -160,7 +160,7 @@
         warning.setAttribute('role', 'img');
         warning.setAttribute('aria-label', t('lg.sensitiveWarning'));
         warning.title = t('lg.sensitiveWarning');
-        warning.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.1 14 13H2L8 2.1Z"/><path d="M8 5.7v3.5M8 11.5v.1"/></svg>';
+        warning.innerHTML = '<svg viewBox="0 0 24 24" data-icon="triangle-alert" aria-hidden="true"></svg>';
         toggle.appendChild(warning);
       }
       toggle.appendChild(label);
@@ -196,6 +196,7 @@
       rows.push(emptyRow);
     }
     elements.body.replaceChildren(...rows);
+    if (window.PageFX && animate) PageFX.stagger(rows.filter(row => !row.hidden), { step: 18, cap: 16 });
     updateLoadState();
     if (animate) replayCategoryAnimation();
   }

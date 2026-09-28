@@ -100,6 +100,7 @@
 
   function renderHistory() {
     elements.history.replaceChildren(...state.notifications.map(createHistoryItem));
+    if (window.PageFX) PageFX.stagger(elements.history.children, { step: 25, cap: 14 });
     elements.historyEmpty.hidden = state.notifications.length > 0 || state.loading;
   }
 

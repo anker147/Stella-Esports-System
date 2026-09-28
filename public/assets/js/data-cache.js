@@ -115,9 +115,26 @@
       if (cached?.promise) return cached.promise.then(clone);
     }
 
-    const pending = fetch(input, fetchOptions).then(async response => {
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `请求失败 (${response.status})`);
+    const sendOnce = async () => {
+      // 12 秒超时：挂起的请求不再让共享 promise 的所有等待方无限等待
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(new Error('请求超时')), 12000);
+      try {
+        const response = await fetch(input, { ...fetchOptions, signal: fetchOptions.signal || controller.signal });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.error || `请求失败 (${response.status})`);
+          error.code = payload.code || '';
+          error.isHttpError = true;
+          throw error;
+        }
+        return payload;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    const settle = payload => {
       if (method === 'GET') {
         entries.delete(key);
         entries.set(key, { value: payload, storedAt: Date.now() });
@@ -126,7 +143,17 @@
         invalidateRelated(input);
       }
       return payload;
-    });
+    };
+
+    const pending = (async () => {
+      try {
+        return settle(await sendOnce());
+      } catch (error) {
+        // 仅 GET 且网络级失败（断网/超时）重试一次；业务错误不重试
+        if (method !== 'GET' || error.isHttpError || fetchOptions.signal) throw error;
+        return settle(await sendOnce());
+      }
+    })();
     if (method === 'GET') entries.set(key, { promise: pending, storedAt: Date.now() });
     try {
       return clone(await pending);
@@ -193,8 +220,17 @@
   }
 
   function bindPrediction() {
+    // 悬停预取冷却：同一按钮 30 秒内只预取一次，避免扫过导航反复回源
+    const PREFETCH_COOLDOWN_MS = 30000;
+    const lastPredictAt = new Map();
     document.querySelectorAll('[data-page]').forEach(button => {
-      const predict = () => prefetchPage(button.dataset.page, button.dataset.logCategory);
+      const predict = () => {
+        const now = Date.now();
+        const last = lastPredictAt.get(button) || 0;
+        if (now - last < PREFETCH_COOLDOWN_MS) return;
+        lastPredictAt.set(button, now);
+        prefetchPage(button.dataset.page, button.dataset.logCategory);
+      };
       button.addEventListener('pointerenter', predict, { passive: true });
       button.addEventListener('focus', predict, { passive: true });
     });

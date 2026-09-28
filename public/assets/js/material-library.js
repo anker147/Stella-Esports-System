@@ -318,17 +318,17 @@
     return directory.childCount || 0;
   }
 
-  // 内置 iconfont 风格线性图标（离线可用）；换图标只需改这里的 path
+  // Icon kinds resolved through the shared icon kit (Morphicons engine)
   const GLYPH_ICONS = {
-    folder: '<path d="M5 10a3 3 0 0 1 3-3h10l4.5 5H40a3 3 0 0 1 3 3v19a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V10z"/>',
-    audio: '<path d="M17 33V12l20-5v22"/><circle cx="12" cy="33" r="5"/><circle cx="32" cy="29" r="5"/>',
-    file: '<path d="M11 5h16l10 10v26a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M27 5v10h10"/>'
+    folder: 'folder',
+    audio: 'music',
+    file: 'file'
   };
 
   function makeGlyph(kind, label = '') {
     const glyph = document.createElement('span');
     glyph.className = `material-glyph is-${kind}`;
-    glyph.innerHTML = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${GLYPH_ICONS[kind]}</svg>`;
+    glyph.innerHTML = `<svg viewBox="0 0 24 24" data-icon="${GLYPH_ICONS[kind]}" aria-hidden="true"></svg>`;
     if (label) {
       const text = document.createElement('span');
       text.className = 'material-glyph-label';
@@ -370,7 +370,7 @@
       thumb.appendChild(video);
       const badge = document.createElement('span');
       badge.className = 'material-media-badge';
-      badge.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>';
+      badge.innerHTML = '<svg viewBox="0 0 24 24" data-icon="play" data-icon-fill="true" aria-hidden="true"></svg>';
       thumb.appendChild(badge);
       return thumb;
     }

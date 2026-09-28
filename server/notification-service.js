@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { db: defaultDb } = require('./db');
+const { db: defaultDb, runTransaction } = require('./db');
 const { hasPermission } = require('./permissions-service');
 
 const TYPES = new Set(['message', 'urgent', 'friend_request', 'version', 'announcement']);
@@ -108,8 +108,7 @@ function createNotification(database = defaultDb, input = {}, recipientUserIds =
     : null;
   const id = existing?.id || crypto.randomUUID();
   const now = Number(input.createdAt) || Date.now();
-  database.exec('BEGIN');
-  try {
+  runTransaction(database, () => {
     if (!existing) {
       database.prepare(`INSERT INTO notifications
         (id, type, title, summary, body, urgent, source_kind, source_id, target_kind, target_value,
@@ -133,11 +132,7 @@ function createNotification(database = defaultDb, input = {}, recipientUserIds =
     const insertRecipient = database.prepare(`INSERT OR IGNORE INTO notification_recipients
       (notification_id, user_id, read_at) VALUES (?, ?, NULL)`);
     recipients.forEach(userId => insertRecipient.run(id, userId));
-    database.exec('COMMIT');
-  } catch (error) {
-    database.exec('ROLLBACK');
-    throw error;
-  }
+  });
   return notificationById(database, id);
 }
 

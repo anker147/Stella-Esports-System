@@ -1,32 +1,32 @@
 (function () {
   const pageCopy = {
-    personalCenter: { title: t('page.personalCenter.title'), description: t('page.personalCenter.desc') },
-    events: { title: t('page.events.title'), description: t('page.events.desc') },
-    schedule: { title: t('page.schedule.title'), description: t('page.schedule.desc') },
-    teams: { title: t('page.teams.title'), description: t('page.teams.desc') },
-    players: { title: t('page.players.title'), description: t('page.players.desc') },
-    resourceMonitor: { title: t('page.resourceMonitor.title'), description: t('page.resourceMonitor.desc') },
-    matchRecords: { title: t('page.matchRecords.title'), description: t('page.matchRecords.desc') },
-    dataConfig: { title: t('page.dataConfig.title'), description: t('page.dataConfig.desc') },
-    terminalStatus: { title: t('page.terminalStatus.title'), description: t('page.terminalStatus.desc') },
-    systemSettings: { title: t('page.systemSettings.title'), description: t('page.systemSettings.desc') },
-    hudCenter: { title: t('page.hudCenter.title'), description: t('page.hudCenter.desc') },
-    riskResponse: { title: t('page.riskResponse.title'), description: t('page.riskResponse.desc') },
-    countdown: { title: t('page.countdown.title'), description: t('page.countdown.desc') },
-    bp: { title: t('page.bp.title'), description: t('page.bp.desc') },
-    characterStats: { title: t('page.characterStats.title'), description: t('page.characterStats.desc') },
-    bracket: { title: t('page.bracket.title'), description: t('page.bracket.desc') },
-    materials: { title: t('page.materials.title'), description: t('page.materials.desc') },
-    profile: { title: t('page.profile.title'), description: t('page.profile.desc') },
-    friends: { title: t('page.friends.title'), description: t('page.friends.desc') },
-    addFriend: { title: t('page.addFriend.title'), description: t('page.addFriend.desc') },
-    channels: { title: t('page.channels.title'), description: t('page.channels.desc') },
-    systemManagement: { title: t('page.systemManagement.title'), description: t('page.systemManagement.desc') },
-    accounts: { title: t('page.accounts.title'), description: t('page.accounts.desc') },
-    permissions: { title: t('page.permissions.title'), description: t('page.permissions.desc') },
-    notificationManagement: { title: t('page.notificationManagement.title'), description: t('page.notificationManagement.desc') },
-    logs: { title: t('page.logs.title'), description: t('page.logs.desc') },
-    updates: { title: t('page.updates.title'), description: t('page.updates.desc') }
+    personalCenter: { titleKey: 'page.personalCenter.title', descriptionKey: 'page.personalCenter.desc' },
+    events: { titleKey: 'page.events.title', descriptionKey: 'page.events.desc' },
+    schedule: { titleKey: 'page.schedule.title', descriptionKey: 'page.schedule.desc' },
+    teams: { titleKey: 'page.teams.title', descriptionKey: 'page.teams.desc' },
+    players: { titleKey: 'page.players.title', descriptionKey: 'page.players.desc' },
+    resourceMonitor: { titleKey: 'page.resourceMonitor.title', descriptionKey: 'page.resourceMonitor.desc' },
+    matchRecords: { titleKey: 'page.matchRecords.title', descriptionKey: 'page.matchRecords.desc' },
+    dataConfig: { titleKey: 'page.dataConfig.title', descriptionKey: 'page.dataConfig.desc' },
+    terminalStatus: { titleKey: 'page.terminalStatus.title', descriptionKey: 'page.terminalStatus.desc' },
+    systemSettings: { titleKey: 'page.systemSettings.title', descriptionKey: 'page.systemSettings.desc' },
+    hudCenter: { titleKey: 'page.hudCenter.title', descriptionKey: 'page.hudCenter.desc' },
+    riskResponse: { titleKey: 'page.riskResponse.title', descriptionKey: 'page.riskResponse.desc' },
+    countdown: { titleKey: 'page.countdown.title', descriptionKey: 'page.countdown.desc' },
+    bp: { titleKey: 'page.bp.title', descriptionKey: 'page.bp.desc' },
+    characterStats: { titleKey: 'page.characterStats.title', descriptionKey: 'page.characterStats.desc' },
+    bracket: { titleKey: 'page.bracket.title', descriptionKey: 'page.bracket.desc' },
+    materials: { titleKey: 'page.materials.title', descriptionKey: 'page.materials.desc' },
+    profile: { titleKey: 'page.profile.title', descriptionKey: 'page.profile.desc' },
+    friends: { titleKey: 'page.friends.title', descriptionKey: 'page.friends.desc' },
+    addFriend: { titleKey: 'page.addFriend.title', descriptionKey: 'page.addFriend.desc' },
+    channels: { titleKey: 'page.channels.title', descriptionKey: 'page.channels.desc' },
+    systemManagement: { titleKey: 'page.systemManagement.title', descriptionKey: 'page.systemManagement.desc' },
+    accounts: { titleKey: 'page.accounts.title', descriptionKey: 'page.accounts.desc' },
+    permissions: { titleKey: 'page.permissions.title', descriptionKey: 'page.permissions.desc' },
+    notificationManagement: { titleKey: 'page.notificationManagement.title', descriptionKey: 'page.notificationManagement.desc' },
+    logs: { titleKey: 'page.logs.title', descriptionKey: 'page.logs.desc' },
+    updates: { titleKey: 'page.updates.title', descriptionKey: 'page.updates.desc' }
   };
 
   const NAV_STATE_KEY = 'zfb.nav-state';
@@ -227,6 +227,10 @@
     button.addEventListener('click', () => {
       if (button.hasAttribute('data-requires-developer') && !document.body.classList.contains('auth-developer')) return;
       const page = button.dataset.page;
+      if (!window.dispatchEvent(new CustomEvent('stella:before-page-change', {
+        cancelable: true,
+        detail: { page }
+      }))) return;
       document.body.classList.toggle('updates-mode', page === 'updates');
       if (page === 'bp') {
         try {
@@ -241,8 +245,8 @@
         panel.classList.toggle('active', active);
         panel.hidden = !active;
       });
-      document.getElementById('pageTitle').textContent = pageCopy[page].title;
-      document.getElementById('pageDescription').textContent = pageCopy[page].description;
+      document.getElementById('pageTitle').textContent = t(pageCopy[page].titleKey);
+      document.getElementById('pageDescription').textContent = t(pageCopy[page].descriptionKey);
       const activeGroup = button.closest('[data-nav-group]');
       if (activeGroup && !isSidebarCollapsed()) {
         activeGroup.dataset.open = 'true';
@@ -290,6 +294,13 @@
   } else if (activeButton) {
     activateInitialButton(activeButton);
   }
+  window.Text.ready.then(() => {
+    const activePageButton = document.querySelector('[data-page].active');
+    if (activePageButton && pageCopy[activePageButton.dataset.page]) {
+      document.getElementById('pageTitle').textContent = t(pageCopy[activePageButton.dataset.page].titleKey);
+      document.getElementById('pageDescription').textContent = t(pageCopy[activePageButton.dataset.page].descriptionKey);
+    }
+  }).catch(() => {});
   document.querySelectorAll('[data-nav-group]').forEach(group => {
     group.classList.toggle('has-active', Boolean(group.querySelector('[data-page].active')));
     group.classList.toggle('has-development-active', Boolean(group.querySelector('[data-development].active')));
@@ -339,6 +350,7 @@
   let countdownLogsLoading = false;
   let countdownLogsComplete = false;
   const renderedCountdownLogIds = new Set();
+  let lastCountdownLogId = 0;
 
   function absoluteUrl(path) {
     return new URL(path, window.location.origin).href;
@@ -351,6 +363,19 @@
     elements.connectionStatus.classList.toggle('status-pending', text !== t('header.hubOnline') && text !== t('header.connectFailed'));
   }
 
+  function formatCountdownLogTimestamp(value = Date.now()) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '----/--/-- --:--:--';
+    const parts = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).formatToParts(date).reduce((result, part) => {
+      result[part.type] = part.value;
+      return result;
+    }, {});
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  }
+
   function addLog(entry, options = {}) {
     const persisted = entry && typeof entry === 'object';
     const id = persisted ? String(entry.id) : null;
@@ -359,12 +384,13 @@
     item.className = 'log-item';
     if (persisted) {
       renderedCountdownLogIds.add(id);
+      lastCountdownLogId = Math.max(lastCountdownLogId, Number(entry.id) || 0);
       item.dataset.logId = id;
       item.classList.toggle('error', !entry.success);
       const actor = entry.actorName && entry.actorName !== '系统' ? `  ${entry.actorName} · ` : '  ';
-      item.textContent = `${new Date(entry.timestamp).toLocaleTimeString()}${actor}${entry.action}${entry.error ? `：${entry.error}` : ''}`;
+      item.textContent = `${formatCountdownLogTimestamp(entry.timestamp)}${actor}${entry.action}${entry.error ? `：${entry.error}` : ''}`;
     } else {
-      item.textContent = `${new Date().toLocaleTimeString()}  ${entry}`;
+      item.textContent = `${formatCountdownLogTimestamp()}  ${entry}`;
     }
     if (options.append) elements.logList.append(item);
     else elements.logList.prepend(item);
@@ -404,8 +430,8 @@
     const animationInput = elements.bpAnimationStyle.querySelector(`[value="${CSS.escape(config.animationStyle)}"]`);
     if (animationInput) animationInput.checked = true;
     const groups = [
-      { role: 'escape', title: t('cd.escapeTimerGroup'), description: t('cd.escapeTimerGroupDesc') },
-      { role: 'hunter', title: t('cd.hunterTimerGroup'), description: t('cd.hunterTimerGroupDesc') }
+      { role: 'escape', titleKey: 'cd.escapeTimerGroup', descriptionKey: 'cd.escapeTimerGroupDesc' },
+      { role: 'hunter', titleKey: 'cd.hunterTimerGroup', descriptionKey: 'cd.hunterTimerGroupDesc' }
     ];
     elements.bpTimerSettings.replaceChildren(...groups.map(group => {
       const section = document.createElement('section');
@@ -492,7 +518,7 @@
   }
 
   function updateHubUrl() {
-    elements.hubUrl.value = absoluteUrl('/hub/countdown');
+    if (elements.hubUrl) elements.hubUrl.value = absoluteUrl('/hub/countdown');
   }
 
   function render() {
@@ -513,13 +539,34 @@
 
   function connectEvents() {
     if (eventSource) eventSource.close();
+    let everErrored = false;
     eventSource = new EventSource(`/api/hubs/${hubId}/events`);
     eventSource.addEventListener('state', event => {
       applyState(JSON.parse(event.data));
       setStatus(t('header.hubOnline'));
     });
     eventSource.addEventListener('event-log', event => addLog(JSON.parse(event.data)));
-    eventSource.onerror = () => setStatus(t('header.reconnecting'));
+    eventSource.onerror = () => {
+      everErrored = true;
+      setStatus(t('header.reconnecting'));
+    };
+    // 断线重连成功后补拉全量状态弥合错过推送，并按增量补齐断线窗口内的操作日志
+    eventSource.onopen = async () => {
+      if (!everErrored) return;
+      everErrored = false;
+      setStatus(t('header.hubOnline'));
+      try {
+        const response = await fetch(`/api/hubs/${hubId}/state`, { cache: 'no-store' });
+        if (response.ok) applyState(await response.json());
+      } catch {}
+      if (lastCountdownLogId > 0) {
+        try {
+          const response = await fetch(`/api/hubs/${hubId}/logs?after=${lastCountdownLogId}`, { cache: 'no-store' });
+          const payload = await response.json();
+          if (response.ok && Array.isArray(payload.logs)) payload.logs.forEach(log => addLog(log, { append: true }));
+        } catch {}
+      }
+    };
   }
 
   async function connect() {
@@ -557,8 +604,8 @@
     return Number.isFinite(date.getTime()) ? date.toISOString() : null;
   }
 
-  elements.newHub.addEventListener('click', createHub);
-  elements.copyHub.addEventListener('click', async () => {
+  if (elements.newHub) elements.newHub.addEventListener('click', createHub);
+  if (elements.copyHub) elements.copyHub.addEventListener('click', async () => {
     elements.hubCopyStatus.textContent = '';
     elements.hubCopyStatus.classList.remove('is-error');
     try {

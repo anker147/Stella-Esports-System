@@ -134,16 +134,16 @@
     return t(keys[value] || keys.unspecified);
   }
 
-  const GENDER_ICON_PATHS = {
-    male: '<circle cx="6.9" cy="9.1" r="3.4"/><path d="M9.6 6.4l3.5-3.5M9.9 2.9h3.2v3.2"/>',
-    female: '<circle cx="8" cy="5.9" r="3.4"/><path d="M8 9.3v4.2M5.9 11.4h4.2"/>',
-    neutral: '<circle cx="8" cy="5.5" r="2.4"/><path d="M3.4 13.5c.5-2.8 2.3-4 4.6-4s4.1 1.2 4.6 4"/>'
+  const GENDER_ICON_NAMES = {
+    male: 'mars',
+    female: 'venus',
+    neutral: 'user-round'
   };
 
   function renderGenderIconInto(root, value) {
     if (!root) return;
-    const key = GENDER_ICON_PATHS[value] ? value : 'neutral';
-    root.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${GENDER_ICON_PATHS[key]}</svg>`;
+    const key = GENDER_ICON_NAMES[value] ? value : 'neutral';
+    root.innerHTML = `<svg viewBox="0 0 24 24" data-icon="${GENDER_ICON_NAMES[key]}" aria-hidden="true"></svg>`;
   }
 
   function renderGenderIcon(value) {
@@ -651,7 +651,7 @@
     const ageIcon = document.createElement('span');
     ageIcon.className = 'profile-fact-ico';
     ageIcon.setAttribute('aria-hidden', 'true');
-    ageIcon.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 13.2V9.4a1.8 1.8 0 0 1 1.8-1.8h4a1.8 1.8 0 0 1 1.8 1.8v3.8"/><path d="M2.6 13.2h10.8"/><path d="M8 7.6V5.6"/><path d="M8 3.8v.01"/></svg>';
+    ageIcon.innerHTML = '<svg viewBox="0 0 24 24" data-icon="cake" aria-hidden="true"></svg>';
     const ageValue = document.createElement('span');
     ageValue.textContent = profile.age == null ? t('profile.statNotSet') : t('profile.statYears', { value: profile.age });
     ageFact.append(ageIcon, ageValue);
@@ -660,7 +660,7 @@
     const regionIcon = document.createElement('span');
     regionIcon.className = 'profile-fact-ico';
     regionIcon.setAttribute('aria-hidden', 'true');
-    regionIcon.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6.9c0 3.6-5 7.3-5 7.3S3 10.5 3 6.9a5 5 0 0 1 10 0z"/><circle cx="8" cy="6.9" r="1.7"/></svg>';
+    regionIcon.innerHTML = '<svg viewBox="0 0 24 24" data-icon="map-pin" aria-hidden="true"></svg>';
     const regionValue = document.createElement('span');
     regionValue.textContent = profile.region;
     regionFact.append(regionIcon, regionValue);
@@ -751,6 +751,8 @@
         elements.menuIdentityStatus.textContent = '';
       }
       elements.headerToggle.setAttribute('aria-expanded', String(open));
+      const islandChevron = elements.headerToggle.querySelector('.header-island-chevron');
+      if (islandChevron) window.IconKit?.morph(islandChevron, open ? 'chevron-up' : 'chevron-down');
       elements.headerMenu.classList.toggle('is-open', open);
       elements.headerMenu.hidden = !open;
     }

@@ -17,6 +17,7 @@ const {
   setMessageUrgent,
   toggleMessagePlusOne
 } = require('./communication-service');
+const { createMessageNotification } = require('./notification-service');
 
 const now = Date.now();
 const users = [
@@ -219,4 +220,41 @@ test('unread message windows anchor the first unread and paginate forward', () =
   });
   assert.ok(forward.messages.length > 0);
   assert.ok(forward.messages.every(message => message.id > window.messages.at(-1).id));
+});
+
+test('markChannelRead drives the batched unread watermark surfaced by bootstrap', () => {
+  markChannelRead(db, alice, 'global', null);
+  const first = sendMessage(db, bob, 'global', 'watermark one');
+  const second = sendMessage(db, bob, 'global', 'watermark two');
+  let snapshot = communicationBootstrap(db, alice, null);
+  const before = snapshot.channels.find(channel => channel.id === 'global');
+  assert.equal(before.unreadCount, 2);
+  assert.equal(before.firstUnreadMessageId, first.id);
+
+  markChannelRead(db, alice, 'global', first.id);
+  snapshot = communicationBootstrap(db, alice, null);
+  const after = snapshot.channels.find(channel => channel.id === 'global');
+  assert.equal(after.unreadCount, 1);
+  assert.equal(after.firstUnreadMessageId, second.id);
+  assert.equal(after.lastMessage.sender.displayName, 'Bob');
+});
+
+test('a failing post-send hook rolls the message and its notification back together', () => {
+  const messagesBefore = db.prepare('SELECT COUNT(*) AS n FROM communication_messages').get().n;
+  const notificationsBefore = db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n;
+  assert.throws(() => sendMessage(db, bob, 'global', 'rollback probe', {
+    afterInsert: (serialized) => {
+      createMessageNotification(db, serialized, false);
+      throw new Error('post-notification failure');
+    }
+  }), /post-notification failure/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM communication_messages').get().n, messagesBefore);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM notifications').get().n, notificationsBefore);
+
+  const message = sendMessage(db, bob, 'global', 'notification probe', {
+    afterInsert: (serialized) => { createMessageNotification(db, serialized, false); }
+  });
+  const notification = db.prepare("SELECT id FROM notifications WHERE source_kind = 'message' AND source_id = ?")
+    .get(String(message.id));
+  assert.ok(notification, 'notification should be committed together with the message');
 });

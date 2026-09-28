@@ -73,6 +73,18 @@
     });
   }
 
+  let bpToastTimer = 0;
+
+  function bpToast(message, tone = '') {
+    const anchor = document.getElementById('bpToast');
+    if (!anchor) return;
+    anchor.textContent = message;
+    anchor.className = 'bp-toast' + (tone ? ' ' + tone : '');
+    anchor.hidden = false;
+    clearTimeout(bpToastTimer);
+    bpToastTimer = setTimeout(() => { anchor.hidden = true; }, tone === 'error' ? 6000 : 2600);
+  }
+
   function log(message, tone = '') {
     const item = document.createElement('div');
     item.className = `log-item ${tone}`;
@@ -208,9 +220,22 @@
     return Boolean(session && session.status === 'active' && phaseIndex(slotId) <= session.currentPhaseIndex);
   }
 
+  function characterName(character) {
+    if (!character) return character;
+    const meta = bootstrap?.characterMeta?.[character];
+    return meta?.nickname || character;
+  }
+
+  function characterPortrait(character) {
+    const meta = character ? bootstrap?.characterMeta?.[character] : null;
+    return meta?.portraitUrl || '';
+  }
+
   function characterUrl(kind, character) {
     const folder = kind === 'ban' ? 'ban' : 'pick';
-    return `/assets/characters/${folder}/${encodeURIComponent(character || '占位')}.png`;
+    if (!character) return `/assets/characters/${folder}/${encodeURIComponent(text('bp.modernPlaceholder', '占位'))}.png`;
+    const portrait = characterPortrait(character);
+    return portrait || `/assets/characters/${folder}/${encodeURIComponent(character)}.png`;
   }
 
   function slotComplete(slotId) {
@@ -249,7 +274,7 @@
       <div class="slot-heading"><span>${slotLabel(slotId)}</span><i>${complete ? t('bp.pushed') : editable ? t('bp.currentSlot') : t('bp.locked')}</i></div>
       <button class="character-choice" type="button" data-character="${slotId}" ${editable ? '' : 'disabled'}>
         <img src="${characterUrl(config.kind, slot.characterId)}" alt="">
-        <span>${escapeHtml(slot.characterId || t('bp.chooseCharacter'))}</span>
+        <span>${escapeHtml(slot.characterId ? characterName(slot.characterId) : t('bp.chooseCharacter'))}</span>
       </button>
       ${playerControl}
       <button class="slot-clear" type="button" data-clear="${slotId}" ${(editable && (slot.characterId || slot.playerId || slot.playerText)) ? '' : 'disabled'}>${t('bp.clearSlot')}</button>
@@ -275,7 +300,7 @@
     return `<article class="bp-modern-slot ${config.kind}-slot ${complete ? 'complete' : editable ? 'editable' : 'locked'} ${current ? 'current-phase' : ''} ${selected ? 'selected' : ''}" data-slot="${slotId}">
       <button class="bp-modern-slot-main" type="button" data-modern-select="${slotId}" ${editable ? '' : 'disabled'} aria-pressed="${selected}">
         <img src="${characterUrl(config.kind, slot.characterId)}" alt="">
-        <span><strong>${escapeHtml(slot.characterId || t('bp.chooseCharacter'))}</strong><small>${escapeHtml(slotLabel(slotId))}</small></span>
+        <span><strong>${escapeHtml(slot.characterId ? characterName(slot.characterId) : t('bp.chooseCharacter'))}</strong><small>${escapeHtml(slotLabel(slotId))}</small></span>
       </button>
       ${playerControl}
       <button class="bp-modern-clear" type="button" data-clear="${slotId}" aria-label="${escapeHtml(`${slotLabel(slotId)} · ${t('bp.clearSlot')}`)}" ${(editable && (slot.characterId || slot.playerId || slot.playerText)) ? '' : 'disabled'}>×</button>
@@ -283,7 +308,7 @@
   }
 
   function synchronizeModernTarget() {
-    if (!session || session.currentPhaseIndex < 0) {
+    if (!session || !(session.currentPhaseIndex >= 0) || !bootstrap.phases[session.currentPhaseIndex]) {
       modernActiveSlotId = null;
       modernPhaseKey = '';
       return;
@@ -308,15 +333,15 @@
     elements.modernCharacterSearch.hidden = !config;
     elements.modernCharacterGrid.hidden = !config;
     if (!config) {
-      elements.modernDraftEyebrow.textContent = session ? '等待开始' : '等待载入';
-      elements.modernDraftTitle.textContent = '角色选择';
-      elements.modernTarget.textContent = '未选择槽位';
+      elements.modernDraftEyebrow.textContent = session ? text('bp.modernWaitingStart', '等待开始') : text('bp.modernWaitingLoad', '等待载入');
+      elements.modernDraftTitle.textContent = text('bp.modernDraftTitle', '角色选择');
+      elements.modernTarget.textContent = text('bp.modernNoSlot', '未选择槽位');
       elements.modernCharacterGrid.replaceChildren();
       return;
     }
-    const roleLabel = config.role === 'escape' ? '逃生角色' : '追捕角色';
-    elements.modernDraftEyebrow.textContent = activePhase?.label || '调整已完成阶段';
-    elements.modernDraftTitle.textContent = `${roleLabel}${config.kind === 'ban' ? '禁用' : '选择'}`;
+    const roleLabel = config.role === 'escape' ? text('bp.modernEscapeRole', '逃生角色') : text('bp.modernHunterRole', '追捕角色');
+    elements.modernDraftEyebrow.textContent = activePhase?.label || text('bp.modernAdjustPhase', '调整已完成阶段');
+    elements.modernDraftTitle.textContent = `${roleLabel}${config.kind === 'ban' ? text('bp.modernBan', '禁用') : text('bp.modernPick', '选择')}`;
     elements.modernTarget.textContent = slotLabel(slotId);
     const query = elements.modernCharacterSearch.value.trim();
     const selectedCharacter = session?.slots[slotId]?.characterId || null;
@@ -325,8 +350,9 @@
         && bootstrap.slots[candidateSlotId].role === config.role && slot.characterId)
       .map(([, slot]) => slot.characterId));
     const fragment = document.createDocumentFragment();
+    const terms = query.split(/\s+/).filter(Boolean);
     bootstrap.characters[config.role]
-      .filter(name => window.ZfbSearch.matches(name, query))
+      .filter(name => terms.every(term => window.ZfbSearch.matches(`${name} ${characterName(name)}`, term)))
       .forEach(name => {
         const unavailable = banned.has(name) && (config.kind === 'pick' || name !== selectedCharacter);
         const button = document.createElement('button');
@@ -334,16 +360,24 @@
         button.className = name === selectedCharacter ? 'selected' : '';
         button.disabled = unavailable;
         button.dataset.modernCharacter = name;
-        button.innerHTML = `<img src="${characterUrl(config.kind, name)}" alt=""><span>${escapeHtml(name)}</span>${unavailable ? '<small>已禁用</small>' : ''}`;
+        button.innerHTML = `<img src="${characterUrl(config.kind, name)}" alt="" data-kind="${config.kind}"><span>${escapeHtml(characterName(name))}</span>${unavailable ? '<small>' + text('bp.modernBanned', '已禁用') + '</small>' : ''}`;
         fragment.append(button);
       });
     elements.modernCharacterGrid.replaceChildren(fragment);
     if (!elements.modernCharacterGrid.childElementCount) {
       const empty = document.createElement('div');
       empty.className = 'bp-modern-no-results';
-      empty.textContent = '没有匹配的角色';
+      empty.textContent = text('bp.modernNoResults', '没有匹配的角色');
       elements.modernCharacterGrid.append(empty);
     }
+    elements.modernCharacterGrid.querySelectorAll('img[data-kind]').forEach(img => {
+      img.addEventListener('error', () => {
+        if (img.dataset.fallback) return;
+        img.dataset.fallback = '1';
+        img.src = characterUrl(img.dataset.kind, null);
+      }, { once: true });
+    });
+
     elements.modernCharacterGrid.querySelectorAll('[data-modern-character]').forEach(button => {
       button.addEventListener('click', () => act({
         type: 'set-slot', slotId: modernActiveSlotId, field: 'character', characterId: button.dataset.modernCharacter
@@ -365,8 +399,13 @@
       elements.modernCharacterSearch.value = '';
       renderModernSlots();
       bindSlotEvents();
+      if (slotComplete(modernActiveSlotId)) log(t('bp.completedSlotHint'));
     }));
     renderModernCharacters();
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.querySelector('[data-modern-select="' + CSS.escape(modernActiveSlotId || '') + '"]')
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   function clearModernSlots() {
@@ -403,7 +442,21 @@
   }
 
   function bindSlotEvents() {
-    document.querySelectorAll('[data-character]').forEach(button => button.addEventListener('click', () => openCharacterPicker(button.dataset.character)));
+
+    if (!elements.modernCharacterGrid.dataset.keyboardBound) {
+      elements.modernCharacterGrid.dataset.keyboardBound = '1';
+      elements.modernCharacterGrid.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        const buttons = [...elements.modernCharacterGrid.querySelectorAll('[data-modern-character]:not(:disabled)')];
+        if (!buttons.length) return;
+        const columns = String(getComputedStyle(elements.modernCharacterGrid).gridTemplateColumns).split(' ').length || 1;
+        const current = buttons.indexOf(document.activeElement);
+        const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowDown' ? columns : -columns;
+        const next = Math.max(0, Math.min(buttons.length - 1, (current < 0 ? 0 : current) + delta));
+        event.preventDefault();
+        buttons[next].focus();
+      });
+    }    document.querySelectorAll('[data-character]').forEach(button => button.addEventListener('click', () => openCharacterPicker(button.dataset.character)));
     document.querySelectorAll('[data-clear]').forEach(button => button.addEventListener('click', () => act({ type: 'clear-slot', slotId: button.dataset.clear }, t('bp.clearedSlotLog', { slot: slotLabel(button.dataset.clear) }))));
     document.querySelectorAll('[data-manual-push]').forEach(button => button.addEventListener('click', () => {
       const slotId = button.dataset.manualPush;
@@ -482,11 +535,11 @@
       .filter(([slotId, slot]) => bootstrap.slots[slotId].kind === 'ban' && bootstrap.slots[slotId].role === config.role && slot.characterId)
       .map(([, slot]) => slot.characterId));
     elements.characterGrid.innerHTML = bootstrap.characters[config.role]
-      .filter(name => window.ZfbSearch.matches(name, query))
+      .filter(name => window.ZfbSearch.matches(`${name} ${characterName(name)}`, query))
       .map(name => {
         const unavailable = banned.has(name) && (config.kind === 'pick' || name !== selectedCharacter);
         return `<button type="button" data-pick-character="${escapeHtml(name)}" ${unavailable ? 'disabled' : ''}>
-          <img src="${characterUrl(config.kind, name)}" alt=""><span>${escapeHtml(name)}${unavailable ? t('bp.bannedSuffix') : ''}</span>
+          <img src="${characterUrl(config.kind, name)}" alt=""><span>${escapeHtml(characterName(name))}${unavailable ? t('bp.bannedSuffix') : ''}</span>
         </button>`;
       }).join('');
     elements.characterGrid.querySelectorAll('[data-pick-character]').forEach(button => button.addEventListener('click', async () => {
@@ -515,24 +568,25 @@
 
   function renderHeader() {
     const forfeited = Boolean(session?.forfeit?.active);
+    const busy = preparingBp || actionQueue.running;
     elements.clock.textContent = String(displaySeconds()).padStart(2, '0');
     elements.phaseLabel.textContent = !session ? t('bp.waitingLoad') : forfeited ? t('bp.forfeitSettled') : session.status === 'completed' ? t('bp.bpCompleted') : session.phase?.label || t('bp.readyToStart');
     elements.recordLabel.textContent = !session ? t('bp.noRecord') : t('bp.recordLine', { game: session.gameNumber, room: session.room, attempt: session.attempt === 1 ? t('bp.officialBp') : t('bp.replayN', { n: session.attempt - 1 }), revision: session.revision });
-    elements.start.disabled = preparingBp || !session || forfeited || session.status !== 'ready' || session.attempt !== 1;
-    elements.complete.disabled = preparingBp || !session || forfeited || !['ready', 'active'].includes(session.status);
-    elements.switchBpScene.disabled = preparingBp;
-    elements.sync.disabled = preparingBp || !session;
-    elements.export.disabled = preparingBp || !session;
-    elements.replay.disabled = preparingBp || !session || forfeited || session.status !== 'completed' || session.attempt !== 1;
-    elements.reset.disabled = preparingBp || !session || forfeited || session.attempt !== 1;
-    elements.forfeit.disabled = preparingBp || !session || forfeited;
-    elements.revokeForfeit.disabled = preparingBp || !forfeited;
-    elements.load.disabled = preparingBp;
-    elements.loadAndSwitch.disabled = preparingBp;
+    elements.start.disabled = busy || !session || forfeited || session.status !== 'ready' || session.attempt !== 1;
+    elements.complete.disabled = busy || !session || forfeited || !['ready', 'active'].includes(session.status);
+    elements.switchBpScene.disabled = busy;
+    elements.sync.disabled = busy || !session;
+    elements.export.disabled = busy || !session;
+    elements.replay.disabled = busy || !session || forfeited || session.status !== 'completed' || session.attempt !== 1;
+    elements.reset.disabled = busy || !session || forfeited || session.attempt !== 1;
+    elements.forfeit.disabled = busy || !session || forfeited;
+    elements.revokeForfeit.disabled = busy || !forfeited;
+    elements.load.disabled = busy;
+    elements.loadAndSwitch.disabled = busy;
     elements.dynamicBpEnabled.disabled = updatingDynamicBp;
-    elements.commentatorImage.disabled = preparingBp || !bootstrap.commentatorImages.length;
+    elements.commentatorImage.disabled = busy || !bootstrap.commentatorImages.length;
     if (elements.commentatorImage.value !== commentatorImageId) elements.commentatorImage.value = commentatorImageId;
-    elements.commentatorLogo.disabled = preparingBp || !bootstrap.commentatorLogoImages.length;
+    elements.commentatorLogo.disabled = busy || !bootstrap.commentatorLogoImages.length;
     if (elements.commentatorLogo.value !== commentatorLogoImageId) elements.commentatorLogo.value = commentatorLogoImageId;
     elements.forfeitStatus.hidden = !forfeited;
     if (forfeited) {
@@ -621,9 +675,9 @@
     elements.history.querySelectorAll('[data-restore]').forEach(button => button.addEventListener('click', async () => {
       const revision = Number(button.dataset.restore);
       const confirmed = await window.StellaDialog.confirm({
-        title: '恢复历史版本',
+        title: text('bp.restoreHistoryTitle', '恢复历史版本'),
         message: t('bp.restoreConfirm', { revision }),
-        confirmText: '确认恢复'
+        confirmText: text('bp.restoreHistoryConfirm', '确认恢复')
       });
       if (confirmed) act({ type: 'restore-revision', revision }, t('bp.restoredLog', { revision }));
     }));
@@ -659,7 +713,7 @@
   }
 
   function historyLabel(action) {
-    return window.UI_TEXT[`bp.logActions.${action}`] || action;
+    return window.UI_TEXT?.[`bp.logActions.${action}`] || action;
   }
 
   function render() {
@@ -693,17 +747,34 @@
     return next;
   }
 
-  async function act(action, successMessage) {
-    if (!session) return null;
-    try {
-      const next = await post(`/api/bp/sessions/${encodeURIComponent(session.id)}/actions`, action);
-      rememberSession(next);
-      log(successMessage);
-      return next;
-    } catch (error) {
-      log(error.message, 'error');
-      return null;
+  const actionQueue = {
+    tail: Promise.resolve(),
+    running: false,
+    run(task) {
+      this.running = true;
+      const result = this.tail.then(task, task);
+      this.tail = result.catch(() => {}).finally(() => {
+        this.running = false;
+      });
+      return result;
     }
+  };
+
+  function act(action, successMessage) {
+    if (!session) return Promise.resolve(null);
+    const sessionId = session.id;
+    return actionQueue.run(async () => {
+      try {
+        const next = await post(`/api/bp/sessions/${encodeURIComponent(sessionId)}/actions`, action);
+        rememberSession(next);
+        log(successMessage);
+        return next;
+      } catch (error) {
+        log(error.message, 'error');
+        bpToast(error.message, 'error');
+        return null;
+      }
+    });
   }
 
   async function runLoadAction() {
@@ -735,6 +806,7 @@
       );
     } catch (error) {
       log(error.message, 'error');
+      bpToast(error.message, 'error');
     } finally {
       preparingBp = false;
       elements.switchBpScene.textContent = originalText;
@@ -847,17 +919,31 @@
   function connectEvents() {
     events?.close();
     events = new EventSource('/api/bp/events');
+    let lastSessionSequence = -1;
     events.addEventListener('session', event => {
       const payload = JSON.parse(event.data);
       const next = payload.session;
+      if (Number.isFinite(next.sequence)) {
+        if (next.sequence < lastSessionSequence) return;
+        lastSessionSequence = next.sequence;
+      }
+      // Lean tick payload: merge timer/revision/status in place, keep local history and session state
+      if (payload.reason === 'timer-tick') {
+        if (session?.id === next.id) {
+          session.timer = next.timer;
+          session.currentPhaseIndex = next.currentPhaseIndex;
+          session.status = next.status;
+          session.revision = next.revision;
+          renderHeader();
+        }
+        return;
+      }
       const index = bootstrap.sessions.findIndex(item => item.id === next.id);
       if (index >= 0) bootstrap.sessions[index] = next; else bootstrap.sessions.push(next);
       refreshGameOptions();
       if (session?.id === next.id) {
         session = next;
-        if (payload.reason === 'timer-tick') {
-          renderHeader();
-        } else if (payload.reason === 'phase-zero' || payload.reason === 'timer-expired') {
+        if (payload.reason === 'phase-zero' || payload.reason === 'timer-expired') {
           renderHeader();
           renderPhases();
         } else {
@@ -874,6 +960,22 @@
       const operation = JSON.parse(event.data);
       log(operation.ok ? t('bp.logOpOk', { label: operation.label }) : t('bp.logOpFail', { error: operation.error }), operation.ok ? '' : 'error');
     });
+    let everErrored = false;
+    events.onerror = () => { everErrored = true; };
+    // After a reconnect, re-pull bootstrap to catch session changes missed offline.
+    events.onopen = async () => {
+      if (!everErrored) return;
+      everErrored = false;
+      try {
+        const next = await request('/api/bp/bootstrap', { force: true });
+        bootstrap.sessions = next.sessions || [];
+        refreshGameOptions();
+        if (session?.id) {
+          session = bootstrap.sessions.find(item => item.id === session.id) || null;
+          render();
+        }
+      } catch {}
+    };
   }
 
   function bindPageEvents() {
@@ -909,24 +1011,39 @@
     });
     elements.attempt.addEventListener('change', () => { session = null; saveContext(); render(); });
     elements.load.addEventListener('click', async () => {
+      elements.load.disabled = true;
+      elements.load.textContent = text('bp.loadingLabel', '载入中…');
       try {
         await runLoadAction();
       } catch (error) {
         log(error.message, 'error');
+        bpToast(error.message, 'error');
+      } finally {
+        renderHeader();
       }
     });
     elements.loadAndSwitch.addEventListener('click', async () => {
+      elements.loadAndSwitch.disabled = true;
+      elements.loadAndSwitch.textContent = text('bp.loadingLabel', '载入中…');
       try {
         await loadSession();
         await act({ type: 'sync-match-and-switch' }, t('bp.switchWithTransitionsLog'));
       } catch (error) {
         log(error.message, 'error');
+        bpToast(error.message, 'error');
+      } finally {
+        renderHeader();
       }
     });
-    elements.start.addEventListener('click', () => act({ type: 'start' }, t('bp.startedLog')));
+    elements.start.addEventListener('click', async () => {
+      if (actionQueue.running) return;
+      const ok = await act({ type: 'start' }, t('bp.startedLog'));
+      if (!ok) bpToast(text('bp.startFailedHint', '开始失败，请确认会话处于准备开始状态'), 'error');
+    });
     elements.complete.addEventListener('click', () => elements.completeDialog.showModal());
     elements.cancelComplete.addEventListener('click', () => elements.completeDialog.close());
     elements.confirmComplete.addEventListener('click', async () => {
+      if (actionQueue.running) return;
       elements.completeDialog.close();
       await act({ type: 'complete' }, t('bp.completedLog'));
     });
@@ -989,7 +1106,7 @@
       await act({ type: 'reset-session' }, t('bp.resetDoneLog'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
-    elements.obsConnect.addEventListener('click', async () => {
+    if (elements.obsConnect) elements.obsConnect.addEventListener('click', async () => {
       try {
         localStorage.setItem('zfb.obsUrl', elements.obsUrl.value);
         const status = await post('/api/obs/connect', {
@@ -1092,6 +1209,21 @@
     try {
       saved = JSON.parse(localStorage.getItem('zfb.bpContext'));
     } catch {}
+    let launch = null;
+    try {
+      launch = JSON.parse(sessionStorage.getItem('stella.bpLaunch') || 'null');
+    } catch {}
+    if (launch?.matchId && scheduleForMatch(launch.matchId)) {
+      const launchSchedule = scheduleForMatch(launch.matchId);
+      saved = {
+        matchId: launch.matchId,
+        gameNumber: 1,
+        room: launch.room || 'A',
+        attempt: 1
+      };
+      sessionStorage.setItem('zfb.bpContext', JSON.stringify({ matchId: saved.matchId, gameNumber: saved.gameNumber, room: saved.room, attempt: saved.attempt }));
+      sessionStorage.removeItem('stella.bpLaunch');
+    }
     const initial = saved || bootstrap.sessions[0] || {};
     const initialSchedule = scheduleForMatch(initial.matchId) || bootstrap.schedules[0];
     const dates = [...new Set(bootstrap.schedules.map(schedule => schedule.event.date))].sort();
@@ -1102,13 +1234,27 @@
     if (initial.room) elements.room.value = initial.room;
     refreshGameOptions(initial.gameNumber || 1);
     refreshAttempts(initial.attempt);
+    const sidePanel = document.querySelector('.bp-side-panel');
+    const sideToggle = document.getElementById('bpSideToggle');
+    if (sidePanel && sideToggle) {
+      sideToggle.addEventListener('click', () => {
+        sidePanel.classList.toggle('is-open');
+      });
+    }
     bindPageEvents();
     setObsStatus(bootstrap.obs);
     elements.obsUrl.value = localStorage.getItem('zfb.obsUrl') || bootstrap.obs.url || elements.obsUrl.value;
     elements.obsPassword.placeholder = bootstrap.obs.passwordSaved ? t('bp.pwdSaved') : t('bp.pwdPlaceholder');
     const existing = matchingSessions().find(item => item.attempt === Number(elements.attempt.value));
-    if (existing) rememberSession(await request(`/api/bp/sessions/${encodeURIComponent(existing.id)}`));
-    else render();
+    if (existing && bootstrap.testMatchIds?.includes(existing.matchId)) {
+      rememberSession(await post('/api/bp/sessions', { matchId: existing.matchId, gameNumber: Number(elements.game.value), room: elements.room.value, attempt: Number(elements.attempt.value || 1) }));
+    } else if (existing) {
+      rememberSession(await request(`/api/bp/sessions/${encodeURIComponent(existing.id)}`));
+    } else render();
+    if (launch) {
+      try { await loadSession(); } catch (error) { log(error.message); }
+    }
+
     connectEvents();
   }
 
@@ -1121,6 +1267,7 @@
     if (!initPromise) {
       initPromise = init().catch(error => {
         initPromise = null;
+        console.error(error);
         log(t('bp.initFailedLog', { error: error.message }), 'error');
       });
     } else if (bootstrap && !events) {

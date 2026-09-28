@@ -33,19 +33,19 @@
   };
 
   const typeLabels = {
-    message: '通讯消息',
-    urgent: '加急消息',
-    friend_request: '好友申请',
-    version: '版本更新',
-    announcement: '系统通知'
+    message: text('notify.typeMessage', '通讯消息'),
+    urgent: text('notify.typeUrgent', '加急消息'),
+    friend_request: text('notify.typeFriendRequest', '好友申请'),
+    version: text('notify.typeVersion', '版本更新'),
+    announcement: text('notify.typeAnnouncement', '系统通知')
   };
 
-  const iconPaths = {
-    message: '<path d="M2.5 3.5h11v7H7l-3.2 2.4v-2.4H2.5z"/><path d="M5 6.2h6M5 8.2h4"/>',
-    urgent: '<path d="M8 2.2l6 11H2l6-11z"/><path d="M8 6v3M8 11.3v.01"/>',
-    friend_request: '<circle cx="6" cy="5.3" r="2.3"/><path d="M2.2 13.4c.4-2.7 2-3.8 3.8-3.8s3.4 1.1 3.8 3.8M12 5.2v4M10 7.2h4"/>',
-    version: '<path d="M4 2h5.5L13 5.5V14H4z"/><path d="M9.5 2v3.5H13M6.2 8.5h3.6M6.2 11h3.6"/>',
-    announcement: '<path d="M2.5 7h2l5-3.2v8.4L4.5 9h-2z"/><path d="M11.5 6.2c.8.9.8 2.7 0 3.6M4.5 9l1 4"/>'
+  const iconNames = {
+    message: 'message-square-text',
+    urgent: 'triangle-alert',
+    friend_request: 'user-round-plus',
+    version: 'file-text',
+    announcement: 'megaphone'
   };
 
   function api(url, options) {
@@ -72,8 +72,8 @@
     elements.badge.textContent = state.unreadCount > 99 ? '99+' : String(state.unreadCount);
     elements.toggle.classList.toggle('has-urgent', state.urgentUnreadCount > 0);
     const label = state.urgentUnreadCount
-      ? `通知中心，${state.unreadCount} 条未读，其中 ${state.urgentUnreadCount} 条加急`
-      : `通知中心，${state.unreadCount} 条未读`;
+      ? text('notify.titleUnreadUrgent', '通知中心，{count} 条未读，其中 {urgent} 条加急', { count: state.unreadCount, urgent: state.urgentUnreadCount })
+      : text('notify.titleUnread', '通知中心，{count} 条未读', { count: state.unreadCount });
     elements.toggle.setAttribute('aria-label', label);
     elements.readAll.disabled = state.unreadCount < 1;
   }
@@ -90,7 +90,7 @@
     const icon = document.createElement('span');
     icon.className = 'notification-item-icon';
     icon.setAttribute('aria-hidden', 'true');
-    icon.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${iconPaths[notification.type] || iconPaths.announcement}</svg>`;
+    icon.innerHTML = `<svg viewBox="0 0 24 24" data-icon="${iconNames[notification.type] || iconNames.announcement}" aria-hidden="true"></svg>`;
 
     const copy = document.createElement('span');
     copy.className = 'notification-item-copy';
@@ -104,14 +104,14 @@
     heading.append(title, time);
     const summary = document.createElement('span');
     summary.className = 'notification-item-summary';
-    summary.textContent = notification.summary || notification.body || '查看通知详情';
+    summary.textContent = notification.summary || notification.body || text('notify.viewDetailFallback', '查看通知详情');
     const meta = document.createElement('span');
     meta.className = 'notification-item-meta';
     const type = document.createElement('span');
     type.className = notification.urgent ? 'notification-urgent-label' : 'notification-type-label';
-    type.textContent = notification.urgent ? '加急' : (typeLabels[notification.type] || '通知');
+    type.textContent = notification.urgent ? text('notify.urgentTag', '加急') : (typeLabels[notification.type] || text('notify.typeFallback', '通知'));
     const actor = document.createElement('span');
-    actor.textContent = notification.createdByDisplayName || (notification.type === 'version' ? '系统更新' : '系统');
+    actor.textContent = notification.createdByDisplayName || (notification.type === 'version' ? text('notify.systemUpdateActor', '系统更新') : text('notify.systemActor', '系统'));
     meta.append(type, actor);
     copy.append(heading, summary, meta);
     item.append(icon, copy);
@@ -150,7 +150,7 @@
   async function loadNotifications({ force = false, append = false } = {}) {
     if (state.loading || (append && state.nextOffset == null)) return;
     state.loading = true;
-    elements.status.textContent = append ? '正在读取更早的通知…' : '正在同步通知…';
+    elements.status.textContent = append ? text('notify.loadingOlder', '正在读取更早的通知…') : text('notify.syncing', '正在同步通知…');
     try {
       const offset = append ? state.nextOffset : 0;
       const payload = await api(`/api/notifications?offset=${offset}&limit=30`, { force });
@@ -158,7 +158,7 @@
       elements.status.textContent = '';
       if (!append) showInitialUrgent(payload.notifications || []);
     } catch (error) {
-      elements.status.textContent = `通知读取失败：${error.message}`;
+      elements.status.textContent = text('notify.loadFailed', '通知读取失败：{message}', { message: error.message });
     } finally {
       state.loading = false;
       elements.empty.hidden = filteredNotifications().length > 0;
@@ -191,7 +191,7 @@
     if (state.shownUrgentIds.has(notification.id)) return;
     state.shownUrgentIds.add(notification.id);
     elements.bannerTitle.textContent = notification.title;
-    elements.bannerSummary.textContent = notification.summary || notification.body || '请尽快查看通知中心';
+    elements.bannerSummary.textContent = notification.summary || notification.body || text('notify.bannerFallback', '请尽快查看通知中心');
     elements.banner.hidden = false;
     document.body.classList.add('urgent-notification-visible');
     elements.banner.classList.add('is-visible');
@@ -258,7 +258,7 @@
       state.urgentUnreadCount = 0;
       renderList();
     } catch (error) {
-      elements.status.textContent = `操作失败：${error.message}`;
+      elements.status.textContent = text('notify.actionFailed', '操作失败：{message}', { message: error.message });
     }
   }
 
@@ -267,6 +267,14 @@
     if (!window.EventSource) return;
     const source = new EventSource('/api/notifications/events');
     state.eventSource = source;
+    let everErrored = false;
+    source.onerror = () => { everErrored = true; };
+    // 断线重连成功后全量补拉一次，弥合断线窗口内错过的通知
+    source.onopen = () => {
+      if (!everErrored) return;
+      everErrored = false;
+      loadNotifications({ force: true }).catch(() => {});
+    };
     source.addEventListener('notification', async event => {
       let detail = {};
       try { detail = JSON.parse(event.data || '{}'); } catch {}

@@ -39,6 +39,22 @@ function writeSetting(key, value) {
     .run(key, JSON.stringify(value));
 }
 
+function loadCharacterMeta() {
+  // 不携带 BLOB 数据，bootstrap 恒定轻量；立绘以 BLOB 存在但无文件 URL 时下发按需读取接口地址
+  const rows = db.prepare(`SELECT c.id, c.nickname, c.display_name, c.portrait_url,
+    (p.character_id IS NOT NULL) AS has_blob FROM characters c
+    LEFT JOIN character_portraits p ON p.character_id = c.id`).all();
+  const meta = {};
+  for (const row of rows) {
+    meta[row.id] = {
+      nickname: row.nickname || row.id,
+      displayName: row.display_name || row.id,
+      portraitUrl: row.portrait_url || (row.has_blob ? `/api/characters/${encodeURIComponent(row.id)}/portrait` : '')
+    };
+  }
+  return meta;
+}
+
 function loadConfig() {
   ensureSeeded();
   const escape = db.prepare("SELECT id FROM characters WHERE role = 'escape' AND enabled = 1 ORDER BY sort_order").all().map(row => row.id);
@@ -74,6 +90,7 @@ function loadConfig() {
   const config = {
     schemaVersion: 1,
     characters: { escape, hunter },
+    characterMeta: loadCharacterMeta(),
     slots,
     phases,
     timer: {
@@ -101,19 +118,27 @@ function loadConfig() {
   return config;
 }
 
+let characterVersion = 0;
 function reloadCharacterRoster() {
   const escape = db.prepare("SELECT id FROM characters WHERE role = 'escape' AND enabled = 1 ORDER BY sort_order, id").all().map(row => row.id);
   const hunter = db.prepare("SELECT id FROM characters WHERE role = 'hunter' AND enabled = 1 ORDER BY sort_order, id").all().map(row => row.id);
   CONFIG.characters.escape.splice(0, CONFIG.characters.escape.length, ...escape);
   CONFIG.characters.hunter.splice(0, CONFIG.characters.hunter.length, ...hunter);
+  CONFIG.characterMeta = loadCharacterMeta();
+  characterVersion += 1;
   return { escape: [...CONFIG.characters.escape], hunter: [...CONFIG.characters.hunter] };
+}
+
+function getCharacterVersion() {
+  return characterVersion;
 }
 
 const CONFIG = loadConfig();
 
 if (CONFIG.characters.escape.length === 0 || CONFIG.characters.hunter.length === 0
   || Object.keys(CONFIG.slots).length === 0 || CONFIG.phases.length === 0) {
-  throw new Error('Invalid BP configuration');
+  // 空配置不再崩进程：服务照常启动，BP 建会话会因无阶段被路由层拒绝，管理端可先修复角色配置
+  console.error('[bp-config] BP 配置为空（角色或阶段缺失），服务以降级模式启动');
 }
 
 CONFIG.timer.phaseDurations ||= Object.fromEntries(
@@ -219,5 +244,6 @@ module.exports = {
   updateCommentatorImageId,
   commentatorLogoImageId,
   updateCommentatorLogoImageId,
-  reloadCharacterRoster
+  reloadCharacterRoster,
+  getCharacterVersion
 };

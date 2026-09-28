@@ -141,6 +141,12 @@
     elements.sortHeadings.forEach(heading => {
       const active = heading.dataset.accountsSortHeading === sortState.key;
       heading.setAttribute('aria-sort', active ? sortState.direction : 'none');
+      const sortIcon = heading.querySelector('.accounts-sort-icon');
+      if (sortIcon) {
+        const iconName = !active ? 'chevrons-up-down'
+          : (sortState.direction === 'ascending' ? 'chevron-up' : 'chevron-down');
+        window.IconKit?.morph(sortIcon, iconName);
+      }
     });
     elements.sortButtons.forEach(button => {
       const key = button.dataset.accountsSort;
@@ -244,7 +250,7 @@
       const edit = document.createElement('button');
       edit.className = 'account-row-action';
       edit.type = 'button';
-      edit.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.7l2.1 2.1-7.8 7.8-2.8.7.7-2.8z"/><path d="M9.7 4.2l2.1 2.1"/></svg>';
+      edit.innerHTML = '<svg viewBox="0 0 24 24" data-icon="pencil" aria-hidden="true"></svg>';
       edit.title = t('accounts.edit');
       edit.setAttribute('aria-label', t('accounts.edit'));
       edit.addEventListener('click', () => openEditor(account));
@@ -252,14 +258,14 @@
       const statusAction = iconAction(
         account.status === 'active' ? t('accounts.disable') : t('accounts.enable'),
         account.status === 'active'
-          ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M5.2 5.2l5.6 5.6"/></svg>'
-          : '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M5.2 8h5.6"/></svg>',
+          ? '<svg viewBox="0 0 24 24" data-icon="circle-x" aria-hidden="true"></svg>'
+          : '<svg viewBox="0 0 24 24" data-icon="circle-minus" aria-hidden="true"></svg>',
         () => changeAccountStatus(account),
         account.status === 'active'
       );
       const deleteAction = iconAction(
         t('accounts.delete'),
-        '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 4.3h9.6"/><path d="M6.1 2.4h3.8"/><path d="M4.7 4.3l.5 8a1.1 1.1 0 0 0 1.1 1h3.4a1.1 1.1 0 0 0 1.1-1l.5-8"/><path d="M6.7 6.9v3.8M9.3 6.9v3.8"/></svg>',
+        '<svg viewBox="0 0 24 24" data-icon="trash-2" aria-hidden="true"></svg>',
         () => deleteAccountQuick(account),
         true
       );
@@ -277,6 +283,7 @@
       row.append(selectCell, userCell, role, presence, region, expiry, status, actions);
       return row;
     }));
+    if (window.PageFX) PageFX.stagger(elements.body.rows, { step: 20, cap: 18 });
     updateSortControls();
     updateSelection();
   }
@@ -308,7 +315,7 @@
     elements.titleReview.hidden = !account?.pendingTitle;
     elements.titleReview.textContent = account?.pendingTitle
       ? t('accounts.pendingTitle', { title: account.pendingTitle }) : '';
-    elements.region.value = account?.region || '未知地区';
+    elements.region.value = account?.region || t('accounts.regionFallback');
     elements.genders.forEach(input => { input.checked = input.value === (account?.gender || 'unspecified'); });
     elements.birthDate.value = account?.birthDate || '';
     elements.bio.value = account?.bio || '';
@@ -451,9 +458,9 @@
 
   async function deleteAccountQuick(account) {
     const confirmed = await window.StellaDialog.confirm({
-      title: '删除账号',
+      title: t('accounts.deleteTitle'),
       message: t('accounts.singleDeleteConfirm', { name: account.displayName }),
-      confirmText: '确认删除',
+      confirmText: t('accounts.deleteConfirm'),
       tone: 'danger'
     });
     if (!confirmed) return;
@@ -470,9 +477,9 @@
     const ids = selectedIds();
     if (!ids.length) return;
     const confirmed = await window.StellaDialog.confirm({
-      title: '批量删除账号',
+      title: t('accounts.bulkDeleteTitle'),
       message: t('accounts.bulkDeleteConfirm', { count: ids.length }),
-      confirmText: '确认删除',
+      confirmText: t('accounts.deleteConfirm'),
       tone: 'danger'
     });
     if (!confirmed) return;
@@ -665,7 +672,9 @@
   document.addEventListener('visibilitychange', refreshVisibleAccounts);
   window.setInterval(refreshVisibleAccounts, PRESENCE_REFRESH_INTERVAL_MS);
   updateSortControls();
-  if (!document.getElementById('accountsPage').hidden) {
-    loadForCurrentIdentity();
-  }
+  window.Text.ready.then(() => {
+    if (!document.getElementById('accountsPage').hidden) {
+      loadForCurrentIdentity();
+    }
+  });
 })();

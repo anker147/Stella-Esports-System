@@ -1,20 +1,37 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const net = require('node:net');
 const { execFile } = require('node:child_process');
 const { migrateLegacyData, readAppSetting, writeAppSetting } = require('./db-migrate');
 migrateLegacyData();
-const { db } = require('./db');
-const { MANAGEMENT_VIEWS, operationsView } = require('./operations-service');
+const { db, withTransaction } = require('./db');
+const { MANAGEMENT_VIEWS, operationsView, teamDetail } = require('./operations-service');
 const {
   applyEventAction,
+  createTournamentStage,
   createManagedEvent,
+  findEventTeamCandidates,
+  listTournamentStages,
   managedEventSnapshot,
   readEventMedia,
   updateManagedEvent
 } = require('./event-management-service');
+const {
+  completeTournamentStage,
+  deleteTournamentStage,
+  generateNextRound,
+  listStageRuntime,
+  pauseTournamentStage,
+  resumeTournamentStage,
+  setStageMatchResult,
+  stageRanking,
+  startTournamentStage,
+  updateStageMatch
+} = require('./tournament-stage-runtime');
+const { ensureLegacyScheduleMigration } = require('./legacy-schedule-migration');
 const { laboratorySettings, saveLaboratorySettings } = require('./laboratory-settings');
 const { formatGeoRegion, needsLocalizedLookup, providerGeoRegion, readGeoJson } = require('./location-service');
 const {
@@ -37,7 +54,12 @@ const {
   recallMessage,
   sendMessage,
   setMessageUrgent,
-  toggleMessagePlusOne
+  toggleMessagePlusOne,
+  clearChannelAvatar,
+  readChannelAvatar,
+  setChannelAvatar,
+  updateChannelPreferences,
+  updateChannelSettings
 } = require('./communication-service');
 const {
   channelRecipientUserIds,
@@ -212,10 +234,46 @@ function verifyCredentials(account, password, portal) {
   };
 }
 
-const SESSION_SETTING_KEY = 'auth.sessions';
+// 登录失败限速：账号加 IP 维度计数，5 次失败锁 10 分钟（内存级，重启清零）
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_LOCK_MS = 10 * 60 * 1000;
+const loginFailures = new Map();
+function loginAttemptKey(account, ipHash) {
+  const trimmed = String(account || '').trim().toLowerCase();
+  if (!trimmed) return null;
+  return ipHash && ipHash !== 'unknown' ? `${trimmed}:${ipHash}` : trimmed;
+}
+function loginLockRemainingSeconds(key) {
+  const entry = loginFailures.get(key);
+  if (!entry?.lockedUntil) return 0;
+  const remaining = Math.ceil((entry.lockedUntil - Date.now()) / 1000);
+  if (remaining <= 0) {
+    loginFailures.delete(key);
+    return 0;
+  }
+  return remaining;
+}
+function recordLoginFailure(key) {
+  if (!key) return;
+  const entry = loginFailures.get(key) || { count: 0, lockedUntil: 0, lastAttempt: 0 };
+  entry.count += 1;
+  entry.lastAttempt = Date.now();
+  if (entry.count >= LOGIN_FAIL_LIMIT) entry.lockedUntil = Date.now() + LOGIN_LOCK_MS;
+  loginFailures.set(key, entry);
+}
+function clearLoginFailures(key) {
+  if (key) loginFailures.delete(key);
+}
+
 const SESSION_COOKIE = 'stella_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const sessionEventClients = new Map();
+// 会话校验结果缓存：token 到算好的会话，短 TTL 加写时全清；命中时深拷贝返回，保持与旧实现相同的可变性语义
+const validatedSessionCache = new Map();
+const VALIDATED_SESSION_TTL_MS = 15000;
+// 角色统计读接口的短 TTL 结果缓存（写路径不主动失效，30 秒内最终一致）
+let characterStatsCache = { division: null, at: 0, payload: null };
+const CHARACTER_STATS_TTL_MS = 30000;
 
 function getSessionToken(req) {
   const header = req.headers.cookie || '';
@@ -234,18 +292,37 @@ function sessionCookie(token, remember, secure = false) {
   return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict${secureFlag}${maxAge}`;
 }
 
+// 会话存独立表 auth_sessions（v32 迁移自 app_settings 的 JSON blob），写时整表替换：会话数量个位数，成本可忽略
 function loadSessions() {
-  const list = readAppSetting(SESSION_SETTING_KEY);
-  return Array.isArray(list) ? list : [];
+  return db.prepare('SELECT data_json FROM auth_sessions ORDER BY created_at, rowid').all()
+    .map(row => {
+      try {
+        return JSON.parse(row.data_json);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
 }
 
 function saveSessions(list) {
-  writeAppSetting(SESSION_SETTING_KEY, list);
+  withTransaction(() => {
+    db.prepare('DELETE FROM auth_sessions').run();
+    const insertSession = db.prepare(`INSERT INTO auth_sessions (token, user_id, role, data_json, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)`);
+    for (const item of Array.isArray(list) ? list : []) {
+      if (!item?.token || !item?.userId) continue;
+      insertSession.run(item.token, item.userId, item.role || '', JSON.stringify(item),
+        Number(new Date(item.createdAt).getTime()) || 0, Number(item.expiresAt) || 0);
+    }
+  });
+  validatedSessionCache.clear();
 }
 
 function addSessionEventClient(token, res) {
   const clients = sessionEventClients.get(token) || new Set();
   clients.add(res);
+  res.on('error', () => clients.delete(res));
   sessionEventClients.set(token, clients);
   return () => {
     clients.delete(res);
@@ -258,10 +335,12 @@ function revokeSessionClients(session, reason = 'session-revoked') {
   if (!clients) return;
   const message = `event: session-revoked\ndata: ${JSON.stringify({ reason })}\n\n`;
   for (const client of clients) {
-    if (!client.destroyed && !client.writableEnded) {
-      client.write(message);
-      client.end();
-    }
+    try {
+      if (!client.destroyed && !client.writableEnded) {
+        client.write(message);
+        client.end();
+      }
+    } catch { /* 半开连接：忽略，连接由 close 事件清理 */ }
   }
   sessionEventClients.delete(session.token);
 }
@@ -304,6 +383,24 @@ function createSession(user, remember, requestContext) {
 }
 
 function validateSession(token) {
+  if (!token) return null;
+  const cached = validatedSessionCache.get(token);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    const value = cached.value;
+    if (!value) return null;
+    if (value.expiresAt <= now) {
+      validatedSessionCache.delete(token);
+    } else if (systemAccessOpen()) {
+      return structuredClone(value);
+    }
+  }
+  const session = computeValidatedSession(token);
+  validatedSessionCache.set(token, { value: session, expiresAt: Date.now() + VALIDATED_SESSION_TTL_MS });
+  return session ? structuredClone(session) : null;
+}
+
+function computeValidatedSession(token) {
   if (!token) return null;
   const sessions = loadSessions();
   const session = sessions.find(item => item.token === token);
@@ -1429,11 +1526,12 @@ const {
   calculateCharacterStats,
   createCharacter,
   updateCharacter,
+  updateCharacterChange,
   archiveCharacter,
   readCharacterPortrait,
   readCharacterSkillIcon
 } = require('./character-stats');
-const { CONFIG, ESCAPE_CHARACTERS, HUNTER_CHARACTERS, PHASES, SLOT_CONFIG, phaseDurations, animationStyle, updateBpTimerConfig, commentatorImageId, updateCommentatorImageId, commentatorLogoImageId, updateCommentatorLogoImageId, reloadCharacterRoster } = require('./bp-config');
+const { CONFIG, ESCAPE_CHARACTERS, HUNTER_CHARACTERS, PHASES, SLOT_CONFIG, phaseDurations, animationStyle, updateBpTimerConfig, commentatorImageId, updateCommentatorImageId, commentatorLogoImageId, updateCommentatorLogoImageId, reloadCharacterRoster, getCharacterVersion } = require('./bp-config');
 const { ObsController } = require('./obs-controller');
 const { ObsWebSocketClient } = require('./obs-websocket');
 const { MusicController } = require('./music-controller');
@@ -1450,6 +1548,19 @@ const { createAssetResolver, indexedCommentatorImages } = require('./asset-fallb
 const PORT = Number(process.env.PORT || 3788);
 const ROOT = path.resolve(__dirname, '..', 'public');
 const COUNTDOWN_HUB_ID = 'countdown';
+const BP_HUB_ID = 'bp';
+const HUB_IDS = new Set([COUNTDOWN_HUB_ID, BP_HUB_ID]);
+const HUD_SOURCE_ENABLED_KEY = 'hud.sourceEnabled';
+
+function readHudSourceEnabled() {
+  const stored = readAppSetting(HUD_SOURCE_ENABLED_KEY);
+  const value = stored && typeof stored === 'object' ? stored : {};
+  return { countdown: value.countdown !== false, bp: value.bp === true };
+}
+
+function writeHudSourceEnabled(next) {
+  writeAppSetting(HUD_SOURCE_ENABLED_KEY, { ...readHudSourceEnabled(), ...next });
+}
 const BP_OVERLAY_URL = `http://127.0.0.1:${PORT}/bp-overlay.html`;
 const WINDOW_CONTROL_SCRIPT = path.join(__dirname, 'window-control.ps1');
 const MATERIAL_PICKER_SCRIPT = path.join(__dirname, 'material-picker.ps1');
@@ -1487,8 +1598,11 @@ const CONTROL_TOKEN = String(process.env.STELLA_CONTROL_TOKEN || '');
 const hubs = new Map();
 const bpClients = new Set();
 const bpPresentationClients = new Set();
+// bp/bootstrap 全量缓存：键随数据版本变化，sendJson 每请求仍做 gzip 协商
+let bpBootstrapCache = { key: '', parts: null };
 const communicationClients = new Set();
 const notificationClients = new Set();
+try { ensureLegacyScheduleMigration(db); } catch (error) { console.warn('[legacy-migration]', error.message); }
 const tournamentResolver = createTournamentResolver(readAllData());
 const runtimeConfig = {
   obs: {
@@ -1513,12 +1627,40 @@ const obsClient = new ObsWebSocketClient({
   url: process.env.OBS_WS_URL || runtimeConfig.obs?.url || localObsConfig.url || 'ws://127.0.0.1:4455',
   password: process.env.OBS_WS_PASSWORD || runtimeConfig.obs?.password || localObsConfig.password || ''
 });
+// 解说席图片列表缓存：目录扫描加素材库过滤实测 32 到 46ms/次（bootstrap 唯一热点），
+// 5 秒 TTL 兼顾新鲜度；图片上传等写路径会主动清缓存
+let commentatorImagesCache = { at: 0, images: null };
+const COMMENTATOR_IMAGES_TTL_MS = 5000;
+function commentatorImagesCached() {
+  const now = Date.now();
+  if (!commentatorImagesCache.images || now - commentatorImagesCache.at >= COMMENTATOR_IMAGES_TTL_MS) {
+    commentatorImagesCache = { at: now, images: commentatorImages() };
+  }
+  return commentatorImagesCache.images;
+}
+function invalidateCommentatorImagesCache() {
+  commentatorImagesCache = { at: 0, images: null };
+}
+
+const ssePingHeartbeat = setInterval(() => {
+  const ping = ': ping\n\n';
+  for (const client of bpClients) sseWrite(client, ping);
+  for (const clients of sessionEventClients.values()) {
+    for (const client of clients) sseWrite(client, ping);
+  }
+  for (const hub of hubs.values()) {
+    for (const client of hub.clients) sseWrite(client, ping);
+    for (const client of hub.logClients || []) sseWrite(client, ping);
+  }
+}, 25000);
+ssePingHeartbeat.unref?.();
+
 const materialLibrary = new MaterialLibrary();
 const assetResolver = createAssetResolver(materialLibrary);
 const obsController = new ObsController({ client: obsClient, resolver: tournamentResolver, assetPath: assetResolver });
 const musicController = new MusicController();
 const sceneMusicController = new SceneMusicController({ musicController });
-let activeCommentatorImage = commentatorImages().find(image => image.id === commentatorImageId()) || null;
+let activeCommentatorImage = commentatorImagesCached().find(image => image.id === commentatorImageId()) || null;
 let activeCommentatorLogoImage = commentatorLogoImages().find(image => image.id === commentatorLogoImageId()) || commentatorLogoImages()[0] || null;
 const bpService = new BpService({ resolver: tournamentResolver, commentatorImage: activeCommentatorImage });
 tournamentResolver.setOutcomeResolver(matchId => bpService.matchWinner(matchId));
@@ -1689,48 +1831,7 @@ function saveHubState(hub) {
       state.deadline ?? null, state.updatedAt ?? Date.now());
 }
 
-function sendJson(res, status, payload) {
-  const body = JSON.stringify(payload);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store'
-  });
-  res.end(body);
-}
-
-function readBody(req, maxBytes = 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => {
-      body += chunk;
-      if (Buffer.byteLength(body) > maxBytes) {
-        reject(new Error('Request body too large'));
-        req.destroy();
-      }
-    });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
-  });
-}
-
-function readBuffer(req, maxBytes = 20 * 1024 * 1024) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', chunk => {
-      size += chunk.length;
-      if (size > maxBytes) {
-        reject(new Error('图片不能超过20MB'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
+const { sendJson, readBody, readBuffer, sseWrite } = require('./http-utils');
 
 function imageExtension(contentType) {
   const extension = IMAGE_TYPES.get(String(contentType || '').split(';')[0].toLowerCase());
@@ -1763,20 +1864,20 @@ function divisionLabel(matchId) {
 function broadcast(hub) {
   const payload = `event: state\ndata: ${JSON.stringify(hub.state)}\n\n`;
   for (const client of hub.clients) {
-    client.write(payload);
+    sseWrite(client, payload);
   }
 }
 
 function broadcastCountdownLog(hub, eventLog) {
   const payload = `event: event-log\ndata: ${JSON.stringify(eventLog)}\n\n`;
   for (const client of hub.logClients || []) {
-    client.write(payload);
+    sseWrite(client, payload);
   }
 }
 
 function broadcastBp(event, payload) {
   const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const client of bpClients) client.write(message);
+  for (const client of bpClients) sseWrite(client, message);
 }
 
 function broadcastCommunication(payload) {
@@ -1790,7 +1891,7 @@ function broadcastCommunication(payload) {
     }
     if (Array.isArray(payload.targetUserIds) && !payload.targetUserIds.includes(session.userId)) continue;
     if (payload.channelId && !canAccessChannel(db, session, payload.channelId)) continue;
-    if (!client.res.destroyed && !client.res.writableEnded) client.res.write(message);
+    sseWrite(client, message);
   }
 }
 
@@ -1804,7 +1905,7 @@ function broadcastNotification(payload) {
       continue;
     }
     if (Array.isArray(payload.targetUserIds) && !payload.targetUserIds.includes(session.userId)) continue;
-    if (!client.res.destroyed && !client.res.writableEnded) client.res.write(message);
+    sseWrite(client, message);
   }
 }
 
@@ -1818,7 +1919,7 @@ function presentationStatus(reason) {
 
 function broadcastPresentation(event, payload) {
   const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const client of bpPresentationClients) client.write(message);
+  for (const client of bpPresentationClients) sseWrite(client, message);
   if (event === 'presentation') broadcastBp('bp-presentation', {
     ...payload,
     clientCount: bpPresentationClients.size,
@@ -1841,7 +1942,7 @@ const communicationHeartbeat = setInterval(() => {
       communicationClients.delete(client);
       continue;
     }
-    client.res.write(': heartbeat\n\n');
+    sseWrite(client, ': heartbeat\n\n');
   }
 }, 25 * 1000);
 const notificationHeartbeat = setInterval(() => {
@@ -1852,12 +1953,1851 @@ const notificationHeartbeat = setInterval(() => {
       notificationClients.delete(client);
       continue;
     }
-    client.res.write(': heartbeat\n\n');
+    sseWrite(client, ': heartbeat\n\n');
   }
 }, 25 * 1000);
 communicationHeartbeat.unref?.();
 notificationHeartbeat.unref?.();
 presenceSweep.unref?.();
+
+// 路由表：router.js 提供两级查找（精确 Map O(1) + 参数化正则），
+// handler 统一收 ctx（req/res/url/pathname/params/requestSession），未匹配路由继续走下方 if 链。
+const { addRoute: registerRoute, matchRoute, hasRoute } = require('./router');
+
+// 路由权限声明表（批次 3 收尾，决策 3）：键 "METHOD /模式"，值权限键或 ({ url, params }) => 权限键。
+// 缺省 null = 仅需登录；豁免路径（auth/system/OBS 公开 SSE）由骨架 authExempt 判定，不进此表。
+// 逐条转录自退役的 requiredPermission 前缀函数；键名由注册后的启动断言校验。
+const ROUTE_PERMISSIONS = {
+  'GET /api/update-log': null,
+  'GET /api/friends': 'friends.manage',
+  'GET /api/users/search': 'friends.manage',
+  'POST /api/friends/requests': 'friends.manage',
+  'POST /api/friends/:id/accept': 'friends.manage',
+  'DELETE /api/friends/:id': 'friends.manage',
+  'GET /api/bp/presentation': 'bp.view',
+  'GET /api/bp/timer-config': 'countdown.operate',
+  'POST /api/bp/timer-config': 'bp.configure',
+  'GET /api/bp/commentator-options': 'bp.view',
+  'GET /api/obs/status': 'obs.view',
+  'GET /api/hubs/obs/status': 'countdown.operate',
+  'GET /api/logs': ({ url }) => url.searchParams.get('category') === 'account' ? 'logs.account.view' : 'logs.event.view',
+  'GET /api/operations/teams/:id/detail': 'operations.view',
+  'GET /api/operations/:view': ({ params }) => params.view === 'terminal' ? 'system.status.view'
+    : MANAGEMENT_VIEWS.has(params.view) ? 'system.manage'
+    : params.view === 'resources' ? 'materials.view'
+    : params.view === 'hud' ? 'hud.view'
+    : params.view === 'personal' ? null : 'operations.view',
+  'GET /api/events': 'operations.view',
+  'GET /api/events/team-candidates': 'operations.view',
+  'POST /api/events': 'events.manage',
+  'GET /api/events/:id/stages': 'operations.view',
+  'POST /api/events/:id/stages': 'events.manage',
+  'POST /api/events/:id/stages/:stageId/:action': 'events.manage',
+  'DELETE /api/events/:id/stages/:stageId': 'events.manage',
+  'PUT /api/events/:id/stages/:stageId/matches/:matchId': 'events.manage',
+  'POST /api/events/:id/stages/:stageId/matches/:matchId': 'events.manage',
+  'GET /api/events/:id/ranking': 'operations.view',
+  'POST /api/events/:id/actions': 'events.manage',
+  'PUT /api/events/:id': 'events.manage',
+  'GET /api/character-stats': 'characterStats.view',
+  'GET /api/communications/bootstrap': 'communication.use',
+  'GET /api/communications/events': 'communication.use',
+  'GET /api/communications/channels/:id/messages': 'communication.use',
+  'POST /api/communications/channels/:id/messages': 'communication.use',
+  'PATCH /api/communications/messages/:id#': 'communication.use',
+  'DELETE /api/communications/messages/:id#': 'communication.use',
+  'POST /api/communications/messages/:id#/recall': 'communication.use',
+  'POST /api/communications/messages/:id#/plus-one': 'communication.use',
+  'POST /api/communications/messages/:id#/urgent': 'communication.use',
+  'POST /api/communications/channels/:id/read': 'communication.use',
+  'PUT /api/communications/channels/:id/avatar': 'communication.use',
+  'DELETE /api/communications/channels/:id/avatar': 'communication.use',
+  'PUT /api/communications/channels/:id/settings': 'communication.use',
+  'PUT /api/communications/channels/:id/prefs': 'communication.use',
+  'POST /api/communications/private': 'communication.use',
+  'POST /api/communications/channels': 'communication.use',
+  'GET /api/admin/notifications': 'notifications.publish',
+  'POST /api/admin/notifications': 'notifications.publish',
+  'GET /api/admin/permissions': 'permissions.manage',
+  'PUT /api/admin/permissions/identities/:id': 'permissions.manage',
+  'PUT /api/admin/permissions/accounts/:id': 'permissions.manage',
+  'GET /api/admin/system-access': 'system.manage',
+  'PUT /api/admin/system-access': 'system.manage',
+  'GET /api/admin/laboratory-settings': 'system.manage',
+  'PUT /api/admin/laboratory-settings': 'system.manage',
+  'GET /api/admin/accounts': 'accounts.manage',
+  'POST /api/admin/accounts': 'accounts.manage',
+  'POST /api/admin/accounts/import': 'accounts.manage',
+  'POST /api/admin/accounts/bulk-status': 'accounts.manage',
+  'POST /api/admin/accounts/bulk-delete': 'accounts.manage',
+  'PUT /api/admin/accounts/:id': 'accounts.manage',
+  'DELETE /api/admin/accounts/:id': 'accounts.manage',
+  'POST /api/admin/accounts/:id/title-review': 'accounts.manage',
+  'POST /api/admin/characters': 'characterStats.manage',
+  'PUT /api/admin/characters/:id': 'characterStats.manage',
+  'DELETE /api/admin/characters/:id': 'characterStats.manage',
+  'PUT /api/admin/characters/:id/changes/:changeId#': 'characterStats.manage',
+  'GET /api/materials': 'materials.view',
+  'GET /api/material-paths/status': 'materials.manage',
+  'POST /api/material-paths/validate': 'materials.manage',
+  'POST /api/material-paths/sync': 'materials.manage',
+  'POST /api/material-paths/rollback': 'materials.manage',
+  'POST /api/materials/import': 'materials.manage',
+  'POST /api/materials/select-folder': 'materials.manage',
+  'POST /api/materials/documents': 'materials.manage',
+  'POST /api/materials/:id/rename': 'materials.manage',
+  'POST /api/materials/:id/delete': 'materials.manage',
+  'POST /api/materials/:id/open': 'materials.manage',
+  'POST /api/materials/bulk-delete': 'materials.manage',
+  'GET /api/bp/bootstrap': 'bp.view',
+  'POST /api/bp/commentator-image': 'bp.operate',
+  'POST /api/bp/commentator-logo-image': 'bp.operate',
+  'POST /api/bp/presentation/settings': 'bp.configure',
+  'GET /api/bp/events': 'bp.view',
+  'POST /api/bp/sessions': 'bp.operate',
+  'GET /api/bp/sessions/:id': 'bp.view',
+  'POST /api/bp/sessions/:id/actions': 'bp.operate',
+  'POST /api/bp/sessions/:id/result-image': 'bp.operate',
+  'POST /api/hubs': 'countdown.operate',
+  'GET /api/hubs/:id/state': 'countdown.operate',
+  'GET /api/hubs/:id/logs': 'countdown.operate',
+  'POST /api/hubs/:id/obs-toggle': 'countdown.operate',
+  'POST /api/hubs/:id/actions': 'countdown.operate',
+  'POST /api/obs/bp-overlay': 'obs.manage',
+  'POST /api/obs/connect': 'obs.manage',
+  'POST /api/bracket-image': 'bracket.publish'
+};
+
+function route(method, pathname, handler) {
+  registerRoute(method, pathname, { permission: ROUTE_PERMISSIONS[`${method} ${pathname}`] || null }, handler);
+  return handler;
+}
+
+route('GET', '/api/system/health', ctx => {
+  let version = 'unknown';
+  try { version = readReleaseData().currentVersion; } catch {}
+  sendJson(ctx.res, 200, {
+    product: 'stella-director',
+    version,
+    status: 'ready',
+    pid: process.pid,
+    startedAt: STARTED_AT,
+    dataDir: DATA_ROOT
+  });
+});
+
+route('GET', '/api/auth/status', ctx => {
+  sendJson(ctx.res, 200, { setupRequired: authSetupRequired() });
+});
+
+route('GET', '/api/update-log', ctx => {
+  try {
+    sendJson(ctx.res, 200, readReleaseData());
+  } catch (error) {
+    sendJson(ctx.res, 500, { error: `更新日志读取失败: ${error.message}` });
+  }
+});
+
+route('GET', '/api/notifications', ctx => {
+  try {
+    ensureVersionNotification(db, readReleaseData());
+  } catch {}
+  sendJson(ctx.res, 200, listNotifications(db, ctx.requestSession.userId, {
+    offset: ctx.url.searchParams.get('offset'),
+    limit: ctx.url.searchParams.get('limit')
+  }));
+});
+
+route('GET', '/api/friends', ctx => {
+  sendJson(ctx.res, 200, listFriends(ctx.requestSession));
+});
+
+route('GET', '/api/bp/presentation', ctx => {
+  sendJson(ctx.res, 200, presentationStatus());
+});
+
+route('GET', '/api/bp/timer-config', ctx => {
+  sendJson(ctx.res, 200, {
+    phases: timerPhaseMetadata(),
+    phaseDurations: phaseDurations(),
+    animationStyle: animationStyle()
+  });
+});
+
+route('GET', '/api/bp/commentator-options', ctx => {
+  sendJson(ctx.res, 200, {
+    commentatorImages: commentatorImagesCached(),
+    commentatorLogoImages: commentatorLogoImages(),
+    selectedImageId: commentatorImageId(),
+    selectedLogoImageId: commentatorLogoImageId()
+  });
+});
+
+route('GET', '/api/obs/status', ctx => {
+  sendJson(ctx.res, 200, obsController.status());
+});
+
+route('GET', '/api/hubs/obs/status', async ctx => {
+  const connected = Boolean(obsClient.connected);
+  const memory = readHudSourceEnabled();
+  if (!connected) {
+    sendJson(ctx.res, 200, { connected, sources: { countdown: { enabled: memory.countdown }, bp: { enabled: memory.bp } } });
+    return;
+  }
+  try {
+    const [countdown, bp] = await Promise.all([
+      obsController.sourceVisible(OBS_INPUTS.countdownBrowser).catch(() => null),
+      obsController.sourceVisible(OBS_INPUTS.bpOverlay).catch(() => null)
+    ]);
+    sendJson(ctx.res, 200, {
+      connected,
+      sources: {
+        countdown: countdown ? { sceneName: countdown.sceneName, enabled: countdown.sceneItemEnabled } : { enabled: memory.countdown },
+        bp: bp ? { sceneName: bp.sceneName, enabled: bp.sceneItemEnabled } : { enabled: memory.bp }
+      }
+    });
+  } catch (error) {
+    sendJson(ctx.res, 200, { connected, error: error.message, sources: { countdown: { enabled: memory.countdown }, bp: { enabled: memory.bp } } });
+  }
+});
+
+// —— auth / session / presence 域（阶段 1 迁移；handler 体逐字搬移，仅换 ctx 解构头）——
+route('POST', '/api/auth/setup', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    initializeCredentials(body.password);
+    sendJson(res, 201, { ok: true });
+  } catch (error) {
+    sendJson(res, authSetupRequired() ? 400 : 409, { ok: false, error: error.message });
+  }
+});
+
+route('POST', '/api/auth/login', async ({ req, res }) => {
+  try {
+    if (authSetupRequired()) {
+      sendJson(res, 409, { ok: false, setupRequired: true, error: '请先初始化开发者密码' });
+      return;
+    }
+    const body = JSON.parse((await readBody(req)) || '{}');
+    let context = deviceContext(body, req, requestLocation(req));
+    const portal = loginPortal(body.role);
+    const attemptedRow = findUserRow(String(body.account || '').trim());
+    const targetIdentityKey = attemptedRow
+      ? identityKeysForUser(attemptedRow.id, attemptedRow.role)[0]
+      : body.role === 'developer' ? 'administrator' : 'guest';
+    const attemptedSession = {
+      ...context,
+      userId: attemptedRow?.id || null,
+      role: attemptedRow?.role,
+      permissions: attemptedRow ? JSON.parse(attemptedRow.permissions_json || '[]') : [],
+      activeIdentityKey: targetIdentityKey,
+      actorDisplayName: attemptedRow
+        ? actorDisplayName(attemptedRow.id)
+        : `未识别账号：${String(body.account || '').trim() || '空账号'}`
+    };
+    const user = verifyCredentials(body.account, body.password, portal);
+    const attemptKey = loginAttemptKey(body.account, context.ipHash);
+    const lockRemaining = loginLockRemainingSeconds(attemptKey);
+    if (lockRemaining > 0) {
+      recordAuditLog('account', attemptedSession, '登录限速锁定', {
+        account: String(body.account || '').trim(), reason: '失败次数过多', targetIdentityKey
+      }, false, `锁定剩余 ${lockRemaining} 秒`);
+      sendJson(res, 429, {
+        ok: false,
+        code: 'LOGIN_RATE_LIMITED',
+        error: `登录失败次数过多，请 ${lockRemaining} 秒后再试`
+      });
+      return;
+    }
+    if (user?.disabled) {
+      recordLoginFailure(attemptKey);
+      recordAuditLog('account', attemptedSession, '登录失败', {
+        account: String(body.account || '').trim(), reason: '账号已停用', targetIdentityKey
+      }, false, '账号已停用');
+      sendJson(res, 403, {
+        ok: false,
+        code: 'ACCOUNT_DISABLED',
+        error: '您的账号已被停用，请联系开发者/管理员进行账号恢复'
+      });
+      return;
+    }
+    if (!user) {
+      recordLoginFailure(attemptKey);
+      recordAuditLog('account', attemptedSession, '登录失败', {
+        account: String(body.account || '').trim(), reason: '账号或密码错误', targetIdentityKey
+      }, false, '账号或密码错误');
+      sendJson(res, 401, {
+        ok: false,
+        code: portal.invalidCode,
+        error: portal.invalidMessage
+      });
+      return;
+    }
+    const rejectClosedSystemLogin = () => {
+      recordAuditLog('account', attemptedSession, '登录失败', {
+        account: String(body.account || '').trim(), reason: '系统暂未开放用户登录', targetIdentityKey
+      }, false, '系统暂未开放用户登录');
+      sendJson(res, 403, {
+        ok: false,
+        code: 'SYSTEM_ACCESS_CLOSED',
+        error: '系统暂未开放用户登录，请联系管理员'
+      });
+    };
+    if (!systemAccessOpen() && !hasSystemManagementEntitlement(user)) {
+      rejectClosedSystemLogin();
+      return;
+    }
+    context = deviceContext(body, req, await resolveRequestLocation(req));
+    if (!systemAccessOpen() && !hasSystemManagementEntitlement(user)) {
+      rejectClosedSystemLogin();
+      return;
+    }
+    const { session, replacedSessions } = createSession(user, body.remember, context);
+    clearLoginFailures(attemptKey);
+    recordUserLogin(user.id, context);
+    connectPresence(user.id);
+    recordAuditLog('account', session, '登录系统', {
+      account: user.account,
+      targetIdentityKey,
+      replacedSessionCount: replacedSessions.length,
+      replacedOtherDevice: replacedSessions.some(item => item.deviceFingerprint !== context.deviceFingerprint)
+    });
+    res.setHeader('Set-Cookie', sessionCookie(session.token, body.remember, secureRequest(req)));
+    sendJson(res, 200, {
+      ok: true,
+      role: user.role,
+      account: user.account,
+      replacedSessionCount: replacedSessions.length
+    });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+route('GET', '/api/auth/session', ({ req, res }) => {
+  const session = validateSession(getSessionToken(req));
+  sendJson(res, 200, session
+    ? { authenticated: true, role: session.role, account: session.account,
+      identityKeys: session.identityKeys || identityKeysForUser(session.userId, session.role),
+      activeIdentityKey: session.activeIdentityKey }
+    : { authenticated: false });
+});
+
+route('POST', '/api/auth/logout', ({ req, res }) => {
+  const session = validateSession(getSessionToken(req));
+  if (session) {
+    disconnectPresence(session.userId);
+    recordAuditLog('account', session, '退出系统');
+  }
+  destroySession(getSessionToken(req));
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
+  sendJson(res, 200, { ok: true });
+});
+
+route('GET', '/api/session/events', ({ req, res }) => {
+  const token = getSessionToken(req);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  const removeClient = addSessionEventClient(token, res);
+  res.write(`event: session-state\ndata: ${JSON.stringify({ authenticated: true })}\n\n`);
+  req.on('close', removeClient);
+});
+
+route('POST', '/api/presence/heartbeat', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    sendJson(res, 200, recordPresenceHeartbeat(requestSession.userId, body));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/presence/disconnect', ({ res, requestSession }) => {
+  sendJson(res, 200, disconnectPresence(requestSession.userId));
+});
+
+route('POST', '/api/presence/preference', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    if (!PRESENCE_PREFERENCES.has(body.preference)) throw new Error('在线状态设置无效');
+    const snapshot = setManualPresence(requestSession.userId, body.preference);
+    recordAuditLog('account', requestSession, '切换在线状态', { preference: snapshot.preference });
+    sendJson(res, 200, snapshot);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/presence/work', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    sendJson(res, 200, setWorkingPresence(
+      requestSession.userId,
+      Boolean(body.active),
+      body.contextId
+    ));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+// —— profile / social / notifications 域（阶段 2 迁移）——
+route('GET', '/api/profile', ({ res, requestSession }) => {
+  try {
+    sendJson(res, 200, readUserProfile(requestSession));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/profiles/:id', ({ res, requestSession, params }) => {
+  try {
+    sendJson(res, 200, readUserProfile(requestSession, params.id));
+  } catch (error) {
+    sendJson(res, 404, { error: error.message });
+  }
+});
+
+route('PUT', '/api/profile', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
+    const sensitiveFields = [];
+    if (String(body.account || '').trim() && String(body.account).trim() !== requestSession.account) {
+      sensitiveFields.push('account');
+    }
+    if (body.newPassword) sensitiveFields.push('password');
+    const profile = saveUserProfile(requestSession, body);
+    recordAuditLog('account', requestSession, '修改个人资料', {
+      fields: ['displayName', 'title', 'bio', 'gender', 'birthDate', 'presencePreference', 'visibleStats'],
+      sensitiveFields
+    });
+    sendJson(res, 200, profile);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/profile/identity', async ({ req, res, requestSession }) => {
+  let targetIdentityKey = '';
+  const previousIdentityKey = requestSession.activeIdentityKey;
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    targetIdentityKey = String(body.identityKey || '');
+    const profile = switchIdentity(requestSession, targetIdentityKey);
+    recordAuditLog('account', requestSession, '切换账号身份', {
+      actorIdentityKey: previousIdentityKey,
+      previousIdentityKey,
+      identityKey: profile.activeIdentityKey,
+      sessionAuthenticated: true
+    });
+    sendJson(res, 200, profile);
+  } catch (error) {
+    recordAuditLog('account', requestSession, '切换账号身份失败', {
+      actorIdentityKey: previousIdentityKey,
+      previousIdentityKey,
+      identityKey: targetIdentityKey,
+      reasonCode: error.code || 'IDENTITY_SWITCH_INVALID'
+    }, false, error.message);
+    sendJson(res, 400, {
+      code: error.code || 'IDENTITY_SWITCH_INVALID',
+      error: error.message
+    });
+  }
+});
+
+route('GET', '/api/notifications/events', ({ req, res }) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store, no-transform',
+    'X-Accel-Buffering': 'no',
+    Connection: 'keep-alive'
+  });
+  res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
+  const client = { token: getSessionToken(req), res };
+  notificationClients.add(client);
+  res.on('error', () => notificationClients.delete(client));
+  req.on('close', () => notificationClients.delete(client));
+});
+
+route('POST', '/api/notifications/read-all', ({ res, requestSession }) => {
+  const result = markAllNotificationsRead(db, requestSession.userId);
+  broadcastNotification({ type: 'read', targetUserIds: [requestSession.userId], ...result });
+  sendJson(res, 200, result);
+});
+
+route('POST', '/api/notifications/:id/read', ({ res, requestSession, params }) => {
+  try {
+    const result = markNotificationRead(db, requestSession.userId, params.id);
+    broadcastNotification({ type: 'read', notificationId: params.id,
+      targetUserIds: [requestSession.userId], unreadCount: result.unreadCount,
+      urgentUnreadCount: result.urgentUnreadCount });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 404, { error: error.message });
+  }
+});
+
+route('GET', '/api/users/search', ({ res, requestSession, url }) => {
+  sendJson(res, 200, { users: searchUsers(requestSession, url.searchParams.get('q')) });
+});
+
+route('POST', '/api/friends/requests', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const targetUserId = String(body.userId || '');
+    const result = requestFriend(requestSession, targetUserId);
+    const notification = createNotification(db, {
+      type: 'friend_request',
+      title: `${requestSession.actorDisplayName || actorDisplayName(requestSession.userId)} 请求添加你为好友`,
+      summary: '新的好友申请等待处理',
+      body: '你可以前往好友列表接受或处理这条申请。',
+      sourceKind: 'friend_request',
+      sourceId: `${requestSession.userId}:${targetUserId}:${Date.now()}`,
+      targetKind: 'account',
+      targetValue: targetUserId,
+      createdByUserId: requestSession.userId,
+      createdByIdentityKey: requestSession.activeIdentityKey
+    }, [targetUserId]);
+    recordAuditLog('account', requestSession, '发送好友请求', { targetUserId });
+    broadcastCommunication({
+      type: 'friend-request', channelId: null, messageId: null,
+      targetUserIds: [requestSession.userId, targetUserId]
+    });
+    if (notification) broadcastNotification({
+      type: 'created', notificationId: notification.id, urgent: false, targetUserIds: [targetUserId]
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/friends/:id/accept', ({ res, requestSession, params }) => {
+  try {
+    const result = acceptFriend(requestSession, params.id);
+    recordAuditLog('account', requestSession, '接受好友请求', { targetUserId: params.id });
+    broadcastCommunication({
+      type: 'friend-updated', channelId: null, messageId: null,
+      targetUserIds: [requestSession.userId, params.id]
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('DELETE', '/api/friends/:id', ({ res, requestSession, params }) => {
+  const result = removeFriend(requestSession, params.id);
+  recordAuditLog('account', requestSession, '移除好友关系', { targetUserId: params.id });
+  broadcastCommunication({
+    type: 'friend-updated', channelId: null, messageId: null,
+    targetUserIds: [requestSession.userId, params.id]
+  });
+  sendJson(res, 200, result);
+});
+
+route('POST', '/api/window/maximize', ({ res }) => {
+  execFile('powershell.exe', [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WINDOW_CONTROL_SCRIPT
+  ], { windowsHide: true, timeout: 3000 }, error => {
+    if (error) sendJson(res, 500, { error: error.message });
+    else sendJson(res, 200, { maximized: true });
+  });
+});
+
+route('GET', '/api/logs', ({ res, requestSession, url }) => {
+  sendJson(res, 200, pagedLogs(url.searchParams.get('category') || 'all', requestSession, {
+    offset: url.searchParams.get('offset'),
+    limit: url.searchParams.get('limit'),
+    cursor: url.searchParams.get('cursor'),
+    query: url.searchParams.get('q')
+  }));
+});
+
+// —— operations / events 域（阶段 3 迁移；events 媒体 sha256 ETag 组按蓝图留骨架）——
+route('GET', '/api/operations/teams/:id/detail', ({ res, params }) => {
+  const teamId = params.id;
+  try {
+    sendJson(res, 200, { view: 'teamDetail', generatedAt: Date.now(), data: teamDetail(db, teamId) });
+  } catch (error) {
+    sendJson(res, error.code === 'TEAM_NOT_FOUND' ? 404 : 400, {
+      error: error.message,
+      code: error.code || undefined
+    });
+  }
+});
+
+route('GET', '/api/operations/:view', ({ res, requestSession, url, params }) => {
+  const view = params.view;
+  try {
+    const runtime = {
+      pid: process.pid,
+      node: process.version,
+      platform: process.platform,
+      uptimeSeconds: process.uptime(),
+      startedAt: STARTED_AT,
+      memory: process.memoryUsage(),
+      activeSessions: loadSessions().filter(item => item.expiresAt > Date.now()).length,
+      communicationStreams: communicationClients.size,
+      notificationStreams: notificationClients.size,
+      presentationStreams: bpPresentationClients.size,
+      systemOpen: systemAccessOpen(),
+      obs: obsController.status()
+    };
+    sendJson(res, 200, operationsView(db, view, {
+      userId: requestSession.userId,
+      today: url.searchParams.get('today') || undefined,
+      query: url.searchParams.get('query') || '',
+      eventId: url.searchParams.get('eventId') || '',
+      managedEventId: url.searchParams.get('managedEventId') || '',
+      division: url.searchParams.get('division') || '',
+      role: url.searchParams.get('role') || '',
+      teamId: url.searchParams.get('teamId') || '',
+      limit: url.searchParams.get('limit') || undefined,
+      offset: url.searchParams.get('offset') || undefined,
+      runtime
+    }));
+  } catch (error) {
+    sendJson(res, error.code === 'OPERATIONS_VIEW_NOT_FOUND' ? 404 : 400, {
+      error: error.message,
+      code: error.code || undefined
+    });
+  }
+});
+
+route('GET', '/api/events', ({ res, requestSession, url }) => {
+  try {
+    sendJson(res, 200, {
+      ...managedEventSnapshot(db, url.searchParams.get('filter') || 'all'),
+      canManage: hasPermission(requestSession, 'events.manage')
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/events/team-candidates', ({ res, url }) => {
+  try {
+    sendJson(res, 200, { items: findEventTeamCandidates(
+      db,
+      url.searchParams.get('division') || 'all',
+      Number(url.searchParams.get('minMembers') || 1),
+      Number(url.searchParams.get('maxMembers') || 99)
+    ) });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/events', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 10 * 1024 * 1024)) || '{}');
+    const event = createManagedEvent(db, body, requestSession.userId);
+    recordAuditLog('account', requestSession, '创建赛事', { eventId: event.id, name: event.name });
+    sendJson(res, 201, { event });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '创建赛事', {}, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/events/:id/stages', ({ res, params }) => {
+  try {
+    const eventId = decodeURIComponent(params.id);
+    sendJson(res, 200, listStageRuntime(db, eventId));
+  } catch (error) {
+    sendJson(res, error.code === 'NO_ACTIVE_TOURNAMENT_EVENT' ? 400 : 404, { error: error.message, code: error.code });
+  }
+});
+
+route('POST', '/api/events/:id/stages', async ({ req, res, requestSession, params }) => {
+  try {
+    const eventId = decodeURIComponent(params.id);
+    const body = JSON.parse((await readBody(req, 512 * 1024)) || '{}');
+    const stage = createTournamentStage(db, eventId, body, requestSession.userId);
+    recordAuditLog('account', requestSession, '创建赛事阶段', { eventId, stageId: stage.id, name: stage.name });
+    sendJson(res, 201, { stage });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '创建赛事阶段', { eventId: params.id }, false, error.message);
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('POST', '/api/events/:id/stages/:stageId/:action', ({ res, requestSession, params }) => {
+  const eventId = decodeURIComponent(params.id);
+  const stageId = decodeURIComponent(params.stageId);
+  const action = params.action;
+  const actions = {
+    start: startTournamentStage,
+    pause: pauseTournamentStage,
+    resume: resumeTournamentStage,
+    complete: completeTournamentStage,
+    'next-round': generateNextRound
+  };
+  const labels = {
+    start: '开始赛事阶段',
+    pause: '暂停赛事阶段',
+    resume: '恢复赛事阶段',
+    complete: '完成赛事阶段',
+    'next-round': '生成阶段下一轮'
+  };
+  if (!actions[action]) {
+    sendJson(res, 404, { error: '未知的阶段操作' });
+    return;
+  }
+  try {
+    const stage = actions[action](db, eventId, stageId, requestSession.userId);
+    recordAuditLog('account', requestSession, labels[action], { eventId, stageId });
+    sendJson(res, 200, { stage });
+  } catch (error) {
+    recordAuditLog('account', requestSession, labels[action], { eventId, stageId }, false, error.message);
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('DELETE', '/api/events/:id/stages/:stageId', ({ res, requestSession, params }) => {
+  const eventId = decodeURIComponent(params.id);
+  const stageId = decodeURIComponent(params.stageId);
+  try {
+    deleteTournamentStage(db, eventId, stageId, requestSession.userId);
+    recordAuditLog('account', requestSession, '删除赛事阶段', { eventId, stageId });
+    sendJson(res, 200, { deleted: stageId });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '删除赛事阶段', { eventId, stageId }, false, error.message);
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('PUT', '/api/events/:id/stages/:stageId/matches/:matchId', async ({ req, res, requestSession, params }) => {
+  const eventId = decodeURIComponent(params.id);
+  const stageId = decodeURIComponent(params.stageId);
+  const matchId = decodeURIComponent(params.matchId);
+  const label = '修改阶段比赛';
+  try {
+    const body = JSON.parse((await readBody(req, 512 * 1024)) || '{}');
+    const match = updateStageMatch(db, eventId, stageId, matchId, body, requestSession.userId);
+    recordAuditLog('account', requestSession, label, { eventId, stageId, matchId });
+    sendJson(res, 200, { match });
+  } catch (error) {
+    recordAuditLog('account', requestSession, label, { eventId, stageId, matchId }, false, error.message);
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('POST', '/api/events/:id/stages/:stageId/matches/:matchId', async ({ req, res, requestSession, params }) => {
+  const eventId = decodeURIComponent(params.id);
+  const stageId = decodeURIComponent(params.stageId);
+  const matchId = decodeURIComponent(params.matchId);
+  const label = '录入阶段比赛结果';
+  try {
+    const body = JSON.parse((await readBody(req, 512 * 1024)) || '{}');
+    const match = setStageMatchResult(db, eventId, stageId, matchId, body.winnerTeamId, requestSession.userId);
+    recordAuditLog('account', requestSession, label, { eventId, stageId, matchId });
+    sendJson(res, 200, { match });
+  } catch (error) {
+    recordAuditLog('account', requestSession, label, { eventId, stageId, matchId }, false, error.message);
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('GET', '/api/events/:id/ranking', ({ res, params }) => {
+  try {
+    const eventId = decodeURIComponent(params.id);
+    sendJson(res, 200, stageRanking(db, eventId));
+  } catch (error) {
+    sendJson(res, error.code === 'NO_ACTIVE_TOURNAMENT_EVENT' ? 400 : 404, { error: error.message, code: error.code });
+  }
+});
+
+route('POST', '/api/events/:id/actions', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const event = applyEventAction(db, params.id, body.action);
+    const labels = { start: '启动赛事', end: '结束赛事', 'toggle-mark': '切换赛事标记' };
+    recordAuditLog('account', requestSession, labels[body.action] || '操作赛事', {
+      eventId: event.id, name: event.name, marked: event.marked, status: event.status
+    });
+    sendJson(res, 200, { event });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '操作赛事', { eventId: params.id }, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/character-stats', ({ res, url }) => {
+  const division = url.searchParams.get('division') || 'all';
+  if (!['all', 'pc', 'pe'].includes(division)) {
+    sendJson(res, 400, { error: '无效的排行榜范围' });
+    return;
+  }
+  // 统计页 30 秒结果缓存：全量重算涉及递归解析全部对局，是最重的读接口
+  const statsNow = Date.now();
+  if (!characterStatsCache.payload || characterStatsCache.division !== division
+    || statsNow - characterStatsCache.at > CHARACTER_STATS_TTL_MS) {
+    characterStatsCache = { division, at: statsNow, payload: calculateCharacterStats(db, division) };
+  }
+  sendJson(res, 200, characterStatsCache.payload);
+});
+
+route('GET', '/api/communications/bootstrap', ({ res, url, requestSession }) => {
+  try {
+    sendJson(res, 200, communicationBootstrap(db, requestSession, url.searchParams.get('channelId')));
+  } catch (error) {
+    sendJson(res, 400, { code: error.code, error: error.message });
+  }
+});
+
+route('GET', '/api/communications/events', ({ req, res }) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store, no-transform',
+    'X-Accel-Buffering': 'no',
+    Connection: 'keep-alive'
+  });
+  res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
+  const client = { token: getSessionToken(req), res };
+  communicationClients.add(client);
+  res.on('error', () => communicationClients.delete(client));
+  req.on('close', () => communicationClients.delete(client));
+});
+
+route('GET', '/api/communications/channels/:id/messages', ({ res, url, requestSession, params }) => {
+  try {
+    sendJson(res, 200, listMessages(db, requestSession, params.id, {
+      before: url.searchParams.get('before'),
+      after: url.searchParams.get('after'),
+      unread: url.searchParams.get('unread') === '1',
+      limit: url.searchParams.get('limit'),
+      markRead: url.searchParams.get('markRead') !== '0'
+    }));
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/channels/:id/messages', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    let notification = null;
+    const message = sendMessage(db, requestSession, params.id, body.content, {
+      afterInsert: (serialized) => { notification = createMessageNotification(db, serialized, false); }
+    });
+    const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
+    broadcastCommunication({ type: 'message', channelId: message.channelId, messageId: message.id });
+    if (notification) broadcastNotification({
+      type: 'created', notificationId: notification.id, urgent: false, targetUserIds
+    });
+    sendJson(res, 201, { message });
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('PATCH', '/api/communications/messages/:id#', async ({ req, res, requestSession, params }) => {
+  const messageId = Number(params.id);
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const message = editMessage(db, requestSession, messageId, body.content);
+    broadcastCommunication({ type: 'message-updated', channelId: message.channelId, messageId });
+    sendJson(res, 200, { message });
+  } catch (error) {
+    const forbidden = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN';
+    sendJson(res, forbidden ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('DELETE', '/api/communications/messages/:id#', ({ res, requestSession, params }) => {
+  const messageId = Number(params.id);
+  try {
+    const result = deleteMessageForUser(db, requestSession, messageId);
+    broadcastCommunication({
+      type: 'message-deleted', channelId: result.channelId, messageId,
+      targetUserIds: [requestSession.userId]
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    const forbidden = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN';
+    sendJson(res, forbidden ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/messages/:id#/recall', ({ res, requestSession, params }) => {
+  const messageId = Number(params.id);
+  try {
+    const message = recallMessage(db, requestSession, messageId);
+    broadcastCommunication({ type: 'message-recalled', channelId: message.channelId, messageId });
+    sendJson(res, 200, { message });
+  } catch (error) {
+    const forbidden = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN';
+    sendJson(res, forbidden ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/messages/:id#/plus-one', ({ res, requestSession, params }) => {
+  const messageId = Number(params.id);
+  try {
+    const message = toggleMessagePlusOne(db, requestSession, messageId);
+    broadcastCommunication({ type: 'message-reaction', channelId: message.channelId, messageId });
+    sendJson(res, 200, { message });
+  } catch (error) {
+    const forbidden = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN';
+    sendJson(res, forbidden ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/messages/:id#/urgent', async ({ req, res, requestSession, params }) => {
+  const messageId = Number(params.id);
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const message = setMessageUrgent(db, requestSession, messageId, Boolean(body.urgent));
+    const notification = syncMessageUrgency(db, message);
+    const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
+    broadcastCommunication({ type: 'message-urgent', channelId: message.channelId, messageId });
+    if (notification) broadcastNotification({
+      type: 'updated', notificationId: notification.id, urgent: message.urgent, targetUserIds
+    });
+    sendJson(res, 200, { message });
+  } catch (error) {
+    const forbidden = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN';
+    sendJson(res, forbidden ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/channels/:id/read', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = markChannelRead(db, requestSession, params.id, body.messageId);
+    markChannelNotificationsRead(db, requestSession.userId, params.id, body.messageId);
+    broadcastNotification({ type: 'read', targetUserIds: [requestSession.userId] });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('PUT', '/api/communications/channels/:id/avatar', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 700 * 1024)) || '{}');
+    const result = setChannelAvatar(db, requestSession, params.id, body.image);
+    recordAuditLog('account', requestSession, '修改频道头像', { channelId: params.id });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('DELETE', '/api/communications/channels/:id/avatar', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 700 * 1024)) || '{}');
+    const result = clearChannelAvatar(db, requestSession, params.id);
+    recordAuditLog('account', requestSession, '移除频道头像', { channelId: params.id });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('PUT', '/api/communications/channels/:id/settings', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 700 * 1024)) || '{}');
+    const channel = updateChannelSettings(db, requestSession, params.id, body);
+    recordAuditLog('account', requestSession, '修改频道设置', { channelId: params.id });
+    sendJson(res, 200, { channel });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('PUT', '/api/communications/channels/:id/prefs', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 700 * 1024)) || '{}');
+    const result = updateChannelPreferences(db, requestSession, params.id, body);
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('POST', '/api/communications/private', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const channel = createPrivateChannel(db, requestSession, body.userId);
+    broadcastCommunication({ type: 'channel-created', channelId: channel.id, messageId: null });
+    sendJson(res, 201, { channel });
+  } catch (error) {
+    sendJson(res, 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/channels', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const channel = createCustomChannel(db, requestSession, body);
+    recordAuditLog('account', requestSession, '创建通讯频道', {
+      channelId: channel.id,
+      channelName: channel.name,
+      memberCount: channel.memberCount
+    });
+    broadcastCommunication({ type: 'channel-created', channelId: channel.id, messageId: null });
+    sendJson(res, 201, { channel });
+  } catch (error) {
+    sendJson(res, 400, { code: error.code, error: error.message });
+  }
+});
+
+route('GET', '/api/admin/notifications', ({ res, url }) => {
+  const published = listPublishedNotifications(db, {
+    offset: url.searchParams.get('offset'),
+    limit: url.searchParams.get('limit')
+  });
+  const accounts = db.prepare(`SELECT id, username, display_name, status FROM users
+    ORDER BY display_name COLLATE NOCASE, username COLLATE NOCASE`).all().map(row => ({
+    id: row.id,
+    account: row.username,
+    displayName: row.display_name || row.username,
+    status: row.status
+  }));
+  sendJson(res, 200, {
+    ...published,
+    accounts,
+    identities: Object.entries(IDENTITY_LABELS).map(([key, label]) => ({ key, label }))
+  });
+});
+
+route('POST', '/api/admin/notifications', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = publishNotification(db, requestSession, body);
+    recordAuditLog('account', requestSession, '发布系统通知', {
+      notificationId: result.notification?.id,
+      targetKind: body.target?.kind || body.targetKind,
+      targetValue: body.target?.value || body.targetValue,
+      urgent: Boolean(body.urgent),
+      recipientCount: result.recipientUserIds.length
+    });
+    if (result.notification) broadcastNotification({
+      type: 'created',
+      notificationId: result.notification.id,
+      urgent: result.notification.urgent,
+      summary: result.notification.summary,
+      title: result.notification.title,
+      targetUserIds: result.recipientUserIds
+    });
+    sendJson(res, 201, {
+      notification: result.notification,
+      recipientCount: result.recipientUserIds.length
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/admin/permissions', ({ res }) => {
+  sendJson(res, 200, permissionCenterSnapshot());
+});
+
+route('PUT', '/api/admin/permissions/identities/:id', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = saveIdentityPermissions(
+      params.id, body.permissions, requestSession.userId
+    );
+    const sessions = loadSessions();
+    sessions.forEach(item => { item.permissions = effectivePermissionDetails(item).effective; });
+    saveSessions(sessions);
+    recordAuditLog('account', requestSession, '修改身份权限', {
+      identityKey: result.identityKey,
+      permissionCount: result.permissions.length
+    });
+    sendJson(res, 200, permissionCenterSnapshot());
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('PUT', '/api/admin/permissions/accounts/:id', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = saveAccountOverrides(
+      params.id, body.grants, body.denies, requestSession.userId
+    );
+    const sessions = loadSessions();
+    sessions.filter(item => item.userId === result.userId)
+      .forEach(item => { item.permissions = effectivePermissionDetails(item).effective; });
+    saveSessions(sessions);
+    recordAuditLog('account', requestSession, '修改账号权限', {
+      targetUserId: result.userId,
+      grantCount: result.grants.length,
+      denyCount: result.denies.length
+    });
+    sendJson(res, 200, permissionCenterSnapshot());
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/admin/system-access', ({ res }) => {
+  sendJson(res, 200, systemAccessPolicy());
+});
+
+route('PUT', '/api/admin/system-access', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const policy = saveSystemAccessPolicy(body.open);
+    const revoked = policy.open
+      ? { revokedSessionCount: 0, revokedUserCount: 0 }
+      : revokeNonManagementSessions();
+    recordAuditLog('account', requestSession, policy.open ? '开放系统用户登录' : '关闭系统用户登录', {
+      open: policy.open,
+      ...revoked
+    });
+    sendJson(res, 200, policy);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/admin/laboratory-settings', ({ res }) => {
+  sendJson(res, 200, laboratorySettings(db));
+});
+
+route('PUT', '/api/admin/laboratory-settings', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const settings = saveLaboratorySettings(db, body);
+    recordAuditLog('account', requestSession,
+      settings.newBpInterface ? '启用新版 BP 界面' : '停用新版 BP 界面', settings);
+    sendJson(res, 200, settings);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/admin/accounts', ({ res, requestSession }) => {
+  sendJson(res, 200, { accounts: listManagedAccounts(requestSession) });
+});
+
+route('POST', '/api/admin/accounts', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
+    const account = createManagedAccount(requestSession, body);
+    recordAuditLog('account', requestSession, '创建账号', { targetUserId: account.id, account: account.account });
+    sendJson(res, 201, account);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/admin/accounts/import', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
+    const result = importManagedAccounts(requestSession, body.accounts);
+    recordAuditLog('account', requestSession, '批量导入账号', {
+      imported: result.imported.length, rejected: result.rejected.length
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/admin/accounts/bulk-status', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = bulkUpdateManagedAccountStatus(requestSession, body.ids, body.status);
+    recordAuditLog('account', requestSession, '批量变更账号状态', {
+      status: body.status, count: result.changed
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/admin/accounts/bulk-delete', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = bulkDeleteManagedAccounts(requestSession, body.ids);
+    recordAuditLog('account', requestSession, '批量删除账号', { count: result.deleted });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('PUT', '/api/admin/accounts/:id', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
+    const account = updateManagedAccount(requestSession, params.id, body);
+    recordAuditLog('account', requestSession, '修改账号', { targetUserId: params.id, account: account.account });
+    sendJson(res, 200, account);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('DELETE', '/api/admin/accounts/:id', ({ res, requestSession, params }) => {
+  try {
+    deleteManagedAccount(requestSession, params.id);
+    recordAuditLog('account', requestSession, '删除账号', { targetUserId: params.id });
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/admin/accounts/:id/title-review', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const account = reviewTitleRequest(requestSession, params.id, body.decision);
+    recordAuditLog('account', requestSession, body.decision === 'approved' ? '批准岗位申请' : '驳回岗位申请', {
+      targetUserId: params.id
+    });
+    sendJson(res, 200, account);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/admin/characters', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 6 * 1024 * 1024)) || '{}');
+    const { id, portraitUrl, ...safeBody } = body;
+    const character = createCharacter(db, safeBody);
+    reloadCharacterRoster();
+
+    recordAuditLog('account', requestSession, '新增角色', { character });
+    sendJson(res, 201, { character });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '新增角色', {}, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('PUT', '/api/admin/characters/:id', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 6 * 1024 * 1024)) || '{}');
+    const { id, portraitUrl, ...safeBody } = body;
+    const result = updateCharacter(db, params.id, safeBody);
+    reloadCharacterRoster();
+    recordAuditLog('account', requestSession, '修改角色基础数据', {
+      characterId: result.character.id,
+      changesAdded: result.changesAdded,
+      before: result.previous,
+      after: result.character
+    });
+    sendJson(res, 200, { character: result.character });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '修改角色基础数据', {
+      characterId: params.id
+    }, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('DELETE', '/api/admin/characters/:id', ({ res, requestSession, params }) => {
+  try {
+    const character = archiveCharacter(db, params.id);
+    reloadCharacterRoster();
+    recordAuditLog('account', requestSession, '停用角色', { character });
+    sendJson(res, 200, { character });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '停用角色', {
+      characterId: params.id
+    }, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('PUT', '/api/admin/characters/:id/changes/:changeId#', async ({ req, res, requestSession, params }) => {
+  try {
+    const changeId = Number(params.changeId);
+    const body = JSON.parse((await readBody(req, 512 * 1024)) || '{}');
+    const change = updateCharacterChange(db, params.id, changeId, body);
+    reloadCharacterRoster();
+    recordAuditLog('account', requestSession, '修改角色更新记录', { characterId: params.id, changeId });
+    sendJson(res, 200, { change });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '修改角色更新记录', {
+      characterId: params.id, changeId: params.changeId
+    }, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/materials', ({ res, url }) => {
+  sendJson(res, 200, materialLibrary.listPage({
+    forceSync: url.searchParams.get('sync') === '1',
+    directoryId: url.searchParams.get('directory') || null,
+    query: url.searchParams.get('q') || '',
+    offset: url.searchParams.get('offset'),
+    limit: url.searchParams.get('limit')
+  }));
+});
+
+route('GET', '/api/material-paths/status', async ({ res }) => {
+  try {
+    sendJson(res, 200, await obsPathMigration.status());
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/material-paths/validate', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    sendJson(res, 200, await obsPathMigration.validate(body.folderId));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/material-paths/sync', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    sendJson(res, 200, await obsPathMigration.sync(body.folderId));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/material-paths/rollback', async ({ res }) => {
+  try {
+    sendJson(res, 200, await obsPathMigration.rollback());
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/import', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const mode = body.kind === 'folder' ? 'folder' : 'files';
+    const paths = await pickMaterialPaths(mode);
+    if (!paths.length) {
+      sendJson(res, 200, { cancelled: true, added: 0, skipped: 0 });
+      return;
+    }
+    sendJson(res, 200, materialLibrary.addPaths(paths));
+    invalidateCommentatorImagesCache();
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/select-folder', async ({ req, res }) => {
+  try {
+    const paths = await pickMaterialPaths('folder');
+    sendJson(res, 200, { path: paths[0] || null, cancelled: !paths.length });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/documents', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    sendJson(res, 201, materialLibrary.createDocument(body.directoryPath, body.name));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/:id/rename', async ({ req, res, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = materialLibrary.rename(params.id, body.name);
+    invalidateCommentatorImagesCache();
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/:id/delete', async ({ req, res, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = materialLibrary.remove(params.id, body.mode);
+    invalidateCommentatorImagesCache();
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/:id/open', async ({ req, res, params }) => {
+  try {
+    const entry = materialLibrary.entry(params.id);
+    if (!fs.existsSync(entry.path)) throw new Error('文件或文件夹已经不存在');
+    await openMaterialPath(entry.path);
+    sendJson(res, 200, { opened: true, id: entry.id });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/materials/bulk-delete', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    sendJson(res, 200, materialLibrary.removeMany(body.ids, body.mode));
+    invalidateCommentatorImagesCache();
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/bp/bootstrap', ({ res }) => {
+  // 全量缓存：键随 BP 数据版本与角色版本变化，命中时免去 36ms 同步序列化；
+  // 每请求现算的低成本字段（obs、dynamicBp、timer、laboratory、解说席列表）不入缓存
+  const cacheKey = `${bpService.getBootstrapVersion()}|${getCharacterVersion()}`;
+  if (bpBootstrapCache.key !== cacheKey) {
+    bpBootstrapCache = { key: cacheKey, parts: {
+      tournament: tournamentResolver.data,
+      schedules: tournamentResolver.schedules,
+      characters: { escape: ESCAPE_CHARACTERS, hunter: HUNTER_CHARACTERS },
+      characterMeta: CONFIG.characterMeta || {},
+      phases: PHASES,
+      slots: SLOT_CONFIG,
+      ui: CONFIG.ui,
+      sessions: bpService.listSessionSummaries(),
+      testMatchIds: ['bp-interface-test-match'],
+      commentatorImages: commentatorImagesCached().map(({ filePath, ...image }) => image),
+      commentatorLogoImages: commentatorLogoImages().map(({ filePath, ...image }) => image),
+      commentatorImage: activeCommentatorImage ? { id: activeCommentatorImage.id, name: activeCommentatorImage.name } : null,
+      commentatorLogoImage: activeCommentatorLogoImage ? { id: activeCommentatorLogoImage.id, name: activeCommentatorLogoImage.name } : null
+    } };
+  }
+  sendJson(res, 200, {
+    ...bpBootstrapCache.parts,
+    timer: { ...CONFIG.timer, phaseDurations: phaseDurations(), animationStyle: animationStyle() },
+    obs: obsController.status(),
+    dynamicBp: presentationStatus(),
+    laboratory: laboratorySettings(db)
+  });
+});
+
+route('POST', '/api/bp/commentator-image', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const image = commentatorImage(body.imageId);
+    await obsController.syncCommentatorImage(image.filePath);
+    updateCommentatorImageId(image.id);
+    activeCommentatorImage = image;
+    bpService.setGlobalCommentatorImage(image);
+    sendJson(res, 200, { id: image.id, name: image.name });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/bp/commentator-logo-image', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const image = commentatorLogoImage(body.imageId);
+    await obsController.syncCommentatorLogo(image.filePath);
+    updateCommentatorLogoImageId(image.id);
+    activeCommentatorLogoImage = image;
+    sendJson(res, 200, { id: image.id, name: image.name });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/bp/presentation/events', ({ req, res }) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive'
+  });
+  bpPresentationClients.add(res);
+  res.on('error', () => bpPresentationClients.delete(res));
+  res.write(`event: presentation\ndata: ${JSON.stringify(presentationStatus('connected'))}\n\n`);
+  broadcastBp('bp-presentation', presentationStatus('client-connected'));
+  req.on('close', () => {
+    bpPresentationClients.delete(res);
+    broadcastBp('bp-presentation', presentationStatus('client-disconnected'));
+  });
+});
+
+route('POST', '/api/bp/presentation/settings', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const enabled = Boolean(body.enabled);
+    let obsError = null;
+    bpPresentation.setEnabled(enabled);
+    await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled })
+      .catch(error => { obsError = error.message; });
+    sendJson(res, 200, { ...presentationStatus(), obsSynced: !obsError, obsError });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, ...presentationStatus() });
+  }
+});
+
+route('POST', '/api/bp/timer-config', async ({ req, res, requestSession }) => {
+  let body = {};
+  const beforeSettings = {
+    phaseDurations: phaseDurations(),
+    animationStyle: animationStyle()
+  };
+  try {
+    body = JSON.parse((await readBody(req)) || '{}');
+    const settings = updateBpTimerConfig(body);
+    bpPresentation.commit('animation-style-updated');
+    const eventLog = recordCountdownEvent(COUNTDOWN_HUB_ID, requestSession,
+      { type: 'update-bp-timer-config', ...body }, beforeSettings, settings);
+    broadcastCountdownLog(ensureHub(COUNTDOWN_HUB_ID), eventLog);
+    sendJson(res, 200, {
+      phases: timerPhaseMetadata(),
+      ...settings,
+      eventLog
+    });
+  } catch (error) {
+    recordCountdownEvent(COUNTDOWN_HUB_ID, requestSession,
+      { type: 'update-bp-timer-config', ...body }, beforeSettings, null, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/bp/events', ({ req, res }) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive'
+  });
+  res.write(`event: obs-status\ndata: ${JSON.stringify(obsController.status())}\n\n`);
+  bpClients.add(res);
+  res.on('error', () => bpClients.delete(res));
+  req.on('close', () => bpClients.delete(res));
+});
+
+route('POST', '/api/bp/sessions', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const auditActor = {
+      userId: requestSession.userId,
+      displayName: actorDisplayName(requestSession.userId),
+      identityKey: requestSession.activeIdentityKey
+    };
+    const session = bpService.ensureSession(body.matchId, Number(body.gameNumber), String(body.room).toUpperCase(), Number(body.attempt || 1), auditActor);
+    sendJson(res, 200, bpService.serialize(session));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('GET', '/api/bp/sessions/:id', ({ res, params }) => {
+  try {
+    sendJson(res, 200, bpService.serialize(bpService.getSession(params.id)));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/bp/sessions/:id/actions', async ({ req, res, requestSession, params }) => {
+  const id = params.id;
+  try {
+    const action = JSON.parse((await readBody(req)) || '{}');
+    const auditActor = {
+      userId: requestSession.userId,
+      displayName: actorDisplayName(requestSession.userId),
+      identityKey: requestSession.activeIdentityKey
+    };
+    bpService.setAuditActor(id, auditActor);
+    let session;
+    if (action.type === 'start') {
+      if (bpService.isTestMatch(bpService.getSession(id).matchId) && bpService.getSession(id).status !== 'ready') {
+        const testMatchId = bpService.getSession(id).matchId;
+        const testGameNumber = bpService.getSession(id).gameNumber;
+        const testRoom = bpService.getSession(id).room;
+        bpService.purgeTestMatchData(testMatchId);
+        const rebuilt = bpService.ensureSession(testMatchId, testGameNumber, testRoom, 1, auditActor);
+        session = bpService.startSession(rebuilt.id);
+      } else {
+        session = bpService.startSession(id);
+      }
+      setWorkingPresence(requestSession.userId, true, `bp:${id}`);
+      if (!bpService.isTestMatch(session.matchId)) obsController.syncMatch(session, auditActor).catch(() => {});
+    } else if (action.type === 'complete') {
+      session = bpService.completeSession(id);
+    } else if (action.type === 'set-slot') {
+      session = bpService.updateSlot(id, action);
+    } else if (action.type === 'clear-slot') {
+      session = bpService.clearSlot(id, action.slotId);
+    } else if (action.type === 'restore-revision') {
+      session = bpService.restoreRevision(id, Number(action.revision));
+    } else if (action.type === 'create-replay') {
+      session = bpService.createReplay(id);
+      await syncCurrentScheduleImage().catch(() => {});
+    } else if (action.type === 'sync-obs') {
+      session = bpService.serialize(bpService.getSession(id));
+      if (!bpService.isTestMatch(session.matchId)) {
+        await obsController.syncSession(sessionForObs(session), auditActor);
+        if (bpPresentation.state.dynamicEnabled) bpPresentation.prepare(session, 'obs-sync-prepared');
+      }
+    } else if (action.type === 'sync-match') {
+      session = bpService.serialize(bpService.getSession(id));
+      if (!bpService.isTestMatch(session.matchId)) await obsController.syncMatch(session, auditActor);
+    } else if (action.type === 'sync-match-and-switch') {
+      session = bpService.serialize(bpService.getSession(id));
+      if (bpService.isTestMatch(session.matchId)) {
+      } else {
+        await obsController.syncMatch(session, auditActor);
+        await obsController.switchScene('matchup');
+      }
+    } else if (action.type === 'switch-scene-bp') {
+      session = bpService.serialize(bpService.getSession(id));
+      if (bpService.isTestMatch(session.matchId)) {
+        sendJson(res, 200, session);
+        return;
+      }
+      let dynamicReady = false;
+      if (bpPresentation.state.dynamicEnabled) {
+        bpPresentation.prepare(session, 'scene-switch-prepared');
+        dynamicReady = await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled: true })
+          .then(() => true, () => {
+            bpPresentation.hide('overlay-obs-failed');
+            return false;
+          });
+      } else {
+        bpPresentation.hide('dynamic-disabled-switch');
+        await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled: false }).catch(() => {});
+      }
+      await obsController.switchScene('bp');
+      if (dynamicReady) bpPresentation.armIntro(session, 2000);
+    } else if (action.type === 'set-commentator-image') {
+      const image = commentatorImage(action.imageId);
+      await obsController.syncCommentatorImage(image.filePath);
+      updateCommentatorImageId(image.id);
+      activeCommentatorImage = image;
+      session = bpService.setCommentatorImage(id, image);
+    } else if (action.type === 'set-output-mode') {
+      session = bpService.setOutputMode(id, action.mode);
+    } else if (action.type === 'set-result') {
+      session = bpService.setResult(id, action.winnerRole);
+      setWorkingPresence(requestSession.userId, false, `bp:${id}`);
+      recordUserExecution(requestSession.userId, id);
+      await obsController.syncResult(session).catch(() => {});
+      await syncCurrentScheduleImage().catch(() => {});
+    } else if (action.type === 'declare-forfeit') {
+      session = bpService.declareForfeit(id, action.forfeitingTeamId);
+      setWorkingPresence(requestSession.userId, false, `bp:${id}`);
+      await obsController.syncScore(session.score).catch(() => {});
+      await syncCurrentScheduleImage().catch(() => {});
+    } else if (action.type === 'revoke-forfeit') {
+      session = bpService.revokeForfeit(id);
+      setWorkingPresence(requestSession.userId, true, `bp:${id}`);
+      await obsController.syncScore(session.score).catch(() => {});
+      await syncCurrentScheduleImage().catch(() => {});
+    } else if (action.type === 'reset-session') {
+      session = bpService.resetSession(id);
+      setWorkingPresence(requestSession.userId, false, `bp:${id}`);
+      await syncCurrentScheduleImage().catch(() => {});
+    } else {
+      throw new Error(`未知BP操作: ${action.type}`);
+    }
+    recordAuditLog('event', requestSession, action.type, {
+      sessionId: id,
+      gameNumber: session?.gameNumber,
+      room: session?.room
+    });
+    sendJson(res, 200, session);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/bp/sessions/:id/result-image', async ({ req, res, params }) => {
+  try {
+    const id = params.id;
+    const current = bpService.serialize(bpService.getSession(id));
+    if (!current.result?.winnerRole) throw new Error('请先选择本局战果');
+    const buffer = await readBuffer(req);
+    const extension = imageExtension(req.headers['content-type']);
+    const saved = writeImage(
+      CONFIG.assets.resultUploadRoot,
+      `${divisionLabel(current.matchId)}-${chineseRound(current.matchId)}-MATCH ${current.gameNumber}-${current.room}房`,
+      extension,
+      buffer
+    );
+    const session = bpService.setResultImage(id, saved);
+    const obsSynced = await obsController.syncResult(session)
+      .then(() => obsController.syncResultImage(saved.filePath))
+      .then(() => obsController.switchScene('result'))
+      .then(() => true, () => false);
+    sendJson(res, 200, { session, ...saved, obsSynced });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/hubs', ({ res }) => {
+  const id = COUNTDOWN_HUB_ID;
+  ensureHub(id);
+  sendJson(res, 201, {
+    id,
+    controlUrl: `/control.html?hub=${id}`,
+    overlayUrl: `/hub/${id}`
+  });
+});
+
+route('GET', '/api/hubs/:id/state', ({ res, params }) => {
+  const hub = ensureHub(params.id);
+  hub.state = { ...hub.state, remainingSeconds: currentRemaining(hub.state), updatedAt: Date.now() };
+  sendJson(res, 200, hub.state);
+});
+
+route('GET', '/api/hubs/:id/logs', ({ res, url, params }) => {
+  const hub = ensureHub(params.id);
+  sendJson(res, 200, pagedCountdownEvents(hub.id, {
+    limit: url.searchParams.get('limit'),
+    cursor: url.searchParams.get('cursor'),
+    after: url.searchParams.get('after')
+  }));
+});
+
+route('GET', '/api/hubs/:id/events', ({ req, res, requestSession, params }) => {
+  const hub = ensureHub(params.id);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive'
+  });
+  res.write(`event: state\ndata: ${JSON.stringify(hub.state)}\n\n`);
+  hub.clients.add(res);
+  if (requestSession && hasPermission(requestSession, 'countdown.operate')) {
+    if (!hub.logClients) hub.logClients = new Set();
+    hub.logClients.add(res);
+  }
+  res.on('error', () => {
+    hub.clients.delete(res);
+    if (hub.logClients) hub.logClients.delete(res);
+  });
+  req.on('close', () => {
+    hub.clients.delete(res);
+    hub.logClients?.delete(res);
+  });
+});
+
+route('POST', '/api/hubs/:id/obs-toggle', async ({ req, res, params }) => {
+  const id = params.id;
+  const hub = ensureHub(id);
+  if (!HUB_IDS.has(id)) {
+    sendJson(res, 404, { error: '未知的 HUB' });
+    return;
+  }
+  let body = {};
+  try { body = JSON.parse((await readBody(req)) || '{}'); } catch {}
+  const enabled = Boolean(body.enabled);
+  writeHudSourceEnabled({ [id]: enabled });
+  if (!obsClient.connected) {
+    sendJson(res, 200, { enabled, applied: false, reason: 'OBS 未连接，已记忆，将在连接后生效' });
+    return;
+  }
+  try {
+    const sourceName = id === BP_HUB_ID ? OBS_INPUTS.bpOverlay : OBS_INPUTS.countdownBrowser;
+    const result = await obsController.setSourceVisible(sourceName, enabled);
+    sendJson(res, 200, { enabled, applied: true, sceneName: result.sceneName });
+  } catch (error) {
+    sendJson(res, 200, { enabled, applied: false, error: error.message });
+  }
+});
+
+route('POST', '/api/hubs/:id/actions', async ({ req, res, requestSession, params }) => {
+  const hub = ensureHub(params.id);
+  const beforeState = { ...hub.state, remainingSeconds: currentRemaining(hub.state) };
+  try {
+    const body = await readBody(req);
+    action = body ? JSON.parse(body) : {};
+    let eventLog = null;
+    withTransaction(() => {
+      hub.state = applyCountdownAction(hub.state, action);
+      saveHubState(hub);
+      eventLog = recordCountdownEvent(hub.id, requestSession, action, beforeState, hub.state);
+    });
+    broadcast(hub);
+    broadcastCountdownLog(hub, eventLog);
+    sendJson(res, 200, { ...hub.state, eventLog });
+  } catch (error) {
+    // 写库失败：库已随事务回滚，内存状态同步回退到操作前并广播纠正
+    hub.state = beforeState;
+    recordCountdownEvent(hub.id, requestSession, action, beforeState, null, false, error.message);
+    broadcast(hub);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/obs/bp-overlay', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const result = await obsController.configureBpOverlay({
+      url: body.url || BP_OVERLAY_URL,
+      enabled: true
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('POST', '/api/obs/connect', async ({ req, res }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const password = typeof body.password === 'string' && body.password.length ? body.password : obsClient.password;
+    obsClient.configure({ url: body.url, password });
+    runtimeConfig.obs = { url: obsClient.url, password: obsClient.password };
+    persistRuntimeConfig();
+    const status = await obsController.connect();
+    await obsController.syncCountdownUrl(body.countdownUrl);
+    await syncCurrentScheduleImage();
+    if (activeCommentatorLogoImage) await obsController.syncCommentatorLogo(activeCommentatorLogoImage.filePath);
+    const dynamicObs = await obsController.configureBpOverlay({
+      url: BP_OVERLAY_URL,
+      enabled: bpPresentation.state.dynamicEnabled
+    }).then(() => ({ synced: true }), error => ({ synced: false, error: error.message }));
+    sendJson(res, 200, { ...status, dynamicBp: dynamicObs });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, ...obsController.status() });
+  }
+});
+
+route('POST', '/api/bracket-image', async ({ req, res }) => {
+  try {
+    const buffer = await readBuffer(req);
+    const extension = imageExtension(req.headers['content-type']);
+    const stamp = beijingTimestamp();
+    const saved = writeImage(CONFIG.assets.bracketUploadRoot, `手游赛区-${stamp}`, extension, buffer);
+    const obsSynced = await obsController.syncBracketImage(saved.filePath)
+      .then(() => obsController.switchScene('bracket'))
+      .then(() => true, () => false);
+    sendJson(res, 200, { ...saved, obsSynced });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+route('PUT', '/api/events/:id', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req, 10 * 1024 * 1024)) || '{}');
+    const event = updateManagedEvent(db, params.id, body, requestSession.userId);
+    recordAuditLog('account', requestSession, '修改赛事', { eventId: event.id, name: event.name });
+    sendJson(res, 200, { event });
+  } catch (error) {
+    recordAuditLog('account', requestSession, '修改赛事', { eventId: params.id }, false, error.message);
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+// 启动断言：权限表键必须全部命中已注册路由，键名漂移要在启动期爆掉而不是静默丢权限门
+for (const permissionKey of Object.keys(ROUTE_PERMISSIONS)) {
+  if (!hasRoute(permissionKey)) {
+    throw new Error(`ROUTE_PERMISSIONS 引用了未注册的路由: ${permissionKey}`);
+  }
+}
+
 bpService.on('session', payload => {
   broadcastBp('session', payload);
   bpPresentation.publishSession(payload.session, payload.reason);
@@ -1872,7 +3812,7 @@ bpService.on('timer', ({ seconds }) => {
   obsController.setTimer(seconds).catch(() => {});
 });
 bpService.on('sync-session', ({ session }) => {
-  obsController.syncSession(sessionForObs(session)).catch(() => {});
+  obsController.syncSession(sessionForObs(session), session.auditActor || null).catch(() => {});
 });
 bpService.on('score', ({ score }) => {
   obsController.syncScore(score).catch(() => {});
@@ -1886,13 +3826,13 @@ obsClient.on('CurrentProgramSceneChanged', event => {
   }
 });
 obsController.on('operation', operation => broadcastBp('obs-operation', operation));
-let activeAuditActor = null;
 obsController.on('operation', operation => {
+  const actor = operation.actor || null;
   db.prepare(`INSERT INTO obs_operation_logs
     (timestamp_ms, actor_user_id, actor_display_name, actor_identity_key, label, ok, error, category)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(operation.timestamp ?? Date.now(), activeAuditActor?.userId || null,
-      activeAuditActor?.displayName || '系统', activeAuditActor?.identityKey || 'system',
+    .run(operation.timestamp ?? Date.now(), actor?.userId || null,
+      actor?.displayName || '系统', actor?.identityKey || 'system',
       operation.label, operation.ok ? 1 : 0,
       operation.error || null, 'obs');
 });
@@ -2015,6 +3955,13 @@ function recordCountdownEvent(hubId, session, action, beforeState, afterState, s
 }
 
 function pagedCountdownEvents(hubId, options = {}) {
+  const after = paginationNumber(options.after, 0, Number.MAX_SAFE_INTEGER);
+  if (after > 0) {
+    // 增量补拉模式：按 id 升序取断线窗口内新增的事件，供重连补齐过程记录
+    const rows = db.prepare(`SELECT * FROM countdown_event_logs
+      WHERE hub_id = ? AND id > ? ORDER BY id ASC LIMIT 200`).all(hubId, after);
+    return { logs: rows.map(serializeCountdownEvent), nextCursor: null, hasMore: false };
+  }
   const limit = Math.max(1, paginationNumber(options.limit, 50, 100));
   const cursor = paginationNumber(options.cursor, 0, Number.MAX_SAFE_INTEGER);
   const params = [hubId];
@@ -2272,8 +4219,24 @@ function sendShell(res, file) {
       res.end('Not found');
       return;
     }
-    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
-    res.end(data);
+    const headers = { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store', Vary: 'Accept-Encoding' };
+    const send = (body, encoding) => {
+      headers['Content-Length'] = body.length;
+      if (encoding) headers['Content-Encoding'] = encoding;
+      res.writeHead(200, headers);
+      res.end(body);
+    };
+    if (data.length <= 1024 || !/\bgzip\b/.test(String(res.req?.headers['accept-encoding'] || ''))) {
+      send(data);
+      return;
+    }
+    zlib.gzip(data, (gzipError, gzipped) => {
+      if (gzipError) {
+        send(data);
+        return;
+      }
+      send(gzipped, 'gzip');
+    });
   });
 }
 
@@ -2299,60 +4262,70 @@ function serveStatic(req, res, pathname) {
     return;
   }
 
-  fs.readFile(filePath, (error, data) => {
-    if (error) {
+  fs.stat(filePath, (statError, stats) => {
+    if (statError || !stats.isFile()) {
       res.writeHead(404);
       res.end('Not found');
       return;
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': 'no-store'
+    // js/css 恒带 ?v= 版本参数、ui-text.json 随版本递增，图片字体本就低频变化，均可强缓存；
+    // 其余 JSON（如赛事种子数据）与页面保持 no-store。mtime 型 ETag 让 304 免去整文件读取与哈希。
+    const cacheable = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.woff2', '.woff', '.mp4', '.webm', '.ico'].includes(ext)
+      || ext === '.js' || ext === '.css'
+      || filePath.replaceAll('\\', '/').endsWith('/assets/data/ui-text.json');
+    const etag = `"${stats.size.toString(16)}-${Math.floor(stats.mtimeMs).toString(16)}"`;
+    if (cacheable && req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag, 'Cache-Control': 'private, max-age=604800' });
+      res.end();
+      return;
+    }
+    fs.readFile(filePath, (error, data) => {
+      if (error) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+      const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', Vary: 'Accept-Encoding' };
+      if (cacheable) {
+        headers['Cache-Control'] = 'private, max-age=604800';
+        headers.ETag = etag;
+      } else {
+        headers['Cache-Control'] = 'no-store';
+      }
+      const send = (body, encoding) => {
+        if (encoding) headers['Content-Encoding'] = encoding;
+        res.writeHead(200, headers);
+        res.end(body);
+      };
+      // 文本类资源走 gzip 协商压缩，908K 脚本传输可降约七成
+      const compressible = ['.js', '.css', '.json', '.svg', '.html', '.txt'].includes(ext);
+      if (data.length <= 1024 || !/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+        send(data);
+        return;
+      }
+      zlib.gzip(data, (gzipError, gzipped) => {
+        if (gzipError) {
+          send(data);
+          return;
+        }
+        send(gzipped, 'gzip');
+      });
     });
-    res.end(data);
   });
 }
 
-function requiredPermission(req, pathname, url) {
-  if (pathname === '/api/events' && req.method === 'GET') return 'operations.view';
-  if (/^\/api\/events\/[^/]+\/media\/(logo|cover)$/.test(pathname)) return 'operations.view';
-  if (pathname === '/api/events' || pathname.startsWith('/api/events/')) return 'events.manage';
-  if (pathname.startsWith('/api/admin/characters')) return 'characterStats.manage';
-  if (pathname.startsWith('/api/admin/notifications')) return 'notifications.publish';
-  if (pathname.startsWith('/api/admin/permissions')) return 'permissions.manage';
-  if (pathname.startsWith('/api/admin/accounts')) return 'accounts.manage';
-  if (pathname.startsWith('/api/admin/laboratory-settings')) return 'system.manage';
-  if (pathname.startsWith('/api/admin/system-access')) return 'system.manage';
-  const operationsMatch = pathname.match(/^\/api\/operations\/([^/]+)$/);
-  if (operationsMatch) {
-    const view = operationsMatch[1];
-    if (view === 'terminal') return 'system.status.view';
-    if (MANAGEMENT_VIEWS.has(view)) return 'system.manage';
-    if (view === 'resources') return 'materials.view';
-    if (view === 'hud') return 'hud.view';
-    if (view !== 'personal') return 'operations.view';
-  }
-  if (pathname === '/api/logs') {
-    return url.searchParams.get('category') === 'account' ? 'logs.account.view' : 'logs.event.view';
-  }
-  if (pathname === '/api/character-stats') return 'characterStats.view';
+// 骨架残留路径权限：仅覆盖不入路由表的边界路径（sha256 媒体五组、素材 content 流、BP 导出）。
+// 表未命中且此处为 null 的 /api 路径落入 if 链或静态兜底（404）——原 requiredPermission 对
+// 无 handler 组合（错误方法访问受限路径）兜底的 403 已随其退役收敛为 404。
+function residualPermission(req, pathname) {
+  if (req.method !== 'GET') return null;
+  if (/^\/api\/events\/[^/]+\/media\/(logo|cover|group_qr)$/.test(pathname)) return 'operations.view';
+  if (/^\/api\/communications\/channels\/[^/]+\/avatar$/.test(pathname)) return 'communication.use';
+  if (/^\/api\/materials\/[^/]+\/content$/.test(pathname)) return 'materials.manage';
+  if (/^\/api\/bp\/sessions\/[^/]+\/export$/.test(pathname)) return 'bp.view';
   if (/^\/api\/characters\/[^/]+\/portrait$/.test(pathname)) return 'characterStats.view';
   if (/^\/api\/characters\/[^/]+\/skills\/[1-3]\/icon$/.test(pathname)) return 'characterStats.view';
-  if (pathname.startsWith('/api/communications')) return 'communication.use';
-  if (pathname === '/api/materials' && req.method === 'GET') return 'materials.view';
-  if (pathname.startsWith('/api/materials') || pathname.startsWith('/api/material-paths')) return 'materials.manage';
-  if (pathname === '/api/bracket-image') return 'bracket.publish';
-  if (pathname.startsWith('/api/obs')) return req.method === 'GET' ? 'obs.view' : 'obs.manage';
-  if (pathname === '/api/users/search' || pathname.startsWith('/api/friends')) return 'friends.manage';
-  if (pathname === '/api/bp/timer-config') {
-    return req.method === 'GET' ? 'countdown.operate' : 'bp.configure';
-  }
-  if (pathname === '/api/bp/presentation/settings') return 'bp.configure';
-  if (pathname.startsWith('/api/bp')) {
-    return req.method === 'GET' ? 'bp.view' : 'bp.operate';
-  }
-  if (pathname === '/api/hubs' || pathname.startsWith('/api/hubs/')) return 'countdown.operate';
   return null;
 }
 
@@ -2364,7 +4337,10 @@ function timerPhaseMetadata() {
   }));
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
+  // 全响应安全头：nosniff 防类型嗅探；SAMEORIGIN 允许同源 iframe 预览、拒绝外站嵌套
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   const url = new URL(req.url, `http://${req.headers.host || `localhost:${PORT}`}`);
   const pathname = decodeURIComponent(url.pathname);
 
@@ -2382,8 +4358,18 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 401, { error: '未登录或会话已过期' });
     return;
   }
-  const permission = pathname.startsWith('/api/') && !authExempt
-    ? requiredPermission(req, pathname, url) : null;
+  // 路由表分发：表命中读表项权限（函数形态按 url/params 解析），表未命中读残留路径映射
+  const matchedRoute = matchRoute(req.method, pathname);
+  let permission = null;
+  if (pathname.startsWith('/api/') && !authExempt) {
+    if (matchedRoute) {
+      permission = typeof matchedRoute.permission === 'function'
+        ? matchedRoute.permission({ url, params: matchedRoute.params })
+        : matchedRoute.permission;
+    } else {
+      permission = residualPermission(req, pathname);
+    }
+  }
   if (permission && !hasPermission(requestSession, permission)) {
     sendJson(res, 403, {
       code: 'PERMISSION_DENIED',
@@ -2392,272 +4378,10 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
-  if (req.method === 'GET' && pathname === '/api/system/health') {
-    let version = 'unknown';
-    try { version = readReleaseData().currentVersion; } catch {}
-    sendJson(res, 200, {
-      product: 'stella-director',
-      version,
-      status: 'ready',
-      pid: process.pid,
-      startedAt: STARTED_AT,
-      dataDir: DATA_ROOT
-    });
-    return;
+  if (matchedRoute) {
+    return matchedRoute.handler({ req, res, url, pathname, params: matchedRoute.params, requestSession });
   }
-
-  if (req.method === 'GET' && pathname === '/api/auth/status') {
-    sendJson(res, 200, { setupRequired: authSetupRequired() });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/auth/setup') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      initializeCredentials(body.password);
-      sendJson(res, 201, { ok: true });
-    } catch (error) {
-      sendJson(res, authSetupRequired() ? 400 : 409, { ok: false, error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/auth/login') {
-    try {
-      if (authSetupRequired()) {
-        sendJson(res, 409, { ok: false, setupRequired: true, error: '请先初始化开发者密码' });
-        return;
-      }
-      const body = JSON.parse((await readBody(req)) || '{}');
-      let context = deviceContext(body, req, requestLocation(req));
-      const portal = loginPortal(body.role);
-      const attemptedRow = findUserRow(String(body.account || '').trim());
-      const targetIdentityKey = attemptedRow
-        ? identityKeysForUser(attemptedRow.id, attemptedRow.role)[0]
-        : body.role === 'developer' ? 'administrator' : 'guest';
-      const attemptedSession = {
-        ...context,
-        userId: attemptedRow?.id || null,
-        role: attemptedRow?.role,
-        permissions: attemptedRow ? JSON.parse(attemptedRow.permissions_json || '[]') : [],
-        activeIdentityKey: targetIdentityKey,
-        actorDisplayName: attemptedRow
-          ? actorDisplayName(attemptedRow.id)
-          : `未识别账号：${String(body.account || '').trim() || '空账号'}`
-      };
-      const user = verifyCredentials(body.account, body.password, portal);
-      if (user?.disabled) {
-        recordAuditLog('account', attemptedSession, '登录失败', {
-          account: String(body.account || '').trim(), reason: '账号已停用', targetIdentityKey
-        }, false, '账号已停用');
-        sendJson(res, 403, {
-          ok: false,
-          code: 'ACCOUNT_DISABLED',
-          error: '您的账号已被停用，请联系开发者/管理员进行账号恢复'
-        });
-        return;
-      }
-      if (!user) {
-        recordAuditLog('account', attemptedSession, '登录失败', {
-          account: String(body.account || '').trim(), reason: '账号或密码错误', targetIdentityKey
-        }, false, '账号或密码错误');
-        sendJson(res, 401, {
-          ok: false,
-          code: portal.invalidCode,
-          error: portal.invalidMessage
-        });
-        return;
-      }
-      const rejectClosedSystemLogin = () => {
-        recordAuditLog('account', attemptedSession, '登录失败', {
-          account: String(body.account || '').trim(), reason: '系统暂未开放用户登录', targetIdentityKey
-        }, false, '系统暂未开放用户登录');
-        sendJson(res, 403, {
-          ok: false,
-          code: 'SYSTEM_ACCESS_CLOSED',
-          error: '系统暂未开放用户登录，请联系管理员'
-        });
-      };
-      if (!systemAccessOpen() && !hasSystemManagementEntitlement(user)) {
-        rejectClosedSystemLogin();
-        return;
-      }
-      context = deviceContext(body, req, await resolveRequestLocation(req));
-      if (!systemAccessOpen() && !hasSystemManagementEntitlement(user)) {
-        rejectClosedSystemLogin();
-        return;
-      }
-      const { session, replacedSessions } = createSession(user, body.remember, context);
-      recordUserLogin(user.id, context);
-      connectPresence(user.id);
-      recordAuditLog('account', session, '登录系统', {
-        account: user.account,
-        targetIdentityKey,
-        replacedSessionCount: replacedSessions.length,
-        replacedOtherDevice: replacedSessions.some(item => item.deviceFingerprint !== context.deviceFingerprint)
-      });
-      res.setHeader('Set-Cookie', sessionCookie(session.token, body.remember, secureRequest(req)));
-      sendJson(res, 200, {
-        ok: true,
-        role: user.role,
-        account: user.account,
-        replacedSessionCount: replacedSessions.length
-      });
-    } catch (error) {
-      sendJson(res, 400, { ok: false, error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/auth/session') {
-    const session = validateSession(getSessionToken(req));
-    sendJson(res, 200, session
-      ? { authenticated: true, role: session.role, account: session.account,
-        identityKeys: session.identityKeys || identityKeysForUser(session.userId, session.role),
-        activeIdentityKey: session.activeIdentityKey }
-      : { authenticated: false });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/auth/logout') {
-    const session = validateSession(getSessionToken(req));
-    if (session) {
-      disconnectPresence(session.userId);
-      recordAuditLog('account', session, '退出系统');
-    }
-    destroySession(getSessionToken(req));
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
-    sendJson(res, 200, { ok: true });
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/session/events') {
-    const token = getSessionToken(req);
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no'
-    });
-    const removeClient = addSessionEventClient(token, res);
-    res.write(`event: session-state\ndata: ${JSON.stringify({ authenticated: true })}\n\n`);
-    req.on('close', removeClient);
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/presence/heartbeat') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 200, recordPresenceHeartbeat(requestSession.userId, body));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/presence/disconnect') {
-    sendJson(res, 200, disconnectPresence(requestSession.userId));
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/presence/preference') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      if (!PRESENCE_PREFERENCES.has(body.preference)) throw new Error('在线状态设置无效');
-      const snapshot = setManualPresence(requestSession.userId, body.preference);
-      recordAuditLog('account', requestSession, '切换在线状态', { preference: snapshot.preference });
-      sendJson(res, 200, snapshot);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/presence/work') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 200, setWorkingPresence(
-        requestSession.userId,
-        Boolean(body.active),
-        body.contextId
-      ));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/profile') {
-    try {
-      sendJson(res, 200, readUserProfile(requestSession));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const operationsMatch = pathname.match(/^\/api\/operations\/([^/]+)$/);
-  if (req.method === 'GET' && operationsMatch) {
-    try {
-      const view = operationsMatch[1];
-      const runtime = {
-        pid: process.pid,
-        node: process.version,
-        platform: process.platform,
-        uptimeSeconds: process.uptime(),
-        startedAt: STARTED_AT,
-        memory: process.memoryUsage(),
-        activeSessions: loadSessions().filter(item => item.expiresAt > Date.now()).length,
-        communicationStreams: communicationClients.size,
-        notificationStreams: notificationClients.size,
-        presentationStreams: bpPresentationClients.size,
-        systemOpen: systemAccessOpen(),
-        obs: obsController.status()
-      };
-      sendJson(res, 200, operationsView(db, view, {
-        userId: requestSession.userId,
-        today: url.searchParams.get('today') || undefined,
-        query: url.searchParams.get('query') || '',
-        eventId: url.searchParams.get('eventId') || '',
-        division: url.searchParams.get('division') || '',
-        role: url.searchParams.get('role') || '',
-        teamId: url.searchParams.get('teamId') || '',
-        limit: url.searchParams.get('limit') || undefined,
-        offset: url.searchParams.get('offset') || undefined,
-        runtime
-      }));
-    } catch (error) {
-      sendJson(res, error.code === 'OPERATIONS_VIEW_NOT_FOUND' ? 404 : 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/events') {
-    try {
-      sendJson(res, 200, {
-        ...managedEventSnapshot(db, url.searchParams.get('filter') || 'all'),
-        canManage: hasPermission(requestSession, 'events.manage')
-      });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/events') {
-    try {
-      const body = JSON.parse((await readBody(req, 10 * 1024 * 1024)) || '{}');
-      const event = createManagedEvent(db, body, requestSession.userId);
-      recordAuditLog('account', requestSession, '创建赛事', { eventId: event.id, name: event.name });
-      sendJson(res, 201, { event });
-    } catch (error) {
-      recordAuditLog('account', requestSession, '创建赛事', {}, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const eventMediaMatch = pathname.match(/^\/api\/events\/([^/]+)\/media\/(logo|cover)$/);
+  const eventMediaMatch = pathname.match(/^\/api\/events\/([^/]+)\/media\/(logo|cover|group_qr)$/);
   if (req.method === 'GET' && eventMediaMatch) {
     try {
       const media = readEventMedia(db, eventMediaMatch[1], eventMediaMatch[2]);
@@ -2671,58 +4395,30 @@ const server = http.createServer(async (req, res) => {
         res.end();
         return;
       }
-      const data = Buffer.from(media.data);
-      res.writeHead(200, {
-        'Content-Type': media.mime_type,
-        'Content-Length': data.length,
-        'Cache-Control': 'private, max-age=31536000, immutable',
-        ETag: etag,
-        'X-Content-Type-Options': 'nosniff'
-      });
-      res.end(data);
+      // v34 起媒体落盘为文件：按相对路径从 public 读取；历史行仍从库内 BLOB 服务
+      const send = (payload, encoding) => {
+        res.writeHead(200, {
+          'Content-Type': media.mime_type,
+          'Content-Length': payload.length,
+          'Cache-Control': 'private, max-age=31536000, immutable',
+          ETag: etag,
+          'X-Content-Type-Options': 'nosniff'
+        });
+        res.end(payload);
+      };
+      if (media.file_path) {
+        fs.readFile(path.resolve(ROOT, media.file_path), (fileError, fileData) => {
+          if (fileError) {
+            sendJson(res, 404, { error: '赛事媒体文件缺失' });
+            return;
+          }
+          send(fileData);
+        });
+        return;
+      }
+      send(Buffer.from(media.data));
     } catch (error) {
       sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const eventManageMatch = pathname.match(/^\/api\/events\/([^/]+)$/);
-  if (req.method === 'PUT' && eventManageMatch) {
-    try {
-      const body = JSON.parse((await readBody(req, 10 * 1024 * 1024)) || '{}');
-      const event = updateManagedEvent(db, eventManageMatch[1], body, requestSession.userId);
-      recordAuditLog('account', requestSession, '修改赛事', { eventId: event.id, name: event.name });
-      sendJson(res, 200, { event });
-    } catch (error) {
-      recordAuditLog('account', requestSession, '修改赛事', { eventId: eventManageMatch[1] }, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const eventActionMatch = pathname.match(/^\/api\/events\/([^/]+)\/actions$/);
-  if (req.method === 'POST' && eventActionMatch) {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const event = applyEventAction(db, eventActionMatch[1], body.action);
-      const labels = { start: '手动开始赛事', end: '手动结束赛事', 'toggle-mark': '切换赛事标记' };
-      recordAuditLog('account', requestSession, labels[body.action] || '操作赛事', {
-        eventId: event.id, name: event.name, marked: event.marked, status: event.status
-      });
-      sendJson(res, 200, { event });
-    } catch (error) {
-      recordAuditLog('account', requestSession, '操作赛事', { eventId: eventActionMatch[1] }, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const publicProfileMatch = pathname.match(/^\/api\/profiles\/([^/]+)$/);
-  if (req.method === 'GET' && publicProfileMatch) {
-    try {
-      sendJson(res, 200, readUserProfile(requestSession, publicProfileMatch[1]));
-    } catch (error) {
-      sendJson(res, 404, { error: error.message });
     }
     return;
   }
@@ -2763,551 +4459,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'PUT' && pathname === '/api/profile') {
+  // 频道头像读取：sha256 媒体五组之一，按既定边界留骨架；频道写路径已入路由表
+  const channelAvatarMatch = pathname.match(/^\/api\/communications\/channels\/([^/]+)\/avatar$/);
+  if (req.method === 'GET' && channelAvatarMatch) {
+    const channelId = decodeURIComponent(channelAvatarMatch[1]);
     try {
-      const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
-      const sensitiveFields = [];
-      if (String(body.account || '').trim() && String(body.account).trim() !== requestSession.account) {
-        sensitiveFields.push('account');
-      }
-      if (body.newPassword) sensitiveFields.push('password');
-      const profile = saveUserProfile(requestSession, body);
-      recordAuditLog('account', requestSession, '修改个人资料', {
-        fields: ['displayName', 'title', 'bio', 'gender', 'birthDate', 'presencePreference', 'visibleStats'],
-        sensitiveFields
-      });
-      sendJson(res, 200, profile);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/profile/identity') {
-    let targetIdentityKey = '';
-    const previousIdentityKey = requestSession.activeIdentityKey;
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      targetIdentityKey = String(body.identityKey || '');
-      const profile = switchIdentity(requestSession, targetIdentityKey);
-      recordAuditLog('account', requestSession, '切换账号身份', {
-        actorIdentityKey: previousIdentityKey,
-        previousIdentityKey,
-        identityKey: profile.activeIdentityKey,
-        sessionAuthenticated: true
-      });
-      sendJson(res, 200, profile);
-    } catch (error) {
-      recordAuditLog('account', requestSession, '切换账号身份失败', {
-        actorIdentityKey: previousIdentityKey,
-        previousIdentityKey,
-        identityKey: targetIdentityKey,
-        reasonCode: error.code || 'IDENTITY_SWITCH_INVALID'
-      }, false, error.message);
-      sendJson(res, 400, {
-        code: error.code || 'IDENTITY_SWITCH_INVALID',
-        error: error.message
-      });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/notifications/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store, no-transform',
-      'X-Accel-Buffering': 'no',
-      Connection: 'keep-alive'
-    });
-    res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
-    const client = { token: getSessionToken(req), res };
-    notificationClients.add(client);
-    req.on('close', () => notificationClients.delete(client));
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/notifications') {
-    try {
-      ensureVersionNotification(db, readReleaseData());
-    } catch {}
-    sendJson(res, 200, listNotifications(db, requestSession.userId, {
-      offset: url.searchParams.get('offset'),
-      limit: url.searchParams.get('limit')
-    }));
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/notifications/read-all') {
-    const result = markAllNotificationsRead(db, requestSession.userId);
-    broadcastNotification({ type: 'read', targetUserIds: [requestSession.userId], ...result });
-    sendJson(res, 200, result);
-    return;
-  }
-
-  const notificationReadMatch = pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
-  if (notificationReadMatch && req.method === 'POST') {
-    try {
-      const result = markNotificationRead(db, requestSession.userId, notificationReadMatch[1]);
-      broadcastNotification({ type: 'read', notificationId: notificationReadMatch[1],
-        targetUserIds: [requestSession.userId], unreadCount: result.unreadCount,
-        urgentUnreadCount: result.urgentUnreadCount });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 404, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/users/search') {
-    sendJson(res, 200, { users: searchUsers(requestSession, url.searchParams.get('q')) });
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/friends') {
-    sendJson(res, 200, listFriends(requestSession));
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/friends/requests') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const targetUserId = String(body.userId || '');
-      const result = requestFriend(requestSession, targetUserId);
-      const notification = createNotification(db, {
-        type: 'friend_request',
-        title: `${requestSession.actorDisplayName || actorDisplayName(requestSession.userId)} 请求添加你为好友`,
-        summary: '新的好友申请等待处理',
-        body: '你可以前往好友列表接受或处理这条申请。',
-        sourceKind: 'friend_request',
-        sourceId: `${requestSession.userId}:${targetUserId}:${Date.now()}`,
-        targetKind: 'account',
-        targetValue: targetUserId,
-        createdByUserId: requestSession.userId,
-        createdByIdentityKey: requestSession.activeIdentityKey
-      }, [targetUserId]);
-      recordAuditLog('account', requestSession, '发送好友请求', { targetUserId });
-      broadcastCommunication({
-        type: 'friend-request', channelId: null, messageId: null,
-        targetUserIds: [requestSession.userId, targetUserId]
-      });
-      if (notification) broadcastNotification({
-        type: 'created', notificationId: notification.id, urgent: false, targetUserIds: [targetUserId]
-      });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const friendActionMatch = pathname.match(/^\/api\/friends\/([^/]+)(?:\/(accept))?$/);
-  if (friendActionMatch && req.method === 'POST' && friendActionMatch[2] === 'accept') {
-    try {
-      const result = acceptFriend(requestSession, friendActionMatch[1]);
-      recordAuditLog('account', requestSession, '接受好友请求', { targetUserId: friendActionMatch[1] });
-      broadcastCommunication({
-        type: 'friend-updated', channelId: null, messageId: null,
-        targetUserIds: [requestSession.userId, friendActionMatch[1]]
-      });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-  if (friendActionMatch && req.method === 'DELETE' && !friendActionMatch[2]) {
-    const result = removeFriend(requestSession, friendActionMatch[1]);
-    recordAuditLog('account', requestSession, '移除好友关系', { targetUserId: friendActionMatch[1] });
-    broadcastCommunication({
-      type: 'friend-updated', channelId: null, messageId: null,
-      targetUserIds: [requestSession.userId, friendActionMatch[1]]
-    });
-    sendJson(res, 200, result);
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/communications/bootstrap') {
-    try {
-      sendJson(res, 200, communicationBootstrap(db, requestSession, url.searchParams.get('channelId')));
-    } catch (error) {
-      sendJson(res, 400, { code: error.code, error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/communications/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store, no-transform',
-      'X-Accel-Buffering': 'no',
-      Connection: 'keep-alive'
-    });
-    res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
-    const client = { token: getSessionToken(req), res };
-    communicationClients.add(client);
-    req.on('close', () => communicationClients.delete(client));
-    return;
-  }
-
-  const communicationMessagesMatch = pathname.match(/^\/api\/communications\/channels\/([^/]+)\/messages$/);
-  if (communicationMessagesMatch && req.method === 'GET') {
-    try {
-      sendJson(res, 200, listMessages(db, requestSession, communicationMessagesMatch[1], {
-        before: url.searchParams.get('before'),
-        after: url.searchParams.get('after'),
-        unread: url.searchParams.get('unread') === '1',
-        limit: url.searchParams.get('limit'),
-        markRead: url.searchParams.get('markRead') !== '0'
-      }));
-    } catch (error) {
-      sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
-    }
-    return;
-  }
-
-  if (communicationMessagesMatch && req.method === 'POST') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const message = sendMessage(db, requestSession, communicationMessagesMatch[1], body.content);
-      const notification = createMessageNotification(db, message, false);
-      const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
-      broadcastCommunication({ type: 'message', channelId: message.channelId, messageId: message.id });
-      if (notification) broadcastNotification({
-        type: 'created', notificationId: notification.id, urgent: false, targetUserIds
-      });
-      sendJson(res, 201, { message });
-    } catch (error) {
-      sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
-    }
-    return;
-  }
-
-  const communicationMessageActionMatch = pathname.match(
-    /^\/api\/communications\/messages\/(\d+)(?:\/(recall|plus-one|urgent))?$/
-  );
-  if (communicationMessageActionMatch) {
-    const messageId = Number(communicationMessageActionMatch[1]);
-    const action = communicationMessageActionMatch[2] || '';
-    try {
-      if (req.method === 'PATCH' && !action) {
-        const body = JSON.parse((await readBody(req)) || '{}');
-        const message = editMessage(db, requestSession, messageId, body.content);
-        broadcastCommunication({ type: 'message-updated', channelId: message.channelId, messageId });
-        sendJson(res, 200, { message });
+      const media = readChannelAvatar(db, channelId);
+      if (!media) { res.writeHead(404); res.end('Not found'); return; }
+      const etag = '"' + media.updatedAt + '"';
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, { ETag: etag });
+        res.end();
         return;
       }
-      if (req.method === 'DELETE' && !action) {
-        const result = deleteMessageForUser(db, requestSession, messageId);
-        broadcastCommunication({
-          type: 'message-deleted', channelId: result.channelId, messageId,
-          targetUserIds: [requestSession.userId]
-        });
-        sendJson(res, 200, result);
-        return;
-      }
-      if (req.method === 'POST' && action === 'recall') {
-        const message = recallMessage(db, requestSession, messageId);
-        broadcastCommunication({ type: 'message-recalled', channelId: message.channelId, messageId });
-        sendJson(res, 200, { message });
-        return;
-      }
-      if (req.method === 'POST' && action === 'plus-one') {
-        const message = toggleMessagePlusOne(db, requestSession, messageId);
-        broadcastCommunication({ type: 'message-reaction', channelId: message.channelId, messageId });
-        sendJson(res, 200, { message });
-        return;
-      }
-      if (req.method === 'POST' && action === 'urgent') {
-        const body = JSON.parse((await readBody(req)) || '{}');
-        const message = setMessageUrgent(db, requestSession, messageId, Boolean(body.urgent));
-        const notification = syncMessageUrgency(db, message);
-        const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
-        broadcastCommunication({ type: 'message-urgent', channelId: message.channelId, messageId });
-        if (notification) broadcastNotification({
-          type: 'updated', notificationId: notification.id, urgent: message.urgent, targetUserIds
-        });
-        sendJson(res, 200, { message });
-        return;
-      }
+      res.writeHead(200, {
+        'Content-Type': media.mime,
+        'Cache-Control': 'private, max-age=31536000',
+        ETag: etag,
+        'X-Content-Type-Options': 'nosniff'
+      });
+      res.end(media.data);
     } catch (error) {
-      const forbidden = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN';
-      sendJson(res, forbidden ? 403 : 400, { code: error.code, error: error.message });
+      sendJson(res, 400, { error: error.message, code: error.code });
       return;
-    }
-  }
-
-  const communicationReadMatch = pathname.match(/^\/api\/communications\/channels\/([^/]+)\/read$/);
-  if (communicationReadMatch && req.method === 'POST') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = markChannelRead(db, requestSession, communicationReadMatch[1], body.messageId);
-      markChannelNotificationsRead(db, requestSession.userId, communicationReadMatch[1], body.messageId);
-      broadcastNotification({ type: 'read', targetUserIds: [requestSession.userId] });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/communications/private') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const channel = createPrivateChannel(db, requestSession, body.userId);
-      broadcastCommunication({ type: 'channel-created', channelId: channel.id, messageId: null });
-      sendJson(res, 201, { channel });
-    } catch (error) {
-      sendJson(res, 400, { code: error.code, error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/communications/channels') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const channel = createCustomChannel(db, requestSession, body);
-      recordAuditLog('account', requestSession, '创建通讯频道', {
-        channelId: channel.id,
-        channelName: channel.name,
-        memberCount: channel.memberCount
-      });
-      broadcastCommunication({ type: 'channel-created', channelId: channel.id, messageId: null });
-      sendJson(res, 201, { channel });
-    } catch (error) {
-      sendJson(res, 400, { code: error.code, error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/admin/notifications') {
-    const published = listPublishedNotifications(db, {
-      offset: url.searchParams.get('offset'),
-      limit: url.searchParams.get('limit')
-    });
-    const accounts = db.prepare(`SELECT id, username, display_name, status FROM users
-      ORDER BY display_name COLLATE NOCASE, username COLLATE NOCASE`).all().map(row => ({
-      id: row.id,
-      account: row.username,
-      displayName: row.display_name || row.username,
-      status: row.status
-    }));
-    sendJson(res, 200, {
-      ...published,
-      accounts,
-      identities: Object.entries(IDENTITY_LABELS).map(([key, label]) => ({ key, label }))
-    });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/admin/notifications') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = publishNotification(db, requestSession, body);
-      recordAuditLog('account', requestSession, '发布系统通知', {
-        notificationId: result.notification?.id,
-        targetKind: body.target?.kind || body.targetKind,
-        targetValue: body.target?.value || body.targetValue,
-        urgent: Boolean(body.urgent),
-        recipientCount: result.recipientUserIds.length
-      });
-      if (result.notification) broadcastNotification({
-        type: 'created',
-        notificationId: result.notification.id,
-        urgent: result.notification.urgent,
-        summary: result.notification.summary,
-        title: result.notification.title,
-        targetUserIds: result.recipientUserIds
-      });
-      sendJson(res, 201, {
-        notification: result.notification,
-        recipientCount: result.recipientUserIds.length
-      });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/admin/permissions') {
-    sendJson(res, 200, permissionCenterSnapshot());
-    return;
-  }
-
-  const identityPermissionMatch = pathname.match(/^\/api\/admin\/permissions\/identities\/([^/]+)$/);
-  if (identityPermissionMatch && req.method === 'PUT') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = saveIdentityPermissions(
-        identityPermissionMatch[1], body.permissions, requestSession.userId
-      );
-      const sessions = loadSessions();
-      sessions.forEach(item => { item.permissions = effectivePermissionDetails(item).effective; });
-      saveSessions(sessions);
-      recordAuditLog('account', requestSession, '修改身份权限', {
-        identityKey: result.identityKey,
-        permissionCount: result.permissions.length
-      });
-      sendJson(res, 200, permissionCenterSnapshot());
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const accountPermissionMatch = pathname.match(/^\/api\/admin\/permissions\/accounts\/([^/]+)$/);
-  if (accountPermissionMatch && req.method === 'PUT') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = saveAccountOverrides(
-        accountPermissionMatch[1], body.grants, body.denies, requestSession.userId
-      );
-      const sessions = loadSessions();
-      sessions.filter(item => item.userId === result.userId)
-        .forEach(item => { item.permissions = effectivePermissionDetails(item).effective; });
-      saveSessions(sessions);
-      recordAuditLog('account', requestSession, '修改账号权限', {
-        targetUserId: result.userId,
-        grantCount: result.grants.length,
-        denyCount: result.denies.length
-      });
-      sendJson(res, 200, permissionCenterSnapshot());
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/admin/system-access') {
-    sendJson(res, 200, systemAccessPolicy());
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/admin/laboratory-settings') {
-    sendJson(res, 200, laboratorySettings(db));
-    return;
-  }
-
-  if (req.method === 'PUT' && pathname === '/api/admin/laboratory-settings') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const settings = saveLaboratorySettings(db, body);
-      recordAuditLog('account', requestSession,
-        settings.newBpInterface ? '启用新版 BP 界面' : '停用新版 BP 界面', settings);
-      sendJson(res, 200, settings);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'PUT' && pathname === '/api/admin/system-access') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const policy = saveSystemAccessPolicy(body.open);
-      const revoked = policy.open
-        ? { revokedSessionCount: 0, revokedUserCount: 0 }
-        : revokeNonManagementSessions();
-      recordAuditLog('account', requestSession, policy.open ? '开放系统用户登录' : '关闭系统用户登录', {
-        open: policy.open,
-        ...revoked
-      });
-      sendJson(res, 200, policy);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/admin/accounts') {
-    sendJson(res, 200, { accounts: listManagedAccounts(requestSession) });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/admin/accounts') {
-    try {
-      const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
-      const account = createManagedAccount(requestSession, body);
-      recordAuditLog('account', requestSession, '创建账号', { targetUserId: account.id, account: account.account });
-      sendJson(res, 201, account);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/admin/accounts/import') {
-    try {
-      const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
-      const result = importManagedAccounts(requestSession, body.accounts);
-      recordAuditLog('account', requestSession, '批量导入账号', {
-        imported: result.imported.length, rejected: result.rejected.length
-      });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/admin/accounts/bulk-status') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = bulkUpdateManagedAccountStatus(requestSession, body.ids, body.status);
-      recordAuditLog('account', requestSession, '批量变更账号状态', {
-        status: body.status, count: result.changed
-      });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/admin/accounts/bulk-delete') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = bulkDeleteManagedAccounts(requestSession, body.ids);
-      recordAuditLog('account', requestSession, '批量删除账号', { count: result.deleted });
-      sendJson(res, 200, result);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const managedAccountMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
-  if (managedAccountMatch && req.method === 'PUT') {
-    try {
-      const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
-      const account = updateManagedAccount(requestSession, managedAccountMatch[1], body);
-      recordAuditLog('account', requestSession, '修改账号', { targetUserId: managedAccountMatch[1], account: account.account });
-      sendJson(res, 200, account);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-  if (managedAccountMatch && req.method === 'DELETE') {
-    try {
-      deleteManagedAccount(requestSession, managedAccountMatch[1]);
-      recordAuditLog('account', requestSession, '删除账号', { targetUserId: managedAccountMatch[1] });
-      sendJson(res, 200, { ok: true });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-  const titleReviewMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/title-review$/);
-  if (titleReviewMatch && req.method === 'POST') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const account = reviewTitleRequest(requestSession, titleReviewMatch[1], body.decision);
-      recordAuditLog('account', requestSession, body.decision === 'approved' ? '批准岗位申请' : '驳回岗位申请', {
-        targetUserId: titleReviewMatch[1]
-      });
-      sendJson(res, 200, account);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
     }
     return;
   }
@@ -3322,111 +4496,6 @@ const server = http.createServer(async (req, res) => {
       server.close(() => process.exit(0));
       shutdown();
     }, 50).unref?.();
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/hubs') {
-    const id = COUNTDOWN_HUB_ID;
-    ensureHub(id);
-    sendJson(res, 201, {
-      id,
-      controlUrl: `/control.html?hub=${id}`,
-      overlayUrl: `/hub/${id}`
-    });
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/materials') {
-    sendJson(res, 200, materialLibrary.listPage({
-      forceSync: url.searchParams.get('sync') === '1',
-      directoryId: url.searchParams.get('directory') || null,
-      query: url.searchParams.get('q') || '',
-      offset: url.searchParams.get('offset'),
-      limit: url.searchParams.get('limit')
-    }));
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/material-paths/status') {
-    try {
-      sendJson(res, 200, await obsPathMigration.status());
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/material-paths/validate') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 200, await obsPathMigration.validate(body.folderId));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/material-paths/sync') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 200, await obsPathMigration.sync(body.folderId));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/material-paths/rollback') {
-    try {
-      sendJson(res, 200, await obsPathMigration.rollback());
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/update-log') {
-    try {
-      sendJson(res, 200, readReleaseData());
-    } catch (error) {
-      sendJson(res, 500, { error: `更新日志读取失败: ${error.message}` });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/materials/import') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const mode = body.kind === 'folder' ? 'folder' : 'files';
-      const paths = await pickMaterialPaths(mode);
-      if (!paths.length) {
-        sendJson(res, 200, { cancelled: true, added: 0, skipped: 0 });
-        return;
-      }
-      sendJson(res, 200, materialLibrary.addPaths(paths));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/materials/select-folder') {
-    try {
-      const paths = await pickMaterialPaths('folder');
-      sendJson(res, 200, { path: paths[0] || null, cancelled: !paths.length });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/materials/documents') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 201, materialLibrary.createDocument(body.directoryPath, body.name));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
     return;
   }
 
@@ -3466,238 +4535,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const materialActionMatch = pathname.match(/^\/api\/materials\/([^/]+)\/(rename|delete)$/);
-  if (req.method === 'POST' && materialActionMatch) {
+  // BP 对局导出下载：特殊路径边界内留骨架；state 与 actions 已入路由表
+  const bpExportMatch = pathname.match(/^\/api\/bp\/sessions\/([^/]+)\/export$/);
+  if (req.method === 'GET' && bpExportMatch) {
     try {
-      const [, id, action] = materialActionMatch;
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const result = action === 'rename'
-        ? materialLibrary.rename(id, body.name)
-        : materialLibrary.remove(id, body.mode);
-      sendJson(res, 200, result);
+      const id = bpExportMatch[1];
+      const session = bpService.serialize(bpService.getSession(id));
+      const body = Buffer.from(JSON.stringify(session, null, 2), 'utf8');
+      const headers = {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json"`,
+        'Cache-Control': 'no-store',
+        Vary: 'Accept-Encoding'
+      };
+      const send = (payload, encoding) => {
+        headers['Content-Length'] = payload.length;
+        if (encoding) headers['Content-Encoding'] = encoding;
+        res.writeHead(200, headers);
+        res.end(payload);
+      };
+      if (body.length > 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+        zlib.gzip(body, (gzipError, gzipped) => {
+          if (gzipError) {
+            send(body);
+            return;
+          }
+          send(gzipped, 'gzip');
+        });
+        return;
+      }
+      send(body);
     } catch (error) {
       sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const materialOpenMatch = pathname.match(/^\/api\/materials\/([^/]+)\/open$/);
-  if (req.method === 'POST' && materialOpenMatch) {
-    try {
-      const entry = materialLibrary.entry(materialOpenMatch[1]);
-      if (!fs.existsSync(entry.path)) throw new Error('文件或文件夹已经不存在');
-      await openMaterialPath(entry.path);
-      sendJson(res, 200, { opened: true, id: entry.id });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/materials/bulk-delete') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      sendJson(res, 200, materialLibrary.removeMany(body.ids, body.mode));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/window/maximize') {
-    execFile('powershell.exe', [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', WINDOW_CONTROL_SCRIPT
-    ], { windowsHide: true, timeout: 3000 }, error => {
-      if (error) sendJson(res, 500, { error: error.message });
-      else sendJson(res, 200, { maximized: true });
-    });
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/bp/bootstrap') {
-    sendJson(res, 200, {
-      tournament: tournamentResolver.data,
-      schedules: tournamentResolver.schedules,
-      characters: { escape: ESCAPE_CHARACTERS, hunter: HUNTER_CHARACTERS },
-      phases: PHASES,
-      slots: SLOT_CONFIG,
-      ui: CONFIG.ui,
-      timer: { ...CONFIG.timer, phaseDurations: phaseDurations(), animationStyle: animationStyle() },
-      commentatorImages: commentatorImages().map(({ filePath, ...image }) => image),
-      commentatorImage: activeCommentatorImage
-        ? { id: activeCommentatorImage.id, name: activeCommentatorImage.name }
-        : null,
-      commentatorLogoImages: commentatorLogoImages().map(({ filePath, ...image }) => image),
-      commentatorLogoImage: activeCommentatorLogoImage
-        ? { id: activeCommentatorLogoImage.id, name: activeCommentatorLogoImage.name }
-        : null,
-      sessions: bpService.listSessionSummaries(),
-      obs: obsController.status(),
-      dynamicBp: presentationStatus(),
-      laboratory: laboratorySettings(db)
-    });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/bp/commentator-image') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const image = commentatorImage(body.imageId);
-      await obsController.syncCommentatorImage(image.filePath);
-      updateCommentatorImageId(image.id);
-      activeCommentatorImage = image;
-      bpService.setGlobalCommentatorImage(image);
-      sendJson(res, 200, { id: image.id, name: image.name });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/bp/commentator-logo-image') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const image = commentatorLogoImage(body.imageId);
-      await obsController.syncCommentatorLogo(image.filePath);
-      updateCommentatorLogoImageId(image.id);
-      activeCommentatorLogoImage = image;
-      sendJson(res, 200, { id: image.id, name: image.name });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/bp/presentation') {
-    sendJson(res, 200, presentationStatus());
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/bp/presentation/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store',
-      Connection: 'keep-alive'
-    });
-    bpPresentationClients.add(res);
-    res.write(`event: presentation\ndata: ${JSON.stringify(presentationStatus('connected'))}\n\n`);
-    broadcastBp('bp-presentation', presentationStatus('client-connected'));
-    req.on('close', () => {
-      bpPresentationClients.delete(res);
-      broadcastBp('bp-presentation', presentationStatus('client-disconnected'));
-    });
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/bp/presentation/settings') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const enabled = Boolean(body.enabled);
-      let obsError = null;
-      bpPresentation.setEnabled(enabled);
-      await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled })
-        .catch(error => { obsError = error.message; });
-      sendJson(res, 200, { ...presentationStatus(), obsSynced: !obsError, obsError });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message, ...presentationStatus() });
-    }
-    return;
-  }
-
-  if (pathname === '/api/bp/timer-config' && req.method === 'GET') {
-    sendJson(res, 200, {
-      phases: timerPhaseMetadata(),
-      phaseDurations: phaseDurations(),
-      animationStyle: animationStyle()
-    });
-    return;
-  }
-
-  if (pathname === '/api/bp/timer-config' && req.method === 'POST') {
-    let body = {};
-    const beforeSettings = {
-      phaseDurations: phaseDurations(),
-      animationStyle: animationStyle()
-    };
-    try {
-      body = JSON.parse((await readBody(req)) || '{}');
-      const settings = updateBpTimerConfig(body);
-      bpPresentation.commit('animation-style-updated');
-      const eventLog = recordCountdownEvent(COUNTDOWN_HUB_ID, requestSession,
-        { type: 'update-bp-timer-config', ...body }, beforeSettings, settings);
-      broadcastCountdownLog(ensureHub(COUNTDOWN_HUB_ID), eventLog);
-      sendJson(res, 200, {
-        phases: timerPhaseMetadata(),
-        ...settings,
-        eventLog
-      });
-    } catch (error) {
-      recordCountdownEvent(COUNTDOWN_HUB_ID, requestSession,
-        { type: 'update-bp-timer-config', ...body }, beforeSettings, null, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/bracket-image') {
-    try {
-      const buffer = await readBuffer(req);
-      const extension = imageExtension(req.headers['content-type']);
-      const stamp = beijingTimestamp();
-      const saved = writeImage(CONFIG.assets.bracketUploadRoot, `手游赛区-${stamp}`, extension, buffer);
-      const obsSynced = await obsController.syncBracketImage(saved.filePath)
-        .then(() => obsController.switchScene('bracket'))
-        .then(() => true, () => false);
-      sendJson(res, 200, { ...saved, obsSynced });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const resultImageMatch = pathname.match(/^\/api\/bp\/sessions\/([^/]+)\/result-image$/);
-  if (req.method === 'POST' && resultImageMatch) {
-    try {
-      const id = resultImageMatch[1];
-      const current = bpService.serialize(bpService.getSession(id));
-      if (!current.result?.winnerRole) throw new Error('请先选择本局战果');
-      const buffer = await readBuffer(req);
-      const extension = imageExtension(req.headers['content-type']);
-      const saved = writeImage(
-        CONFIG.assets.resultUploadRoot,
-        `${divisionLabel(current.matchId)}-${chineseRound(current.matchId)}-MATCH ${current.gameNumber}-${current.room}房`,
-        extension,
-        buffer
-      );
-      const session = bpService.setResultImage(id, saved);
-      const obsSynced = await obsController.syncResult(session)
-        .then(() => obsController.syncResultImage(saved.filePath))
-        .then(() => obsController.switchScene('result'))
-        .then(() => true, () => false);
-      sendJson(res, 200, { session, ...saved, obsSynced });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/logs') {
-    sendJson(res, 200, pagedLogs(url.searchParams.get('category') || 'all', requestSession, {
-      offset: url.searchParams.get('offset'),
-      limit: url.searchParams.get('limit'),
-      cursor: url.searchParams.get('cursor'),
-      query: url.searchParams.get('q')
-    }));
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/character-stats') {
-    const division = url.searchParams.get('division') || 'all';
-    if (!['all', 'pc', 'pe'].includes(division)) {
-      sendJson(res, 400, { error: '无效的排行榜范围' });
       return;
     }
-    sendJson(res, 200, calculateCharacterStats(db, division));
     return;
   }
 
@@ -3763,303 +4634,56 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && pathname === '/api/admin/characters') {
-    try {
-      const body = JSON.parse((await readBody(req, 6 * 1024 * 1024)) || '{}');
-      const { id, portraitUrl, ...safeBody } = body;
-      const character = createCharacter(db, safeBody);
-      reloadCharacterRoster();
-      recordAuditLog('account', requestSession, '新增角色', { character });
-      sendJson(res, 201, { character });
-    } catch (error) {
-      recordAuditLog('account', requestSession, '新增角色', {}, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const characterAdminMatch = pathname.match(/^\/api\/admin\/characters\/([^/]+)$/);
-  if (req.method === 'PUT' && characterAdminMatch) {
-    try {
-      const body = JSON.parse((await readBody(req, 6 * 1024 * 1024)) || '{}');
-      const { id, portraitUrl, ...safeBody } = body;
-      const characterId = decodeURIComponent(characterAdminMatch[1]);
-      const result = updateCharacter(db, characterId, safeBody);
-      reloadCharacterRoster();
-      recordAuditLog('account', requestSession, '修改角色基础数据', {
-        characterId: result.character.id,
-        changesAdded: result.changesAdded,
-        before: result.previous,
-        after: result.character
-      });
-      sendJson(res, 200, { character: result.character });
-    } catch (error) {
-      recordAuditLog('account', requestSession, '修改角色基础数据', {
-        characterId: characterAdminMatch[1]
-      }, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'DELETE' && characterAdminMatch) {
-    try {
-      const character = archiveCharacter(db, decodeURIComponent(characterAdminMatch[1]));
-      reloadCharacterRoster();
-      recordAuditLog('account', requestSession, '停用角色', { character });
-      sendJson(res, 200, { character });
-    } catch (error) {
-      recordAuditLog('account', requestSession, '停用角色', {
-        characterId: characterAdminMatch[1]
-      }, false, error.message);
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  if (req.method === 'GET' && pathname === '/api/bp/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-store',
-      Connection: 'keep-alive'
-    });
-    res.write(`event: obs-status\ndata: ${JSON.stringify(obsController.status())}\n\n`);
-    bpClients.add(res);
-    req.on('close', () => bpClients.delete(res));
-    return;
-  }
-
-  if (req.method === 'POST' && pathname === '/api/bp/sessions') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const auditActor = {
-        userId: requestSession.userId,
-        displayName: actorDisplayName(requestSession.userId),
-        identityKey: requestSession.activeIdentityKey
-      };
-      const session = bpService.ensureSession(body.matchId, Number(body.gameNumber), String(body.room).toUpperCase(), Number(body.attempt || 1), auditActor);
-      sendJson(res, 200, bpService.serialize(session));
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-    }
-    return;
-  }
-
-  const bpSessionMatch = pathname.match(/^\/api\/bp\/sessions\/([^/]+)(?:\/(actions|export))?$/);
-  if (bpSessionMatch) {
-    const id = bpSessionMatch[1];
-    const endpoint = bpSessionMatch[2] || 'state';
-    try {
-      if (req.method === 'GET' && endpoint === 'state') {
-        sendJson(res, 200, bpService.serialize(bpService.getSession(id)));
-        return;
-      }
-      if (req.method === 'GET' && endpoint === 'export') {
-        const session = bpService.serialize(bpService.getSession(id));
-        const body = JSON.stringify(session, null, 2);
-        res.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json"`,
-          'Content-Length': Buffer.byteLength(body),
-          'Cache-Control': 'no-store'
-        });
-        res.end(body);
-        return;
-      }
-      if (req.method === 'POST' && endpoint === 'actions') {
-        const action = JSON.parse((await readBody(req)) || '{}');
-        const auditActor = {
-          userId: requestSession.userId,
-          displayName: actorDisplayName(requestSession.userId),
-          identityKey: requestSession.activeIdentityKey
-        };
-        activeAuditActor = auditActor;
-        bpService.setAuditActor(id, auditActor);
-        let session;
-        if (action.type === 'start') {
-          session = bpService.startSession(id);
-          setWorkingPresence(requestSession.userId, true, `bp:${id}`);
-          obsController.syncMatch(session).catch(() => {});
-        } else if (action.type === 'complete') {
-          session = bpService.completeSession(id);
-        } else if (action.type === 'set-slot') {
-          session = bpService.updateSlot(id, action);
-        } else if (action.type === 'clear-slot') {
-          session = bpService.clearSlot(id, action.slotId);
-        } else if (action.type === 'restore-revision') {
-          session = bpService.restoreRevision(id, Number(action.revision));
-        } else if (action.type === 'create-replay') {
-          session = bpService.createReplay(id);
-          await syncCurrentScheduleImage().catch(() => {});
-        } else if (action.type === 'sync-obs') {
-          session = bpService.serialize(bpService.getSession(id));
-          await obsController.syncSession(sessionForObs(session));
-          if (bpPresentation.state.dynamicEnabled) bpPresentation.prepare(session, 'obs-sync-prepared');
-        } else if (action.type === 'sync-match') {
-          session = bpService.serialize(bpService.getSession(id));
-          await obsController.syncMatch(session);
-        } else if (action.type === 'sync-match-and-switch') {
-          session = bpService.serialize(bpService.getSession(id));
-          await obsController.syncMatch(session);
-          await obsController.switchScene('matchup');
-        } else if (action.type === 'switch-scene-bp') {
-          session = bpService.serialize(bpService.getSession(id));
-          let dynamicReady = false;
-          if (bpPresentation.state.dynamicEnabled) {
-            bpPresentation.prepare(session, 'scene-switch-prepared');
-            dynamicReady = await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled: true })
-              .then(() => true, () => {
-                bpPresentation.hide('overlay-obs-failed');
-                return false;
-              });
-          } else {
-            bpPresentation.hide('dynamic-disabled-switch');
-            await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled: false }).catch(() => {});
-          }
-          await obsController.switchScene('bp');
-          if (dynamicReady) bpPresentation.armIntro(session, 2000);
-        } else if (action.type === 'set-commentator-image') {
-          const image = commentatorImage(action.imageId);
-          await obsController.syncCommentatorImage(image.filePath);
-          updateCommentatorImageId(image.id);
-          activeCommentatorImage = image;
-          session = bpService.setCommentatorImage(id, image);
-        } else if (action.type === 'set-output-mode') {
-          session = bpService.setOutputMode(id, action.mode);
-        } else if (action.type === 'set-result') {
-          session = bpService.setResult(id, action.winnerRole);
-          setWorkingPresence(requestSession.userId, false, `bp:${id}`);
-          recordUserExecution(requestSession.userId, id);
-          await obsController.syncResult(session).catch(() => {});
-          await syncCurrentScheduleImage().catch(() => {});
-        } else if (action.type === 'declare-forfeit') {
-          session = bpService.declareForfeit(id, action.forfeitingTeamId);
-          setWorkingPresence(requestSession.userId, false, `bp:${id}`);
-          await obsController.syncScore(session.score).catch(() => {});
-          await syncCurrentScheduleImage().catch(() => {});
-        } else if (action.type === 'revoke-forfeit') {
-          session = bpService.revokeForfeit(id);
-          setWorkingPresence(requestSession.userId, true, `bp:${id}`);
-          await obsController.syncScore(session.score).catch(() => {});
-          await syncCurrentScheduleImage().catch(() => {});
-        } else if (action.type === 'reset-session') {
-          session = bpService.resetSession(id);
-          setWorkingPresence(requestSession.userId, false, `bp:${id}`);
-          await syncCurrentScheduleImage().catch(() => {});
-        } else {
-          throw new Error(`未知BP操作: ${action.type}`);
-        }
-        recordAuditLog('event', requestSession, action.type, {
-          sessionId: id,
-          gameNumber: session?.gameNumber,
-          room: session?.room
-        });
-        activeAuditActor = null;
-        sendJson(res, 200, session);
-        return;
-      }
-    } catch (error) {
-      activeAuditActor = null;
-      sendJson(res, 400, { error: error.message });
-      return;
-    }
-  }
-
-  if (pathname === '/api/obs/status' && req.method === 'GET') {
-    sendJson(res, 200, obsController.status());
-    return;
-  }
-
-  if (pathname === '/api/obs/connect' && req.method === 'POST') {
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      const password = typeof body.password === 'string' && body.password.length ? body.password : obsClient.password;
-      obsClient.configure({ url: body.url, password });
-      runtimeConfig.obs = { url: obsClient.url, password: obsClient.password };
-      persistRuntimeConfig();
-      const status = await obsController.connect();
-      await obsController.syncCountdownUrl(body.countdownUrl);
-      await syncCurrentScheduleImage();
-      if (activeCommentatorLogoImage) await obsController.syncCommentatorLogo(activeCommentatorLogoImage.filePath);
-      const dynamicObs = await obsController.configureBpOverlay({
-        url: BP_OVERLAY_URL,
-        enabled: bpPresentation.state.dynamicEnabled
-      }).then(() => ({ synced: true }), error => ({ synced: false, error: error.message }));
-      sendJson(res, 200, { ...status, dynamicBp: dynamicObs });
-    } catch (error) {
-      sendJson(res, 400, { error: error.message, ...obsController.status() });
-    }
-    return;
-  }
-
-  const hubMatch = pathname.match(/^\/api\/hubs\/([^/]+)(?:\/(events|state|actions|logs))?$/);
-  if (hubMatch) {
-    const id = hubMatch[1];
-    const endpoint = hubMatch[2] || 'state';
-    const hub = ensureHub(id);
-
-    if (req.method === 'GET' && endpoint === 'state') {
-      hub.state = { ...hub.state, remainingSeconds: currentRemaining(hub.state), updatedAt: Date.now() };
-      sendJson(res, 200, hub.state);
-      return;
-    }
-
-    if (req.method === 'GET' && endpoint === 'logs') {
-      sendJson(res, 200, pagedCountdownEvents(hub.id, {
-        limit: url.searchParams.get('limit'),
-        cursor: url.searchParams.get('cursor')
-      }));
-      return;
-    }
-
-    if (req.method === 'GET' && endpoint === 'events') {
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-store',
-        Connection: 'keep-alive'
-      });
-      res.write(`event: state\ndata: ${JSON.stringify(hub.state)}\n\n`);
-      hub.clients.add(res);
-      if (requestSession && hasPermission(requestSession, 'countdown.operate')) {
-        if (!hub.logClients) hub.logClients = new Set();
-        hub.logClients.add(res);
-      }
-      req.on('close', () => {
-        hub.clients.delete(res);
-        hub.logClients?.delete(res);
-      });
-      return;
-    }
-
-    if (req.method === 'POST' && endpoint === 'actions') {
-      let action = {};
-      const beforeState = { ...hub.state, remainingSeconds: currentRemaining(hub.state) };
-      try {
-        const body = await readBody(req);
-        action = body ? JSON.parse(body) : {};
-        hub.state = applyCountdownAction(hub.state, action);
-        saveHubState(hub);
-        const eventLog = recordCountdownEvent(hub.id, requestSession, action, beforeState, hub.state);
-        broadcast(hub);
-        broadcastCountdownLog(hub, eventLog);
-        sendJson(res, 200, { ...hub.state, eventLog });
-      } catch (error) {
-        recordCountdownEvent(hub.id, requestSession, action, beforeState, null, false, error.message);
-        sendJson(res, 400, { error: error.message });
-      }
-      return;
-    }
-  }
-
   const overlayMatch = pathname.match(/^\/hub\/([^/]+)$/);
   if (req.method === 'GET' && overlayMatch) {
+    if (overlayMatch[1] === BP_HUB_ID) {
+      serveStatic(req, res, '/bp-overlay.html');
+      return;
+    }
+    if (!HUB_IDS.has(overlayMatch[1])) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('HUB 不存在');
+      return;
+    }
     serveStatic(req, res, '/overlay.html');
     return;
   }
 
   serveStatic(req, res, pathname);
+}
+
+const server = http.createServer((req, res) => {
+  handleRequest(req, res).catch((error) => {
+    // 最外层兜底：任何分支漏抛的异常（含 SQLITE_BUSY）不再演变成进程崩溃
+    console.error(`[server] 未捕获的请求异常 ${req.method} ${req.url}:`, error);
+    if (!res.headersSent) {
+      sendJson(res, 500, { code: 'INTERNAL_ERROR', error: '服务器内部错误，请稍后重试' });
+    } else {
+      res.end();
+    }
+  });
 });
 
+db.exec('PRAGMA optimize');
+// 每日维护：优化查询计划器并截断 WAL，防止长跑膨胀（unref 不阻塞退出，shutdown 亦会清理）
+const dailyDbMaintenance = setInterval(() => {
+  try {
+    db.exec('PRAGMA optimize');
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } catch (error) {
+    console.error('[server] 数据库每日维护失败:', error.message);
+  }
+  // 登录失败计数清扫：24 小时无活动的条目移除，防止 Map 无限增长
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const [key, entry] of loginFailures) {
+    if ((entry.lastAttempt || 0) < cutoff) loginFailures.delete(key);
+  }
+}, 24 * 60 * 60 * 1000);
+dailyDbMaintenance.unref?.();
+
+// 反代兼容：上游空闲超时须大于反代自身的 keep-alive 空闲（nginx 默认 60 秒），否则复用连接偶发 502
+server.keepAliveTimeout = 720000;
+server.headersTimeout = 750000;
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`Stella Director running at http://127.0.0.1:${PORT}/`);
   obsController.connect()
@@ -4095,9 +4719,20 @@ function shutdown() {
   clearInterval(bpPresentationHeartbeat);
   clearInterval(presenceSweep);
   clearInterval(communicationHeartbeat);
+  clearInterval(notificationHeartbeat);
+  clearInterval(dailyDbMaintenance);
   bpService.close();
   obsClient.disconnect();
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// 末级守卫：未知路径的同步异常与 Promise 拒绝记日志不退出（请求级兜底在 handleRequest），
+// 生产环境由外部进程守护负责重启，进程本体尽量保持在线
+process.on('uncaughtException', error => {
+  console.error('[server] uncaughtException 守卫捕获:', error);
+});
+process.on('unhandledRejection', reason => {
+  console.error('[server] unhandledRejection 守卫捕获:', reason);
+});
