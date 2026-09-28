@@ -450,13 +450,28 @@
   async function uploadChannelAvatar(file) {
     const channel = state.channels.find(item => item.id === state.selectedChannelId);
     if (!channel || !file) return;
-    const dataUrl = await new Promise((resolve, reject) => {
+    const source = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
       reader.onerror = () => reject(new Error('读取图片失败'));
       reader.readAsDataURL(file);
     });
     try {
+      let dataUrl = source;
+      if (window.ImageCompress?.compress && ['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+        let compressed = null;
+        try {
+          compressed = await window.ImageCompress.compress(source, { maxEdge: 256, quality: 0.85 });
+        } catch (error) {
+          compressed = null;
+        }
+        // The server caps channel avatars at 512KB; oversized uploads used to
+        // fail only after the full transfer.
+        if (compressed && compressed.bytes > 512 * 1024) {
+          throw new Error(text('channels.avatarTooLarge', '频道头像过大，请更换图片'));
+        }
+        if (compressed) dataUrl = compressed.dataUrl;
+      }
       const result = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/avatar', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

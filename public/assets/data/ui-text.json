@@ -993,6 +993,7 @@
   "channels.unknownUser": "未知用户",
   "channels.retry": "重新加载",
   "channels.requestFailed": "请求失败",
+  "channels.avatarTooLarge": "频道头像过大，请更换图片",
   "channels.loadFailedTitle": "通讯频道读取失败",
   "channels.loadFailed": "频道读取失败：{error}",
   "channels.historyFailed": "更早消息读取失败：{error}",

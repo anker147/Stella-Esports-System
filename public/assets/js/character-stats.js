@@ -607,6 +607,8 @@
         const image = document.createElement('img');
         image.src = character.imageUrl;
         image.alt = '';
+        image.loading = 'lazy';
+        image.decoding = 'async';
         image.addEventListener('error', () => {
           const fallback = document.createElement('span');
           fallback.className = 'character-manager-avatar-fallback';
@@ -666,19 +668,30 @@
       || elements.editor.create.focus());
   }
 
-  function readEditorImage(file, maximumBytes, invalidKey, tooLargeKey) {
+  // The byte limit applies to the compressed artifact, so oversized originals
+  // scale down instead of being rejected outright.
+  async function readEditorImage(file, maximumBytes, invalidKey, tooLargeKey, compressOptions) {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      return Promise.reject(new Error(t(invalidKey)));
+      throw new Error(t(invalidKey));
     }
-    if (file.size > maximumBytes) {
-      return Promise.reject(new Error(t(tooLargeKey)));
-    }
-    return new Promise((resolve, reject) => {
+    const source = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.addEventListener('load', () => resolve(String(reader.result || '')));
       reader.addEventListener('error', () => reject(reader.error || new Error(t(invalidKey))));
       reader.readAsDataURL(file);
     });
+    if (!window.ImageCompress?.compress) {
+      if (file.size > maximumBytes) throw new Error(t(tooLargeKey));
+      return source;
+    }
+    let compressed;
+    try {
+      compressed = await window.ImageCompress.compress(source, compressOptions);
+    } catch (error) {
+      throw new Error(t(invalidKey));
+    }
+    if (compressed.bytes > maximumBytes) throw new Error(t(tooLargeKey));
+    return compressed.dataUrl;
   }
 
   function editorPayload() {
@@ -832,6 +845,7 @@
     image.src = character.imageUrl;
     image.alt = '';
     image.loading = index > 5 ? 'lazy' : 'eager';
+    image.decoding = 'async';
     image.addEventListener('error', () => {
       avatar.classList.add('is-missing');
       image.hidden = true;
@@ -1100,6 +1114,7 @@
     elements.detail.dialog.classList.toggle('is-hunter', character.role === 'hunter');
     elements.detail.avatar.src = character.imageUrl;
     elements.detail.avatar.alt = t('characterStats.avatarAlt', { name: character.nickname || character.id });
+    elements.detail.avatar.decoding = 'async';
     elements.detail.avatar.hidden = false;
     elements.detail.avatar.onerror = () => { elements.detail.avatar.hidden = true; };
     elements.detail.role.textContent = character.role === 'escape'
@@ -1255,7 +1270,8 @@
         file,
         2 * 1024 * 1024,
         'characterStats.invalidPortrait',
-        'characterStats.portraitTooLarge'
+        'characterStats.portraitTooLarge',
+        { maxEdge: 512, quality: 0.85 }
       );
       portraitChanged = true;
       setPortraitPreview(portraitDraft, elements.editor.name.value);
@@ -1285,7 +1301,8 @@
         file,
         512 * 1024,
         'characterStats.invalidSkillIcon',
-        'characterStats.skillIconTooLarge'
+        'characterStats.skillIconTooLarge',
+        { maxEdge: 128, quality: 0.85 }
       );
       skillIconDrafts.set(slot, draft);
       changedSkillIcons.add(slot);

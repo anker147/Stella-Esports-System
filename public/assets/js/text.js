@@ -4,7 +4,7 @@
 // 就绪时应用 data-text 并派发 stella:text-ready 事件。
 // 目录内容变更时随发版递增 TEXT_DATA_VERSION。
 (function () {
-  const TEXT_DATA_VERSION = 7;
+  const TEXT_DATA_VERSION = 8;
   let data = null;
   const ready = fetch(`/assets/data/ui-text.json?v=${TEXT_DATA_VERSION}`, { credentials: 'same-origin' })
     .then(response => (response.ok ? response.json() : {}))

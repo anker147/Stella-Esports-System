@@ -570,15 +570,30 @@
     };
   }
 
-  async function readImage(file, maximum, label) {
+  // The byte limit applies to the compressed artifact; QR codes pass no
+  // compress options because lossy re-encoding can break scanning.
+  async function readImage(file, maximum, label, compressOptions) {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error(t('events.invalidImage', { label }));
-    if (file.size > maximum) throw new Error(t('events.imageTooLarge', { label }));
-    return new Promise((resolve, reject) => {
+    const source = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
       reader.onerror = () => reject(new Error(t('events.imageReadFailed', { label })));
       reader.readAsDataURL(file);
     });
+    if (compressOptions && window.ImageCompress?.compress) {
+      let compressed = null;
+      try {
+        compressed = await window.ImageCompress.compress(source, compressOptions);
+      } catch (error) {
+        compressed = null;
+      }
+      if (compressed) {
+        if (compressed.bytes > maximum) throw new Error(t('events.imageTooLarge', { label }));
+        return compressed.dataUrl;
+      }
+    }
+    if (file.size > maximum) throw new Error(t('events.imageTooLarge', { label }));
+    return source;
   }
 
   async function handleImage(input, kind) {
@@ -589,7 +604,12 @@
     const qr = kind === 'groupQr';
     const label = qr ? t('events.groupQr') : t(logo ? 'events.logo' : 'events.cover');
     try {
-      const value = await readImage(file, logo ? 2 * 1024 * 1024 : 4 * 1024 * 1024, label);
+      const value = await readImage(
+        file,
+        logo ? 2 * 1024 * 1024 : 4 * 1024 * 1024,
+        label,
+        qr ? null : { maxEdge: logo ? 512 : 1600, quality: 0.85 }
+      );
       if (logo) {
         logoDraft = value;
         logoChanged = true;

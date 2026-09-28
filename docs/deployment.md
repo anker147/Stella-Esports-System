@@ -37,6 +37,7 @@ nssm start ZfbHub
 ```nginx
 server {
   listen 443 ssl;
+  http2 on;
   server_name zfb.example.com;
   location / {
     proxy_pass http://127.0.0.1:3788;
@@ -47,6 +48,8 @@ server {
   }
 }
 ```
+
+`http2 on;`（nginx 1.25.1+；旧版本写 `listen 443 ssl http2;`）必须开启：HTTP/1.1 下浏览器对同一域名只开 6 条并发连接，头像等图片会把页面数据请求挤到超时；HTTP/2 多路复用后数据请求不再排队。
 
 ### Caddy（自动证书）
 

@@ -218,6 +218,8 @@
       const image = document.createElement('img');
       image.src = logoUrl;
       image.alt = '';
+      image.loading = 'lazy';
+      image.decoding = 'async';
       image.addEventListener('error', () => {
         image.remove();
         mark.textContent = String(team || '?').slice(0, 1);
@@ -398,6 +400,8 @@
       const image = document.createElement('img');
       image.src = logoUrl;
       image.alt = '';
+      image.loading = 'lazy';
+      image.decoding = 'async';
       image.addEventListener('error', () => {
         image.remove();
         frame.textContent = String(name || '?').slice(0, 1);

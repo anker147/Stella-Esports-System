@@ -86,6 +86,18 @@
 - [x] 真实故障演练：persist-failure-drill.test.js 完成（真实 SQLITE_BUSY 注入，验证 400 回滚、进程存活、state-rolled-back 广播、锁释放自愈）
 - 验收：每项独立评估后单独出结论，不捆绑发版。
 
+### 批次 9：上传图片压缩与列表懒加载（2026-09-28 完成）
+
+线上实测（120.48.75.141）下载带宽仅约 224KB/s 且 nginx 未开 HTTP/2，角色立绘（单张上限 2MB，SQLite BLOB 接口下发）叠加列表首屏全量拉图，导致战队管理/角色数据页图片逐张慢载、数据请求被 HTTP/1.1 六连接竞争挤到 data-cache 12 秒超时报"数据读取失败"。
+
+- [x] 新增共享压缩工具 image-compress.js（canvas 等比缩放 + WebP 重编码，不支持 WebP 编码的浏览器回退 jpeg/png，返回 bytes 由调用方按各自目录键做超限报错）
+- [x] character-stats.js 接入：立绘 512px/0.85、技能图标 128px/0.85，字节上限改为作用于压缩产物（原"原始文件超 2MB 直接拒绝"的痛点一并消除）；角色管理列表补 lazy + decoding=async
+- [x] communications.js 接入：频道头像 256px/0.85（原先超 512KB 直接被服务端拒）；event-management.js 接入：LOGO 512px、KV 1600px，二维码跳过压缩保扫码率
+- [x] operations-center.js 队标、character-stats 排行/详情图补 loading=lazy / decoding=async
+- [x] 修复 6 页 ui-text.json preload（?v=3）与 TEXT_DATA_VERSION（当时 7）长期错位导致的预载白拉，统一对齐
+- 明确不做：teams 队标资产（批次 5 决定保留）、bracket/bp 赛果图二进制直传（直播呈现大图，压缩有质量风险）、profile.js/accounts.js 既有压缩逻辑不动、BLOB 出库维持原触发条件
+- 验收：全量测试全绿；nginx http2 属服务器侧操作（deployment.md 已更新指引），需部署后 ALPN 探针复核
+
 ## 明确不做（除非触发条件，详见 AGENTS.md 第 8 节与战略台账）
 
 - BEGIN IMMEDIATE 或连接池（触发：日志出现 SQLITE_BUSY 或第二常驻写进程）
@@ -112,3 +124,4 @@
 - 2026-09-28：**批次 3 全部关闭——requiredPermission 退役**：权限改为 ROUTE_PERMISSIONS 声明表（键 "METHOD /模式" 共约百项，logs 按查询串、operations/:view 按段解析走 ({url, params}) 函数形态权限），骨架门改为"表命中读表项、表未命中读 residualPermission"（后者仅覆盖媒体五组、素材 content 流、BP 导出六类 GET 残留路径），requiredPermission 前缀函数删除；router.js 新增 hasRoute 启动断言，权限表键名漂移在启动期即抛错而非静默丢权限门。验收：改前改后三身份 135 端点 405 项状态码探针逐行零差异，209/209 全绿含 endpoint-matrix。附带确认：默认 operator 身份权限面宽，原前缀函数对"错误方法访问受限路径"的 403 兜底在真实身份下从未显现（本就落链尾 404），退役为零可观察行为差异。纯结构变更不发版。
 - 2026-09-28：**文案收编债务关闭**：permissions-center.js 24 处加 notifications.js 8 处用户可见文案全部进目录（45 新键），两文件硬编码 UI 文案清零（仅存合规注释与 accounts.js 的 CSV 表头识别输入解析）；event-management.js 创建向导与赛程面板 HTML 文案经核实已收编，路线图 57 行债务记录关闭。event_media 空表经 v35 迁移删除（0 行、无写入路径，仅 v24 legacy 迁移读作源）；character_portraits 保留——BLOB 立绘是活功能且"明确不做"清单锁定随上传量信号再评估。
 - 2026-09-28：**"数据解耦文字与图标丢失"排查报告与机制加固**：全维度实测（36 个前端 JS 语法全过、目录 1732 键完整无空值、control.html 661 个 data-text 键全命中、浏览器实测 8 个视图含截图：登录页/权限中心/通知面板/赛事管理/BP 控制台/BP overlay/倒计时 overlay/选手管理与素材库）——当前代码无任何文字或图标丢失；真实库媒体落盘 8 行文件全在。用户侧若见丢失，优先怀疑升级窗口期的浏览器缓存混合（硬刷新 Ctrl+F5）或生产进程未重启至 2.5.3（注意：2.5.2 旧进程重启会因库已 v35 拒绝启动，必须先部署新代码再重启）。机制加固两项：1) text.js apply 增加纯文本宿主守卫（宿主含子元素时跳过 textContent 替换并 console.warn，textContent 赋值清子元素正是"图标被吃"的唯一机制通道；实测守卫行为：图标宿主保留、纯文本宿主正常应用），text.js?v= 递增至 9；2) text-catalog-contract.test.js 新增 data-text 宿主纯文本契约（按宿主自身闭合边界扫描内联图标标签，当前 661 宿主零违规棘轮锁定），测试基线 209 加至 210。
+- 2026-09-28：**批次 9 完成（2.7.0）**：线上探测发现下载带宽仅约 224KB/s（远低于 10Mbps 假设）且 nginx ALPN 仅 http/1.1，大图与数据请求在 HTTP/1.1 六连接下互挤是战队管理/角色数据页"头像逐张慢载加数据读取失败"的根因。本地侧落地上传图片压缩与列表懒加载（image-compress.js 共享工具，四处上传点接入，字节上限改作用于压缩产物），并修复 6 页 ui-text preload 与 TEXT_DATA_VERSION 错位。服务器侧 nginx 开 http2 的操作项登记在 deployment.md，部署后需 ALPN 探针复核。
