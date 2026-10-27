@@ -1,27 +1,11 @@
-const fs = require('fs');
-const path = require('path');
-const { db, withTransaction } = require('./db');
-const { DEFAULTS_ROOT, DATA_ROOT } = require('./data-paths');
+const { db } = require('./db');
 const { importBpConfig } = require('./db-migrate');
-
-const ANIMATION_STYLES = new Set(['classic', 'luminance']);
-
-function seedCandidates() {
-  return [path.join(DATA_ROOT, 'bp-config.json'), path.join(DEFAULTS_ROOT, 'bp-config.json')]
-    .filter(candidate => fs.existsSync(candidate));
-}
 
 function ensureSeeded() {
   const count = db.prepare('SELECT COUNT(*) AS n FROM characters').get().n;
   if (count > 0) return;
-  const result = importBpConfig();
-  if (result.skipped) {
-    // 没有种子文件时给出一个可运行的最小骨架，避免服务无法启动
-    withTransaction(() => {
-      db.prepare("INSERT INTO app_settings (key, value_json) VALUES ('timer.durationSeconds', '30')").run();
-      db.prepare("INSERT INTO app_settings (key, value_json) VALUES ('overlay.animationStyle', '\"luminance\"')").run();
-    });
-  }
+  // bp_slots/bp_phases/bp_ui_sections 由种子导入维护：角色数据页等只读统计仍依赖槽位表
+  importBpConfig();
 }
 
 function readSetting(key, fallback = null) {
@@ -40,7 +24,7 @@ function writeSetting(key, value) {
 }
 
 function loadCharacterMeta() {
-  // 不携带 BLOB 数据，bootstrap 恒定轻量；立绘以 BLOB 存在但无文件 URL 时下发按需读取接口地址
+  // 不携带 BLOB 数据，恒定轻量；立绘以 BLOB 存在但无文件 URL 时下发按需读取接口地址
   const rows = db.prepare(`SELECT c.id, c.nickname, c.display_name, c.portrait_url,
     (p.character_id IS NOT NULL) AS has_blob FROM characters c
     LEFT JOIN character_portraits p ON p.character_id = c.id`).all();
@@ -59,46 +43,10 @@ function loadConfig() {
   ensureSeeded();
   const escape = db.prepare("SELECT id FROM characters WHERE role = 'escape' AND enabled = 1 ORDER BY sort_order").all().map(row => row.id);
   const hunter = db.prepare("SELECT id FROM characters WHERE role = 'hunter' AND enabled = 1 ORDER BY sort_order").all().map(row => row.id);
-  const slotRows = db.prepare('SELECT * FROM bp_slots ORDER BY sort_order').all();
-  const slots = {};
-  for (const row of slotRows) {
-    slots[row.id] = {
-      label: row.label,
-      kind: row.kind,
-      role: row.role,
-      ...(row.image_source ? { imageSource: row.image_source } : {}),
-      ...(row.text_source ? { textSource: row.text_source } : {}),
-      ...(row.image_group ? { imageGroup: row.image_group } : {}),
-      ...(row.text_group ? { textGroup: row.text_group } : {}),
-      ...(row.group_name ? { group: row.group_name } : {})
-    };
-  }
-  const phaseSlotRows = db.prepare('SELECT * FROM bp_phase_slots ORDER BY sort_order').all();
-  const slotsByPhase = new Map();
-  for (const row of phaseSlotRows) {
-    if (!slotsByPhase.has(row.phase_id)) slotsByPhase.set(row.phase_id, []);
-    slotsByPhase.get(row.phase_id).push(row.slot_id);
-  }
-  const phases = db.prepare('SELECT * FROM bp_phases ORDER BY sort_order').all().map(row => ({
-    id: row.id,
-    label: row.label,
-    slots: slotsByPhase.get(row.id) || []
-  }));
-  const phaseDurationsMap = Object.fromEntries(
-    db.prepare('SELECT id, duration_seconds FROM bp_phases').all().map(row => [row.id, row.duration_seconds])
-  );
-  const config = {
+  return {
     schemaVersion: 1,
     characters: { escape, hunter },
     characterMeta: loadCharacterMeta(),
-    slots,
-    phases,
-    timer: {
-      durationSeconds: readSetting('timer.durationSeconds', 30),
-      zeroPulseMs: readSetting('timer.zeroPulseMs', 600),
-      phaseDurations: phaseDurationsMap
-    },
-    overlay: { animationStyle: readSetting('overlay.animationStyle', 'luminance') },
     commentator: {
       imageId: readSetting('commentator.imageId'),
       logoImageId: readSetting('commentator.logoImageId')
@@ -106,45 +54,26 @@ function loadConfig() {
     assets: readSetting('assets', {}),
     obsScenes: readSetting('obsScenes', {}),
     obsGroups: readSetting('obsGroups', {}),
-    obsInputs: readSetting('obsInputs', {}),
-    ui: {
-      sections: {
-        ban: db.prepare("SELECT slot_id FROM bp_ui_sections WHERE kind = 'ban' ORDER BY sort_order").all().map(row => row.slot_id),
-        hunterPick: db.prepare("SELECT slot_id FROM bp_ui_sections WHERE kind = 'hunterPick' ORDER BY sort_order").all().map(row => row.slot_id),
-        escapePick: db.prepare("SELECT slot_id FROM bp_ui_sections WHERE kind = 'escapePick' ORDER BY sort_order").all().map(row => row.slot_id)
-      }
-    }
+    obsInputs: readSetting('obsInputs', {})
   };
-  return config;
 }
 
-let characterVersion = 0;
 function reloadCharacterRoster() {
   const escape = db.prepare("SELECT id FROM characters WHERE role = 'escape' AND enabled = 1 ORDER BY sort_order, id").all().map(row => row.id);
   const hunter = db.prepare("SELECT id FROM characters WHERE role = 'hunter' AND enabled = 1 ORDER BY sort_order, id").all().map(row => row.id);
   CONFIG.characters.escape.splice(0, CONFIG.characters.escape.length, ...escape);
   CONFIG.characters.hunter.splice(0, CONFIG.characters.hunter.length, ...hunter);
   CONFIG.characterMeta = loadCharacterMeta();
-  characterVersion += 1;
   return { escape: [...CONFIG.characters.escape], hunter: [...CONFIG.characters.hunter] };
-}
-
-function getCharacterVersion() {
-  return characterVersion;
 }
 
 const CONFIG = loadConfig();
 
-if (CONFIG.characters.escape.length === 0 || CONFIG.characters.hunter.length === 0
-  || Object.keys(CONFIG.slots).length === 0 || CONFIG.phases.length === 0) {
-  // 空配置不再崩进程：服务照常启动，BP 建会话会因无阶段被路由层拒绝，管理端可先修复角色配置
-  console.error('[bp-config] BP 配置为空（角色或阶段缺失），服务以降级模式启动');
+if (CONFIG.characters.escape.length === 0 || CONFIG.characters.hunter.length === 0) {
+  // 空配置不再崩进程：服务照常启动，管理端可先修复角色配置
+  console.error('[bp-config] 角色名单为空，服务以降级模式启动');
 }
 
-CONFIG.timer.phaseDurations ||= Object.fromEntries(
-  CONFIG.phases.map(phase => [phase.id, CONFIG.timer.durationSeconds])
-);
-CONFIG.overlay ||= { animationStyle: 'luminance' };
 CONFIG.commentator ||= { imageId: null };
 CONFIG.commentator.logoImageId ||= 'logo';
 CONFIG.assets.commentatorLogo ||= '场景底图/解说席/解说席LOGO.png';
@@ -153,29 +82,6 @@ CONFIG.obsScenes.commentator ||= '解说席/CDK';
 CONFIG.obsGroups ||= {};
 CONFIG.obsGroups.commentator ||= '解说席底板';
 CONFIG.obsInputs.commentatorLogo ||= '解说LOGO';
-
-function phaseDurations() {
-  return Object.fromEntries(CONFIG.phases.map(phase => [
-    phase.id,
-    Number(CONFIG.timer.phaseDurations[phase.id] || CONFIG.timer.durationSeconds)
-  ]));
-}
-
-function normalizedPhaseDurations(values) {
-  const next = {};
-  for (const phase of CONFIG.phases) {
-    const seconds = Number(values?.[phase.id]);
-    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 300) {
-      throw new Error(`${phase.label}的倒计时必须是1到300秒的整数`);
-    }
-    next[phase.id] = seconds;
-  }
-  return next;
-}
-
-function animationStyle() {
-  return ANIMATION_STYLES.has(CONFIG.overlay.animationStyle) ? CONFIG.overlay.animationStyle : 'luminance';
-}
 
 function commentatorImageId() {
   return typeof CONFIG.commentator.imageId === 'string' && CONFIG.commentator.imageId
@@ -205,45 +111,12 @@ function updateCommentatorLogoImageId(imageId) {
   return commentatorLogoImageId();
 }
 
-function updateBpTimerConfig({ phaseDurations: values, animationStyle: style } = {}) {
-  const nextDurations = normalizedPhaseDurations(values);
-  style ||= animationStyle();
-  if (!ANIMATION_STYLES.has(style)) throw new Error('BP展开动画设置无效');
-  CONFIG.overlay.animationStyle = style;
-  CONFIG.timer.phaseDurations = nextDurations;
-  withTransaction(() => {
-    const updatePhase = db.prepare('UPDATE bp_phases SET duration_seconds = ? WHERE id = ?');
-    for (const [phaseId, seconds] of Object.entries(nextDurations)) updatePhase.run(seconds, phaseId);
-    writeSetting('overlay.animationStyle', style);
-  });
-  return { phaseDurations: phaseDurations(), animationStyle: animationStyle() };
-}
-
-function updatePhaseDurations(values) {
-  const next = normalizedPhaseDurations(values);
-  CONFIG.timer.phaseDurations = next;
-  withTransaction(() => {
-    const updatePhase = db.prepare('UPDATE bp_phases SET duration_seconds = ? WHERE id = ?');
-    for (const [phaseId, seconds] of Object.entries(next)) updatePhase.run(seconds, phaseId);
-  });
-  return phaseDurations();
-}
-
 module.exports = {
   CONFIG,
-  ESCAPE_CHARACTERS: CONFIG.characters.escape,
-  HUNTER_CHARACTERS: CONFIG.characters.hunter,
   OBS_INPUTS: CONFIG.obsInputs,
-  PHASES: CONFIG.phases,
-  SLOT_CONFIG: CONFIG.slots,
-  phaseDurations,
-  updatePhaseDurations,
-  animationStyle,
-  updateBpTimerConfig,
   commentatorImageId,
   updateCommentatorImageId,
   commentatorLogoImageId,
   updateCommentatorLogoImageId,
-  reloadCharacterRoster,
-  getCharacterVersion
+  reloadCharacterRoster
 };

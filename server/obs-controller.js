@@ -1,6 +1,6 @@
 const { EventEmitter } = require('events');
 const path = require('path');
-const { CONFIG, OBS_INPUTS, SLOT_CONFIG } = require('./bp-config');
+const { CONFIG, OBS_INPUTS } = require('./bp-config');
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -23,12 +23,11 @@ class SerialQueue {
 }
 
 class ObsController extends EventEmitter {
-  constructor({ client, resolver, transitionMs = 300, characterRoot = CONFIG.assets.characterRoot, assetPath = value => value }) {
+  constructor({ client, resolver, transitionMs = 300, assetPath = value => value }) {
     super();
     this.client = client;
     this.resolver = resolver;
     this.transitionMs = transitionMs;
-    this.characterRoot = characterRoot;
     this.assetPath = assetPath;
     this.queue = new SerialQueue();
     this.sceneItemIds = new Map();
@@ -67,10 +66,6 @@ class ObsController extends EventEmitter {
       OBS_INPUTS.commentatorImage,
       OBS_INPUTS.commentatorLogo
     ]);
-    for (const config of Object.values(SLOT_CONFIG)) {
-      required.add(config.imageSource);
-      if (config.textSource) required.add(config.textSource);
-    }
     const missing = [...required].filter(name => !names.has(name));
     if (missing.length) throw new Error(`OBS缺少源: ${missing.join('、')}`);
     return { ...this.status(), verified: true, inputCount: required.size };
@@ -123,26 +118,10 @@ class ObsController extends EventEmitter {
     return this.locateSource(sourceName);
   }
 
-  characterFile(kind, characterId) {
-    const folder = kind === 'ban' ? 'Ban' : 'Pick';
-    const fileName = characterId || '占位';
-    return this.assetPath(path.posix.join(this.characterRoot.replaceAll('\\', '/'), folder, `${fileName}.png`)).replaceAll('\\', '/');
-  }
-
-  playerNickname(session, slotId) {
-    const config = SLOT_CONFIG[slotId];
-    if (session.outputMode === 'character') return session.slots[slotId].characterId || '';
-    const playerId = session.slots[slotId].playerId;
-    if (!playerId) return session.slots[slotId].playerText || '';
-    const result = this.resolver.getCandidates(session.matchId, session.room, config.role);
-    const player = result.candidates.find(item => item.playerId === playerId);
-    return player?.nickname || '';
-  }
-
   runOperation(label, task, actor = null) {
     if (!this.client.connected && !this.client.connecting) {
       this.lastError = 'OBS 未连接';
-      return Promise.reject(new Error('OBS 未连接，请在 BP 控制台连接 OBS 后重试'));
+      return Promise.reject(new Error('OBS 未连接，请先连接 OBS 后重试'));
     }
     return this.queue.add(async () => {
       try {
@@ -158,147 +137,9 @@ class ObsController extends EventEmitter {
     });
   }
 
-  pushSlot(session, slotId) {
-    const config = SLOT_CONFIG[slotId];
-    const slot = session.slots[slotId];
-    const actor = session.auditActor || null;
-    return this.runOperation(`push:${session.id}:${slotId}`, async () => {
-      const imageFile = this.characterFile(config.kind, slot.characterId);
-      if (config.kind === 'ban') {
-        await this.setInput(OBS_INPUTS.imageStaging, { file: imageFile });
-        await this.setVisible(config.group, config.imageSource, false);
-        await wait(this.transitionMs);
-        await this.setInput(config.imageSource, { file: imageFile });
-        await this.setVisible(config.group, config.imageSource, true);
-        await wait(this.transitionMs);
-        return;
-      }
-
-      const nickname = this.playerNickname(session, slotId);
-      await Promise.all([
-        this.setInput(OBS_INPUTS.imageStaging, { file: imageFile }),
-        this.setInput(OBS_INPUTS.textStaging, { text: nickname })
-      ]);
-      await Promise.all([
-        this.setVisible(config.imageGroup, config.imageSource, false),
-        this.setVisible(config.textGroup, config.textSource, false)
-      ]);
-      await wait(this.transitionMs);
-      await Promise.all([
-        this.setInput(config.imageSource, { file: imageFile }),
-        this.setInput(config.textSource, { text: nickname })
-      ]);
-      await Promise.all([
-        this.setVisible(config.imageGroup, config.imageSource, true),
-        this.setVisible(config.textGroup, config.textSource, true)
-      ]);
-      await wait(this.transitionMs);
-    }, actor);
-  }
-
-  clearSlot(session, slotId) {
-    const config = SLOT_CONFIG[slotId];
-    const slot = session.slots[slotId];
-    const actor = session.auditActor || null;
-    return this.runOperation(`clear:${session.id}:${slotId}`, async () => {
-      const imageFile = this.characterFile(config.kind, null);
-      if (config.kind === 'ban') {
-        await this.setInput(OBS_INPUTS.imageStaging, { file: imageFile });
-        await this.setVisible(config.group, config.imageSource, false);
-        await wait(this.transitionMs);
-        await this.setInput(config.imageSource, { file: imageFile });
-        await this.setVisible(config.group, config.imageSource, true);
-        await wait(this.transitionMs);
-        return;
-      }
-      const nickname = slot.playerId ? this.playerNickname(session, slotId) : '';
-      await Promise.all([
-        this.setInput(OBS_INPUTS.imageStaging, { file: imageFile }),
-        this.setInput(OBS_INPUTS.textStaging, { text: nickname })
-      ]);
-      await Promise.all([
-        this.setVisible(config.imageGroup, config.imageSource, false),
-        this.setVisible(config.textGroup, config.textSource, false)
-      ]);
-      await wait(this.transitionMs);
-      await Promise.all([
-        this.setInput(config.imageSource, { file: imageFile }),
-        this.setInput(config.textSource, { text: nickname })
-      ]);
-      await Promise.all([
-        this.setVisible(config.imageGroup, config.imageSource, true),
-        this.setVisible(config.textGroup, config.textSource, true)
-      ]);
-      await wait(this.transitionMs);
-    }, actor);
-  }
-
-  setTimer(seconds) {
-    if (!this.client.connected) return Promise.resolve();
-    return this.setInput(OBS_INPUTS.timer, { text: String(seconds).padStart(2, '0') });
-  }
-
   syncCountdownUrl(url) {
     if (!this.client.connected || !url) return Promise.resolve();
     return this.setInput(OBS_INPUTS.countdownBrowser, { url });
-  }
-
-  syncScore(score) {
-    if (!this.client.connected) return Promise.resolve();
-    return Promise.all([
-      this.setInput(OBS_INPUTS.score.escape, { text: String(score.escape) }),
-      this.setInput(OBS_INPUTS.score.hunter, { text: String(score.hunter) })
-    ]);
-  }
-
-  matchMetadata(session) {
-    const match = this.resolver.getMatch(session.matchId);
-    const tournament = this.resolver.getTournamentByMatch(session.matchId);
-    const roundNumber = tournament.matches.findIndex(item => item.id === session.matchId) + 1;
-    const roundLabels = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
-    const dateParts = String(tournament.event.date || '').split('-').map(Number);
-    const month = Number.isInteger(dateParts[1]) ? dateParts[1] : '--';
-    const day = Number.isInteger(dateParts[2]) ? dateParts[2] : '--';
-    return {
-      division: tournament.event.division === 'pc' ? '端游赛区' : '手游赛区',
-      round: roundNumber >= 1 && roundNumber < roundLabels.length
-        ? `第${roundLabels[roundNumber]}轮`
-        : `第${roundNumber}轮`,
-      game: `MATCH ${session.gameNumber}`,
-      info: `${month}-${day} ${match.startTime || ''} ${tournament.event.format || ''}`
-    };
-  }
-
-  matchInputUpdates(session) {
-    const metadata = this.matchMetadata(session);
-    const tournament = this.resolver.getTournamentByMatch(session.matchId);
-    return [
-      this.setInput(OBS_INPUTS.matchData.division, { text: metadata.division }),
-      this.setInput(OBS_INPUTS.matchData.matchInfo, { text: metadata.info }),
-      this.setInput(OBS_INPUTS.matchData.currentRound, { text: metadata.round }),
-      this.setInput(OBS_INPUTS.matchData.currentGame, { text: metadata.game }),
-      this.setInput(OBS_INPUTS.matchStage, { file: this.assetPath(tournament.event.stageImage).replaceAll('\\', '/') })
-    ];
-  }
-
-  syncResult(session) {
-    return this.runOperation(`result:${session.id}`, async () => {
-      const winner = session.result?.winnerRole;
-      if (!winner) return;
-      await this.syncScore(session.score || { escape: 0, hunter: 0 });
-      const files = winner === 'escape'
-        ? ['逃生者胜利.png', '追捕者失败.png', '逃生者胜利文字图.png']
-        : ['逃生者失败.png', '追捕者胜利.png', '追捕者胜利文字图.png'];
-      await Promise.all([
-        this.setInput(OBS_INPUTS.result.escapeLayer, { file: this.assetPath(path.posix.join(CONFIG.assets.resultOverlayRoot, files[0])).replaceAll('\\', '/') }),
-        this.setInput(OBS_INPUTS.result.hunterLayer, { file: this.assetPath(path.posix.join(CONFIG.assets.resultOverlayRoot, files[1])).replaceAll('\\', '/') }),
-        this.setInput(OBS_INPUTS.result.textLayer, { file: this.assetPath(path.posix.join(CONFIG.assets.resultOverlayRoot, files[2])).replaceAll('\\', '/') })
-      ]);
-    });
-  }
-
-  syncResultImage(filePath) {
-    return this.runOperation('result-image', () => this.setInput(OBS_INPUTS.result.image, { file: this.assetPath(filePath).replaceAll('\\', '/') }));
   }
 
   syncBracketImage(filePath) {
@@ -368,78 +209,6 @@ class ObsController extends EventEmitter {
       await this.setVisible(CONFIG.obsGroups.commentator, OBS_INPUTS.commentatorLogo, true);
       await wait(this.transitionMs);
     });
-  }
-
-  refreshBpOverlay() {
-    return this.client.request('PressInputPropertiesButton', {
-      inputName: OBS_INPUTS.bpOverlay,
-      propertyName: 'refreshnocache'
-    });
-  }
-
-  configureBpOverlay({ url, enabled }) {
-    const overlayUrl = String(url || '').trim();
-    if (!overlayUrl) throw new Error('动态 BP Overlay 地址无效');
-    return this.runOperation(`bp-overlay:${enabled ? 'enabled' : 'disabled'}`, async () => {
-      await this.setVisible(CONFIG.obsScenes.bp, OBS_INPUTS.bpOverlay, false);
-      await this.setInput(OBS_INPUTS.bpOverlay, {
-        url: overlayUrl,
-        width: 1920,
-        height: 1080,
-        reroute_audio: false,
-        restart_when_active: false,
-        shutdown: false
-      });
-      if (enabled) await this.refreshBpOverlay();
-      if (enabled) await this.setVisible(CONFIG.obsScenes.bp, OBS_INPUTS.bpOverlay, true);
-      return { enabled: Boolean(enabled), url: overlayUrl };
-    });
-  }
-
-  syncMatch(session, actor = null) {
-    return this.runOperation(`match:${session.id}`, async () => {
-      const match = this.resolver.getMatch(session.matchId);
-      const assignment = match.rooms[session.room];
-      const escapeTeam = this.resolver.getTeam(assignment.escapeTeamId);
-      const hunterTeam = this.resolver.getTeam(assignment.hunterTeamId);
-      await Promise.all([
-        this.setInput(OBS_INPUTS.matchData.escapeTeamName, { text: escapeTeam.displayName }),
-        this.setInput(OBS_INPUTS.matchData.hunterTeamName, { text: hunterTeam.displayName }),
-        this.setInput(OBS_INPUTS.matchData.escapeTeamLogo, { file: this.assetPath(escapeTeam.logos.escape.obsFile).replaceAll('\\', '/') }),
-        this.setInput(OBS_INPUTS.matchData.hunterTeamLogo, { file: this.assetPath(hunterTeam.logos.hunter.obsFile).replaceAll('\\', '/') }),
-        ...this.matchInputUpdates(session)
-      ]);
-    }, actor);
-  }
-
-  syncSession(session, actor = null) {
-    return this.runOperation(`sync:${session.id}`, async () => {
-      const match = this.resolver.getMatch(session.matchId);
-      const assignment = match.rooms[session.room];
-      const escapeTeam = this.resolver.getTeam(assignment.escapeTeamId);
-      const hunterTeam = this.resolver.getTeam(assignment.hunterTeamId);
-      const updates = [
-        this.setInput(OBS_INPUTS.matchData.escapeTeamName, { text: escapeTeam.displayName }),
-        this.setInput(OBS_INPUTS.matchData.hunterTeamName, { text: hunterTeam.displayName }),
-        this.setInput(OBS_INPUTS.matchData.escapeTeamLogo, { file: this.assetPath(escapeTeam.logos.escape.obsFile).replaceAll('\\', '/') }),
-        this.setInput(OBS_INPUTS.matchData.hunterTeamLogo, { file: this.assetPath(hunterTeam.logos.hunter.obsFile).replaceAll('\\', '/') }),
-        ...this.matchInputUpdates(session),
-        this.setInput(OBS_INPUTS.timer, { text: String(session.timer.remainingSeconds).padStart(2, '0') }),
-        this.setInput(OBS_INPUTS.score.escape, { text: String(session.score?.escape || 0) }),
-        this.setInput(OBS_INPUTS.score.hunter, { text: String(session.score?.hunter || 0) })
-      ];
-      if (session.commentatorImage?.filePath) {
-        updates.push(this.setInput(OBS_INPUTS.commentatorImage, {
-          file: this.assetPath(session.commentatorImage.filePath).replaceAll('\\', '/')
-        }));
-      }
-      for (const [slotId, config] of Object.entries(SLOT_CONFIG)) {
-        const slot = session.slots[slotId];
-        updates.push(this.setInput(config.imageSource, { file: this.characterFile(config.kind, slot.characterId) }));
-        if (config.textSource) updates.push(this.setInput(config.textSource, { text: this.playerNickname(session, slotId) }));
-      }
-      await Promise.all(updates);
-    }, actor);
   }
 }
 

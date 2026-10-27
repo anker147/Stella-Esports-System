@@ -259,7 +259,7 @@ test('authentication protects control pages and APIs while preserving OBS output
   response = await fetch(`${baseUrl}/api/presence/work`, {
     method: 'POST',
     headers: { Cookie: operatorCookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ active: true, contextId: 'bp:test-session' })
+    body: JSON.stringify({ active: true, contextId: 'hub:test-session' })
   });
   assert.equal(response.status, 200);
   let presence = await response.json();
@@ -277,7 +277,7 @@ test('authentication protects control pages and APIs while preserving OBS output
   response = await fetch(`${baseUrl}/api/presence/work`, {
     method: 'POST',
     headers: { Cookie: operatorCookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ active: false, contextId: 'bp:other-session' })
+    body: JSON.stringify({ active: false, contextId: 'hub:other-session' })
   });
   presence = await response.json();
   assert.equal(presence.status, 'working');
@@ -285,7 +285,7 @@ test('authentication protects control pages and APIs while preserving OBS output
   response = await fetch(`${baseUrl}/api/presence/work`, {
     method: 'POST',
     headers: { Cookie: operatorCookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ active: false, contextId: 'bp:test-session' })
+    body: JSON.stringify({ active: false, contextId: 'hub:test-session' })
   });
   presence = await response.json();
   assert.equal(presence.status, 'away');
@@ -451,11 +451,11 @@ test('authentication protects control pages and APIs while preserving OBS output
   });
   assert.equal(response.status, 400);
 
-  response = await fetch(`${baseUrl}/api/bp/events`);
+  response = await fetch(`${baseUrl}/api/logs`);
   assert.equal(response.status, 401);
 
-  response = await fetch(`${baseUrl}/api/bp/timer-config`, {
-    method: 'POST',
+  response = await fetch(`${baseUrl}/api/admin/link-guard-settings`, {
+    method: 'PUT',
     headers: { Cookie: operatorCookie, 'Content-Type': 'application/json' },
     body: '{}'
   });
@@ -479,8 +479,6 @@ test('authentication protects control pages and APIs while preserving OBS output
   assert.equal(response.status, 403);
   response = await fetch(`${baseUrl}/api/admin/permissions`, { headers: { Cookie: operatorCookie } });
   assert.equal(response.status, 403);
-  response = await fetch(`${baseUrl}/api/admin/laboratory-settings`, { headers: { Cookie: operatorCookie } });
-  assert.equal(response.status, 403);
 
   response = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
@@ -491,19 +489,8 @@ test('authentication protects control pages and APIs while preserving OBS output
   let developerCookie = cookieFrom(response);
   assert.match(String(response.headers.get('set-cookie')), /Max-Age=/);
 
-  response = await fetch(`${baseUrl}/api/admin/laboratory-settings`, { headers: { Cookie: developerCookie } });
+  response = await fetch(`${baseUrl}/api/admin/link-guard-settings`, { headers: { Cookie: developerCookie } });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { newBpInterface: false });
-  response = await fetch(`${baseUrl}/api/admin/laboratory-settings`, {
-    method: 'PUT',
-    headers: { Cookie: developerCookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ newBpInterface: true })
-  });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { newBpInterface: true });
-  response = await fetch(`${baseUrl}/api/bp/bootstrap`, { headers: { Cookie: developerCookie } });
-  assert.equal(response.status, 200);
-  assert.deepEqual((await response.json()).laboratory, { newBpInterface: true });
 
   response = await fetch(`${baseUrl}/api/profile`, { headers: { Cookie: developerCookie } });
   profile = await response.json();
@@ -886,11 +873,11 @@ test('authentication protects control pages and APIs while preserving OBS output
   assert.equal(longCountdown.eventLog.actionType, 'set-duration');
   assert.equal(longCountdown.eventLog.actorIdentityKey, 'developer');
 
-  response = await fetch(`${baseUrl}/api/bp/timer-config`, { headers: { Cookie: developerCookie } });
+  response = await fetch(`${baseUrl}/api/bp/commentator-options`, { headers: { Cookie: developerCookie } });
   assert.equal(response.status, 200);
-  const timerConfig = await response.json();
-  assert.equal(timerConfig.phases.filter(phase => phase.role === 'escape').length, 4);
-  assert.equal(timerConfig.phases.filter(phase => phase.role === 'hunter').length, 3);
+  const commentatorOptions = await response.json();
+  assert.ok(Array.isArray(commentatorOptions.commentatorImages));
+  assert.ok(Object.hasOwn(commentatorOptions, 'selectedImageId'));
 
   response = await fetch(`${baseUrl}/api/hubs/countdown/actions`, {
     method: 'POST',

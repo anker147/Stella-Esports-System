@@ -1,6 +1,6 @@
 const path = require('node:path');
 const { db: defaultDb } = require('./db');
-const { laboratorySettings } = require('./laboratory-settings');
+const { linkGuardSettings } = require('./link-guard-settings');
 const { resolveScheduleEvent } = require('./event-management-service');
 
 const PUBLIC_VIEWS = new Set([
@@ -595,7 +595,7 @@ function terminalSnapshot(database, runtime = {}) {
 
 function settingsSnapshot(database, runtime = {}) {
   return {
-    laboratory: laboratorySettings(database)
+    guards: linkGuardSettings(database)
   };
 }
 
@@ -608,13 +608,6 @@ function hudSnapshot(database, runtime = {}) {
     running: Boolean(row.running),
     updatedAt: row.updated_at
   }));
-  const presentation = database.prepare(`SELECT state.*, session.match_id, session.game_number, session.room,
-      event.name AS event_name
-    FROM bp_presentation_state state
-    LEFT JOIN bp_sessions session ON session.id = state.active_session_id
-    LEFT JOIN matches match ON match.id = session.match_id
-    LEFT JOIN events event ON event.id = match.event_id
-    WHERE state.id = 1`).get();
   const recentObs = database.prepare(`SELECT timestamp_ms, label, ok, error
     FROM obs_operation_logs ORDER BY timestamp_ms DESC LIMIT 12`).all().map(row => ({
       timestamp: row.timestamp_ms,
@@ -625,17 +618,6 @@ function hudSnapshot(database, runtime = {}) {
   return {
     obs: runtime.obs || null,
     hubs,
-    presentation: presentation ? {
-      enabled: Boolean(presentation.dynamic_enabled),
-      visibility: presentation.visibility,
-      reason: presentation.reason,
-      activeSessionId: presentation.active_session_id,
-      eventName: presentation.event_name || null,
-      matchId: presentation.match_id || null,
-      gameNumber: presentation.game_number || null,
-      room: presentation.room || null,
-      updatedAt: presentation.updated_at
-    } : null,
     recentObs
   };
 }
@@ -717,7 +699,6 @@ function personalSnapshot(database, options = {}) {
     todos: [
       { id: 'bp-room', page: 'schedule', title: 'A/B 房控制', description: '赛程管理的比赛编辑弹窗内设置 BP 房间' },
       { id: 'commentator', page: 'schedule', title: '解说组图与兑换码', description: '赛程管理的比赛编辑弹窗底部选择并同步 OBS' },
-      { id: 'start-bp', page: 'schedule', title: '开始 BP', description: '赛程管理对阵卡上直接发起 BP 控制台' },
       { id: 'obs-websocket', page: 'hudCenter', title: 'OBS WebSocket 连接', description: '已迁移至 HUD 中心页面' }
     ]
   };

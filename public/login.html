@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <link rel="preload" href="/assets/data/ui-text.json?v=8" as="fetch">
+  <link rel="preload" href="/assets/data/ui-text.json?v=14" as="fetch">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
@@ -63,6 +63,10 @@
               <input type="checkbox" name="remember">
               <span data-text="login.remember">记住登录</span>
             </label>
+            <label class="login-remember">
+              <input type="checkbox" name="autoLogin">
+              <span data-text="login.autoLogin">自动登录（7 天内免输入账号密码）</span>
+            </label>
             <button class="login-submit" type="submit" data-text="login.submit">登录</button>
           </form>
 
@@ -96,9 +100,10 @@
 
   <footer class="login-declaration" data-text="login.declaration">本系统仅用于赛事导播，全部数据保存在本机。</footer>
 
-  <script defer src="assets/js/text.js?v=9"></script>
+  <script defer src="assets/js/text.js?v=15"></script>
+  <script defer src="assets/js/link-guard.js?v=1"></script>
   <script defer src="assets/js/tooltip.js?v=1"></script>
-  <script defer src="assets/js/login.js?v=13"></script>
-  <script type="module" src="assets/js/icon-kit.js?v=2"></script>
+  <script defer src="assets/js/login.js?v=14"></script>
+  <script type="module" src="assets/js/icon-kit.js?v=3"></script>
 </body>
 </html>

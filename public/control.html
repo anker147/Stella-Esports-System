@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <link rel="preload" href="/assets/data/ui-text.json?v=8" as="fetch">
+  <link rel="preload" href="/assets/data/ui-text.json?v=14" as="fetch">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#eef2f8">
   <title>星澜赛事导播系统</title>
@@ -11,12 +11,13 @@
   <link rel="stylesheet" href="assets/css/tokens.css?v=2">
   <link rel="stylesheet" href="assets/css/components.css?v=3">
   <link rel="stylesheet" href="assets/css/tooltip.css?v=2">
-  <link rel="stylesheet" href="assets/css/control.css?v=96">
-  <link rel="stylesheet" href="assets/css/control-character.css?v=1">
-  <link rel="stylesheet" href="assets/css/control-hud.css?v=1">
+  <link rel="stylesheet" href="assets/css/control.css?v=97">
+  <link rel="stylesheet" href="assets/css/control-character.css?v=2">
+  <link rel="stylesheet" href="assets/css/control-hud.css?v=2">
   <link rel="stylesheet" href="assets/css/profile.css?v=10">
+  <link rel="stylesheet" href="assets/css/device-security.css?v=2">
   <link rel="stylesheet" href="assets/css/permissions-center.css?v=4">
-  <link rel="stylesheet" href="assets/css/communications.css?v=9">
+  <link rel="stylesheet" href="assets/css/communications.css?v=11">
   <link rel="stylesheet" href="assets/css/operations-center.css?v=14">
   <link rel="stylesheet" href="assets/css/event-management.css?v=18">
   <link rel="stylesheet" href="assets/css/schedule-manager.css?v=3">
@@ -73,7 +74,6 @@
         <div class="nav-group-body">
           <div class="nav-group-items">
             <button class="nav-btn nav-sub" type="button" data-page="countdown"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.4 1.5"/></svg><span class="nav-label" data-text="nav.item.countdown">计时中心</span></button>
-            <button class="nav-btn nav-sub" type="button" data-page="bp"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="2.5" width="4.6" height="4.6" rx="1"/><rect x="2.5" y="8.9" width="4.6" height="4.6" rx="1"/><rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/></svg><span class="nav-label" data-text="nav.item.bp">BP 控制台</span></button>
             <button class="nav-btn nav-sub" type="button" data-page="bracket"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5h11"/><rect x="3.5" y="8.5" width="3" height="5"/><rect x="9.5" y="4" width="3" height="9.5"/></svg><span class="nav-label" data-text="nav.item.bracket">晋级榜推送</span></button>
           </div>
         </div>
@@ -124,6 +124,7 @@
             <button class="nav-btn nav-sub" type="button" data-page="systemSettings" data-permission="system.manage"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11M6.2 2.9v3.2M10.6 6.4v3.2M5 9.9v3.2"/></svg><span class="nav-label" data-text="nav.item.systemSettings">系统设置</span></button>
             <button class="nav-btn nav-sub" type="button" data-page="hudCenter" data-permission="bp.view"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.3h11M6.3 6.3v7.2"/></svg><span class="nav-label" data-text="nav.item.hudCenter">HUD 中心</span></button>
             <button class="nav-btn nav-sub" type="button" data-page="profile"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="6.4" r="1.8"/><path d="M4.6 12.1c.7-1.7 2-2.5 3.4-2.5s2.7.8 3.4 2.5"/></svg><span class="nav-label" data-text="nav.item.profile">个人主页</span></button>
+            <button class="nav-btn nav-sub" type="button" data-page="devices"><svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.8l4.8 1.9v3.8c0 3.2-2.3 5.2-4.8 6.7-2.5-1.5-4.8-3.5-4.8-6.7V3.7L8 1.8z"/><path d="M6 8l1.5 1.5L10.2 6.6"/></svg><span class="nav-label" data-text="nav.item.devices">常用设备</span></button>
           </div>
         </div>
       </div>
@@ -489,23 +490,6 @@
     <section class="page-view" id="hudCenterPage" data-page-panel="hudCenter" hidden>
       <div class="hud-center-page">
         <div class="hud-hub-grid">
-          <article class="card hub-card" data-hub-card="bp">
-            <div class="hub-card-head">
-              <span class="hub-card-logo" data-hub-logo="bp" aria-hidden="true">
-                <svg viewBox="0 0 24 24" data-icon="columns-2" aria-hidden="true"></svg>
-              </span>
-              <div class="hub-card-copy">
-                <h2 data-text="hud.cardBpTitle">BP 呈现</h2>
-                <p data-text="hud.cardBpDesc">动态 BP 舞台画面，同步比分与选角。</p>
-              </div>
-              <label class="switch-control hub-card-switch" data-text-aria="hud.switchAria" aria-label="启停 HUB 页面">
-                <input type="checkbox" data-hub-switch="bp">
-                <span class="switch-track" aria-hidden="true"><span></span></span>
-              </label>
-            </div>
-            <p class="hub-card-foot" data-hub-state="bp" data-text="hud.stateReady">就绪 · 开关启用后推送到 OBS</p>
-          </article>
-
           <article class="card hub-card" data-hub-card="countdown">
             <div class="hub-card-head">
               <span class="hub-card-logo" data-hub-logo="countdown" aria-hidden="true">
@@ -547,9 +531,9 @@
               </div>
             </div>
             <div class="form-stack">
-              <input class="input mono" id="obsUrl" value="ws://127.0.0.1:4455" data-text-aria="bp.obsUrlAria" aria-label="OBS WebSocket 地址">
-              <input class="input" id="obsPassword" type="password" data-text-placeholder="bp.pwdPlaceholder" data-text-aria="bp.obsPwdAria" placeholder="密码（如有）" aria-label="OBS WebSocket 密码">
-              <button class="btn btn-primary" id="obsConnect" type="button" data-text="bp.connectObs">连接 OBS</button>
+              <input class="input mono" id="obsUrl" value="ws://127.0.0.1:4455" data-text-aria="hud.obsUrlAria" aria-label="OBS WebSocket 地址">
+              <input class="input" id="obsPassword" type="password" data-text-placeholder="hud.pwdPlaceholder" data-text-aria="hud.obsPwdAria" placeholder="密码（如有）" aria-label="OBS WebSocket 密码">
+              <button class="btn btn-primary" id="obsConnect" type="button" data-text="hud.connectObs">连接 OBS</button>
               <p class="obs-connection-status" id="obsConnectionStatus" data-text="hud.obsUnknown">状态读取中…</p>
             </div>
           </article>
@@ -648,27 +632,6 @@
       </div>
 
       <div class="countdown-secondary-column">
-        <article class="card bp-timer-settings-card">
-          <div class="card-header">
-            <div>
-              <h2 data-text="cd.bpTimerTitle">BP 流程计时</h2>
-              <p data-text="cd.bpTimerDesc">按角色阵营分别设置七个 Ban/Pick 阶段的倒计时秒数。</p>
-            </div>
-          </div>
-          <div class="bp-animation-setting">
-            <span data-text="cd.animationLabel">BP 板展开动画</span>
-            <div class="bp-animation-segments" id="bpAnimationStyle">
-              <label><input type="radio" name="bpAnimationStyle" value="classic"><span data-text="cd.animClassic">经典展开</span></label>
-              <label><input type="radio" name="bpAnimationStyle" value="luminance"><span data-text="cd.animLuminance">亮度展开</span></label>
-            </div>
-          </div>
-          <div class="bp-timer-settings" id="bpTimerSettings"></div>
-          <div class="bp-timer-settings-footer">
-            <span id="bpTimerSettingsStatus"></span>
-            <button class="btn btn-primary" id="saveBpTimerSettings" type="button" data-text="cd.saveBpTimer">保存 BP 计时</button>
-          </div>
-        </article>
-
         <article class="card log-card">
           <div class="card-header">
             <div>
@@ -700,191 +663,6 @@
             <button class="btn btn-primary" id="uploadBracketImage" type="button" disabled data-text="bk.upload">上传并推送 OBS</button>
           </div>
         </article>
-      </div>
-    </section>
-
-    <section class="page-view" id="bpPage" data-page-panel="bp" hidden>
-      <div class="bp-page">
-        <section class="bp-status-card">
-        <section class="bp-team-strip">
-          <div class="bp-team escape-team">
-            <img id="escapeTeamLogo" alt="">
-            <div><span data-text="bp.escapeSide">逃生方</span><strong id="escapeTeamName">-</strong></div>
-          </div>
-          <div class="bp-clock-block">
-            <span id="bpPhaseLabel" data-text="bp.waitingLoad">等待载入</span>
-            <strong id="bpClock">30</strong>
-            <small id="bpRecordLabel" data-text="bp.noRecord">未创建记录</small>
-          </div>
-          <div class="bp-team hunter-team">
-            <div><span data-text="bp.hunterSide">追捕方</span><strong id="hunterTeamName">-</strong></div>
-            <img id="hunterTeamLogo" alt="">
-          </div>
-        </section>
-        <section class="bp-phases" id="bpPhases"></section>
-        </section>
-        <section class="bp-actions-card card">
-          <div class="bp-context-actions">
-            <button class="btn btn-accent" id="bpLoadAndSwitch" type="button" data-text="bp.loadAndSwitch">载入并切换</button>
-            <button class="btn btn-primary" id="bpSwitchScene" type="button" data-text="bp.switchScene">切换场景至 BP</button>
-            <button class="btn btn-secondary" id="bpStart" type="button" data-text="bp.startBp">开始 BP</button>
-            <button class="btn btn-secondary" id="bpLoad" type="button" data-text="bp.load">载入</button>
-            <button class="btn btn-secondary" id="bpSync" type="button" data-text="bp.syncObs">同步 OBS</button>
-            <button class="btn btn-secondary" id="bpExport" type="button" data-text="bp.export">导出</button>
-            <button class="btn btn-secondary" id="bpReplay" type="button" data-text="bp.createReplay">创建重赛</button>
-            <button class="btn btn-danger" id="bpComplete" type="button" data-text="bp.manualComplete">手动结束 BP</button>
-            <button class="btn btn-danger" id="bpForfeit" type="button" data-text="bp.forfeit">弃赛调度</button>
-            <button class="btn btn-secondary" id="bpRevokeForfeit" type="button" disabled data-text="bp.revokeForfeit">撤回弃赛</button>
-            <button class="btn btn-danger" id="bpReset" type="button" data-text="bp.resetMatch">重置正赛</button>
-          </div>
-        </section>
-        <section class="bp-context card">
-          <div class="bp-context-fields">
-            <label class="form-stack schedule-field">
-              <span class="field-label" data-text="bp.scheduleDate">赛程日期</span>
-              <select class="input" id="bpScheduleDate"></select>
-            </label>
-            <label class="form-stack compact-field">
-              <span class="field-label" data-text="bp.division">赛区</span>
-              <select class="input" id="bpDivision"></select>
-            </label>
-            <label class="form-stack match-field">
-              <span class="field-label" data-text="bp.match">比赛场次</span>
-              <select class="input" id="bpMatch"></select>
-            </label>
-            <label class="form-stack compact-field">
-              <span class="field-label" data-text="bp.game">BO3 局数</span>
-              <select class="input" id="bpGame">
-                <option value="1" data-text="bp.game1">第 1 局</option>
-                <option value="2" data-text="bp.game2">第 2 局</option>
-                <option value="3" data-text="bp.game3">第 3 局</option>
-              </select>
-            </label>
-            <label class="form-stack compact-field">
-              <span class="field-label" data-text="bp.room">房间</span>
-              <select class="input" id="bpRoom">
-                <option value="A" data-text="bp.roomA">A 房</option>
-                <option value="B" data-text="bp.roomB">B 房</option>
-              </select>
-            </label>
-            <label class="form-stack compact-field">
-              <span class="field-label" data-text="bp.record">记录</span>
-              <select class="input" id="bpAttempt"><option value="1" data-text="bp.officialBp">正式 BP</option></select>
-            </label>
-            <label class="form-stack commentator-field">
-              <span class="field-label" data-text="bp.commentatorImage">本场解说组图</span>
-              <select class="input" id="bpCommentatorImage"><option value="" data-text="bp.commentatorImagePlaceholder">请选择解说组图</option></select>
-              <small class="commentator-sync-status" id="bpCommentatorStatus"></small>
-            </label>
-            <label class="form-stack commentator-field">
-              <span class="field-label" data-text="bp.commentatorLogo">解说 LOGO / 兑换码</span>
-              <select class="input" id="bpCommentatorLogo"><option value="" data-text="bp.commentatorLogoPlaceholder">请选择显示内容</option></select>
-              <small class="commentator-sync-status" id="bpCommentatorLogoStatus"></small>
-            </label>
-          </div>
-          <div class="bp-dynamic-control">
-            <label class="switch-control" for="dynamicBpEnabled">
-              <input id="dynamicBpEnabled" type="checkbox" role="switch">
-              <span class="switch-track" aria-hidden="true"><span></span></span>
-              <strong data-text="bp.dynamicEnable">启用动态 BP</strong>
-            </label>
-            <span class="bp-dynamic-status" id="dynamicBpStatus" data-text="bp.dynamicOff">已关闭 · 仅旧 OBS</span>
-          </div>
-          <div class="bp-forfeit-status" id="bpForfeitStatus" hidden></div>
-          <div class="bp-output-mode" role="group" aria-label="选手文本输出模式" data-text-aria="bp.outputModeAria">
-            <span data-text="bp.pushTextLabel">推送文本</span>
-            <button type="button" data-output-mode="nickname" data-text="bp.modeNickname">选手昵称</button>
-            <button type="button" data-output-mode="character" data-text="bp.modeCharacter">角色称号</button>
-          </div>
-        </section>
-
-
-        <section class="bp-result-panel" id="bpResultPanel" hidden>
-          <strong data-text="bp.resultTitle">选择本局战果</strong>
-          <button class="btn result-escape" id="resultEscape" type="button">逃生方获胜</button>
-          <button class="btn result-hunter" id="resultHunter" type="button">追捕方获胜</button>
-          <span id="bpScoreLabel" data-text="bp.scoreLine">比分 0 : 0</span>
-          <button class="btn btn-primary" id="bpNextGame" type="button" hidden>切换到下一局</button>
-        </section>
-
-
-        <div class="bp-toast-anchor">
-          <div class="bp-toast" id="bpToast" role="status" aria-live="polite" hidden></div>
-        </div>
-
-        <div class="bp-workspace">
-          <main class="bp-board" id="bpLegacyBoard">
-            <section class="bp-section">
-              <div class="bp-section-title"><h2 data-text="bp.banTitle">Ban</h2><span data-text="bp.banSlots">3 个禁用槽位</span></div>
-              <div class="bp-slot-grid ban-grid" id="banSlots"></div>
-            </section>
-            <section class="bp-section">
-              <div class="bp-section-title"><h2 data-text="bp.hunterPickTitle">追捕 Pick</h2><span data-text="bp.hunterPickSlots">2 个角色</span></div>
-              <div class="bp-slot-grid hunter-pick-grid" id="hunterPickSlots"></div>
-            </section>
-            <section class="bp-section">
-              <div class="bp-section-title"><h2 data-text="bp.escapePickTitle">逃生 Pick</h2><span data-text="bp.escapePickSlots">8 个角色</span></div>
-              <div class="bp-slot-grid escape-pick-grid" id="escapePickSlots"></div>
-            </section>
-          </main>
-
-          <section class="bp-modern-workspace" id="bpModernWorkspace" hidden aria-label="新版 BP 操作台">
-            <div class="bp-modern-stage">
-              <section class="bp-modern-side bp-modern-escape" aria-labelledby="bpModernEscapeTitle">
-                <header class="bp-modern-side-header">
-                  <div><span>ESCAPE</span><h2 id="bpModernEscapeTitle">逃生方</h2></div>
-                  <strong>8</strong>
-                </header>
-                <div class="bp-modern-ban-zone">
-                  <span class="bp-modern-zone-label">追捕方 Ban</span>
-                  <div class="bp-modern-ban-list" id="bpModernEscapeBans"></div>
-                </div>
-                <div class="bp-modern-lineup bp-modern-escape-lineup" id="bpModernEscapeSlots"></div>
-              </section>
-
-              <section class="bp-modern-draft" aria-labelledby="bpModernDraftTitle">
-                <header class="bp-modern-draft-header">
-                  <div><span id="bpModernDraftEyebrow">等待载入</span><h2 id="bpModernDraftTitle">角色选择</h2></div>
-                  <span class="bp-modern-target" id="bpModernTarget">未选择槽位</span>
-                </header>
-                <label class="bp-modern-search" for="bpModernCharacterSearch">
-                  <svg viewBox="0 0 24 24" data-icon="search" aria-hidden="true"></svg>
-                  <input id="bpModernCharacterSearch" type="search" placeholder="搜索角色" autocomplete="off">
-                </label>
-                <div class="bp-modern-character-grid" id="bpModernCharacterGrid" aria-live="polite"></div>
-                <div class="bp-modern-draft-empty" id="bpModernDraftEmpty">
-                  <strong>等待 BP 记录</strong><span>载入比赛后，角色池会随当前流程自动切换。</span>
-                </div>
-              </section>
-
-              <section class="bp-modern-side bp-modern-hunter" aria-labelledby="bpModernHunterTitle">
-                <header class="bp-modern-side-header">
-                  <div><span>HUNTER</span><h2 id="bpModernHunterTitle">追捕方</h2></div>
-                  <strong>2</strong>
-                </header>
-                <div class="bp-modern-ban-zone">
-                  <span class="bp-modern-zone-label">逃生方 Ban</span>
-                  <div class="bp-modern-ban-list" id="bpModernHunterBans"></div>
-                </div>
-                <div class="bp-modern-lineup bp-modern-hunter-lineup" id="bpModernHunterSlots"></div>
-              </section>
-            </div>
-          </section>
-
-          <button class="bp-side-toggle" id="bpSideToggle" type="button" aria-label="展开或收起侧栏" title="展开 / 收起侧栏">
-              <svg viewBox="0 0 24 24" data-icon="chevron-left" aria-hidden="true"></svg>
-          </button>
-          <aside class="bp-side-panel">
-            <section class="card history-card">
-              <div class="card-header"><div><h2 data-text="bp.historyTitle">版本历史</h2></div></div>
-              <div class="history-list" id="bpHistory"></div>
-            </section>
-            <section class="card operation-card">
-              <div class="card-header"><div><h2 data-text="bp.operationTitle">操作状态</h2></div></div>
-              <div class="log-list" id="bpLog"></div>
-            </section>
-          </aside>
-        </div>
       </div>
     </section>
 
@@ -1208,6 +986,12 @@
       </div>
     </section>
 
+    <section class="page-view" id="devicesPage" data-page-panel="devices" hidden>
+      <div class="devices-page">
+        <div class="device-security-root" id="deviceSecurityRoot" aria-busy="false"></div>
+      </div>
+    </section>
+
     <section class="page-view" id="friendsPage" data-page-panel="friends" hidden>
       <div class="people-page">
         <section class="people-toolbar"><div><h2 data-text="friends.title">好友列表</h2><p data-text="friends.desc">查看已建立联系的赛事协作账号。</p></div><button class="btn btn-primary" type="button" data-open-page="addFriend" data-text="friends.add">添加好友</button></section>
@@ -1228,7 +1012,7 @@
     </section>
 
     <section class="page-view" id="channelsPage" data-page-panel="channels" hidden>
-      <div class="communications-page" id="communicationsPage" aria-busy="true">
+      <div class="communications-page" id="communicationsPage" data-mobile-view="list" aria-busy="true">
         <aside class="communications-channel-card" aria-labelledby="communicationsChannelTitle">
           <header class="communications-channel-header">
             <div><span data-text="channels.eyebrow">赛事通信</span><h2 id="communicationsChannelTitle" data-text="channels.title">通讯频道</h2></div>
@@ -1246,6 +1030,9 @@
 
         <section class="communications-conversation-card" aria-labelledby="communicationsConversationTitle">
           <header class="communications-conversation-header">
+            <button class="communications-back-button" id="communicationsBack" type="button" data-text-aria="channels.back" aria-label="返回频道列表">
+              <svg viewBox="0 0 24 24" data-icon="chevron-left" aria-hidden="true"></svg>
+            </button>
             <div class="communications-current-avatar" id="communicationsCurrentAvatar" aria-hidden="true">#</div>
             <div class="communications-current-copy">
               <div><h2 id="communicationsConversationTitle" data-text="channels.selectChannel">选择频道</h2><span class="communications-kind" id="communicationsChannelKind" hidden></span></div>
@@ -1267,20 +1054,39 @@
               <span data-text="channels.loadingMessagesHint">通讯链路建立后将自动显示最新内容。</span>
             </div>
           </div>
-          <div class="visually-hidden" id="communicationsAnnouncement" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div class="visually-hidden" id="communicationsLiveAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
 
           <form class="communications-composer" id="communicationsComposer">
+            <div class="communications-composer-mode communications-quote-mode" id="communicationsQuoteMode" hidden>
+              <svg viewBox="0 0 24 24" data-icon="corner-up-left" aria-hidden="true"></svg>
+              <span class="communications-quote-copy" id="communicationsQuoteLabel"></span>
+              <button id="communicationsQuoteCancel" type="button" data-text="common.cancel">取消</button>
+            </div>
             <div class="communications-composer-mode" id="communicationsComposerMode" hidden><span id="communicationsComposerModeLabel" data-text="channels.editingMessage">正在修改消息</span><button id="communicationsEditCancel" type="button" data-text="common.cancel">取消</button></div>
+            <div class="communications-composer-preview" id="communicationsComposerPreview" hidden>
+              <div class="communications-preview-list" id="communicationsPreviewList"></div>
+              <label class="communications-preview-original"><input id="communicationsPreviewOriginal" type="checkbox"><span data-text="channels.sendOriginal">原图</span></label>
+              <button class="communications-preview-cancel" id="communicationsPreviewCancel" type="button" data-text="channels.previewCancel">取消</button>
+              <button class="communications-preview-send" id="communicationsPreviewSend" type="button" data-text="channels.previewSend">发送所选</button>
+            </div>
+            <div class="communications-recorder" id="communicationsRecorder" hidden>
+              <span class="communications-recorder-dot" aria-hidden="true"></span>
+              <span class="communications-recorder-time" id="communicationsRecorderTime">0:00</span>
+              <span class="communications-recorder-hint" id="communicationsRecorderHint" data-text="channels.releaseToCancel">松开取消发送</span>
+            </div>
             <label class="visually-hidden" for="communicationsInput" data-text="channels.messageLabel">消息内容</label>
             <textarea id="communicationsInput" rows="2" disabled data-text-placeholder="channels.messagePlaceholder" placeholder="发送文字消息，Enter 发送，Shift + Enter 换行"></textarea>
             <div class="communications-composer-footer">
               <span class="communications-composer-status" id="communicationsComposerStatus" role="status" aria-live="polite"></span>
               <button class="communications-composer-tool" id="communicationsPaste" type="button" data-text-title="channels.paste" title="粘贴" aria-label="粘贴"><svg viewBox="0 0 24 24" data-icon="clipboard-paste" aria-hidden="true"></svg></button>
+              <button class="communications-composer-tool" id="communicationsMedia" type="button" data-text-title="channels.attachMedia" title="发送图片或视频" aria-label="发送图片或视频"><svg viewBox="0 0 24 24" data-icon="image" aria-hidden="true"></svg></button>
+              <button class="communications-composer-tool" id="communicationsVoice" type="button" data-text-title="channels.recordVoice" title="按住说话" aria-label="按住说话"><svg viewBox="0 0 24 24" data-icon="mic" aria-hidden="true"></svg></button>
               <span class="communications-character-count" id="communicationsCharacterCount">0 / 500</span>
               <button class="communications-send-button" id="communicationsSend" type="submit" disabled data-text-title="channels.send" title="发送消息" aria-label="发送消息">
                 <svg viewBox="0 0 24 24" data-icon="send-horizontal" aria-hidden="true"></svg>
               </button>
             </div>
+            <input id="communicationsMediaInput" type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime" multiple hidden>
           </form>
           <dialog class="communications-dialog communications-settings-dialog" id="communicationsSettingsDialog">
             <form class="communications-dialog-form" id="communicationsSettingsForm" novalidate>
@@ -1311,6 +1117,14 @@
                 <button type="submit" class="btn btn-primary" data-text="common.save">保存</button>
               </footer>
             </form>
+          </dialog>
+          <dialog class="communications-lightbox" id="communicationsLightbox" aria-label="媒体查看">
+            <button class="communications-lightbox-close" id="communicationsLightboxClose" type="button" data-text-aria="common.close" aria-label="关闭"><svg viewBox="0 0 24 24" data-icon="x" aria-hidden="true"></svg></button>
+            <img id="communicationsLightboxImage" alt="">
+            <div class="communications-lightbox-bar">
+              <span class="communications-lightbox-caption" id="communicationsLightboxCaption"></span>
+              <button class="btn btn-secondary" id="communicationsLightboxDownload" type="button" data-text="channels.download">下载</button>
+            </div>
           </dialog>
         </section>
       </div>
@@ -1622,62 +1436,6 @@
       </div>
     </div>
   </dialog>
-
-  <dialog class="character-dialog" id="characterDialog">
-    <div class="dialog-header">
-      <div><h2 id="characterDialogTitle" data-text="dlg.characterTitle">选择角色</h2><p id="characterDialogRole"></p></div>
-      <button class="icon-close" id="closeCharacterDialog" type="button" data-text-aria="dlg.close" aria-label="关闭"><svg viewBox="0 0 24 24" class="close-glyph" data-icon="x" aria-hidden="true"></svg></button>
-    </div>
-    <input class="input" id="characterSearch" type="search" data-text-placeholder="dlg.characterSearchPlaceholder" placeholder="搜索角色、拼音或首字母">
-    <div class="character-grid" id="characterGrid"></div>
-  </dialog>
-
-  <dialog class="confirm-dialog" id="resetDialog">
-    <h2 data-text="dlg.resetTitle">重置正赛 BP</h2>
-    <p data-text="dlg.resetDesc">角色、选手、阶段和赛果将归零，当前内容仍保留在版本历史中。</p>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelReset" type="button" data-text="dlg.cancel">取消</button>
-      <button class="btn btn-danger" id="confirmReset" type="button" data-text="dlg.confirmReset">确认重置</button>
-    </div>
-  </dialog>
-
-  <dialog class="confirm-dialog" id="completeDialog">
-    <h2 data-text="dlg.completeTitle">手动结束 BP</h2>
-    <p data-text="dlg.completeDesc">尚未完成的槽位将保持当前状态，倒计时会停止，并直接进入本局战果选择流程。</p>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelComplete" type="button" data-text="dlg.cancel">取消</button>
-      <button class="btn btn-danger" id="confirmComplete" type="button" data-text="dlg.confirmComplete">确认结束</button>
-    </div>
-  </dialog>
-
-  <dialog class="confirm-dialog" id="forfeitDialog">
-    <h2 data-text="dlg.forfeitTitle">弃赛调度</h2>
-    <p data-text="dlg.forfeitDesc">选择当前对阵中确认弃赛的队伍。</p>
-    <div class="forfeit-team-options" id="forfeitTeamOptions"></div>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelForfeit" type="button" data-text="dlg.cancel">取消</button>
-      <button class="btn btn-danger" id="continueForfeit" type="button" data-text="dlg.next">下一步</button>
-    </div>
-  </dialog>
-
-  <dialog class="confirm-dialog" id="forfeitConfirmDialog">
-    <h2 data-text="dlg.forfeitConfirmTitle">确认弃赛结算</h2>
-    <p id="forfeitConfirmText"></p>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelForfeitConfirm" type="button" data-text="dlg.back">返回</button>
-      <button class="btn btn-danger" id="confirmForfeit" type="button" data-text="dlg.confirmForfeit">确认弃赛并结算</button>
-    </div>
-  </dialog>
-
-  <dialog class="confirm-dialog" id="revokeForfeitDialog">
-    <h2 data-text="dlg.revokeForfeitTitle">撤回弃赛</h2>
-    <p id="revokeForfeitText"></p>
-    <div class="dialog-actions">
-      <button class="btn btn-secondary" id="cancelRevokeForfeit" type="button" data-text="dlg.cancel">取消</button>
-      <button class="btn btn-primary" id="confirmRevokeForfeit" type="button" data-text="dlg.confirmRevoke">确认撤回</button>
-    </div>
-  </dialog>
-
   <dialog class="result-image-dialog" id="resultImageDialog">
     <div class="dialog-header">
       <div><h2 data-text="dlg.resultImageTitle">本局赛果图片</h2><p data-text="dlg.resultImageDesc">比分已更新，上传后将保存并推送至本场赛果场景</p></div>
@@ -1891,17 +1649,19 @@
     </form>
   </dialog>
 
-  <script defer src="assets/js/text.js?v=9"></script>
+  <script defer src="assets/js/text.js?v=15"></script>
+  <script defer src="assets/js/link-guard.js?v=1"></script>
   <script defer src="assets/js/auth-guard.js?v=1"></script>
   <script defer src="assets/js/system-dialog.js?v=1"></script>
-  <script defer src="assets/js/data-cache.js?v=8"></script>
+  <script defer src="assets/js/data-cache.js?v=9"></script>
   <script defer src="assets/js/tooltip.js?v=1"></script>
   <script defer src="assets/js/image-compress.js?v=1"></script>
     <script defer src="assets/js/fx.js?v=2"></script>
   <script defer src="assets/js/particles.js?v=1"></script>
   <script defer src="assets/js/search.js?v=2"></script>
   <script defer src="assets/js/countdown.js?v=6"></script>
-  <script defer src="assets/js/profile.js?v=14"></script>
+  <script defer src="assets/js/profile.js?v=17"></script>
+  <script defer src="assets/js/device-security.js?v=2"></script>
   <script defer src="assets/js/presence.js?v=2"></script>
   <script defer src="assets/js/friends.js?v=2"></script>
   <script defer src="assets/js/accounts.js?v=10"></script>
@@ -1909,21 +1669,20 @@
   <script defer src="assets/js/permissions-center.js?v=6"></script>
   <script defer src="assets/js/notifications.js?v=5"></script>
   <script defer src="assets/js/notification-management.js?v=4"></script>
-  <script defer src="assets/js/hud-center.js?v=4"></script>
-  <script defer src="assets/js/control.js?v=40"></script>
-  <script defer src="assets/js/operations-center.js?v=19"></script>
-  <script defer src="assets/js/schedule-manager.js?v=6"></script>
+  <script defer src="assets/js/hud-center.js?v=5"></script>
+  <script defer src="assets/js/control.js?v=43"></script>
+  <script defer src="assets/js/operations-center.js?v=21"></script>
+  <script defer src="assets/js/schedule-manager.js?v=7"></script>
   <script defer src="assets/js/dialog-theme.js?v=1"></script>
   <script defer src="assets/js/event-management.js?v=19"></script>
-  <script defer src="assets/js/communications.js?v=16"></script>
+  <script defer src="assets/js/communications.js?v=20"></script>
   <script defer src="assets/js/bracket-control.js?v=4"></script>
   <script defer src="assets/js/obs-connection.js?v=2"
   ></script>
-  <script defer src="assets/js/bp-control.js?v=33"></script>
-  <script defer src="assets/js/character-stats.js?v=17"></script>
+  <script defer src="assets/js/character-stats.js?v=18"></script>
   <script defer src="assets/js/material-library.js?v=11"></script>
-  <script defer src="assets/js/logs-control.js?v=14"></script>
+  <script defer src="assets/js/logs-control.js?v=15"></script>
   <script defer src="assets/js/update-log.js?v=17"></script>
-  <script type="module" src="assets/js/icon-kit.js?v=2"></script>
+  <script type="module" src="assets/js/icon-kit.js?v=3"></script>
 </body>
 </html>

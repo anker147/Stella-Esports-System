@@ -9,6 +9,8 @@ data/bp-presentation.json
 data/material-library.json
 data/obs-path-migration.json
 data/backups/
+data/media/
+backups/
 public/assets/event-media/
 .impeccable/
 data/app.db
@@ -29,6 +31,7 @@ data/*.migrated-*
 .impeccable/mocks/
 .packaging-test/
 .zcode/
+.workbuddy/
 .dotnet-home/
 .tmp-smoke*/
 

@@ -312,7 +312,6 @@
     applyIdentityAccess(canManageSystem, animateAccess);
     const pagePermissions = {
       countdown: 'countdown.operate',
-      bp: 'bp.view',
       events: 'operations.view',
       schedule: 'operations.view',
       teams: 'operations.view',

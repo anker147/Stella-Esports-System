@@ -49,12 +49,12 @@ test('shared text helper is reusable by any module without local copies', async 
   assert.equal(win.t('ops.notARealKey'), 'ops.notARealKey');
   assert.equal(win.t('ops.totalCount', { count: 12 }), catalog['ops.totalCount'].replace('{count}', '12'));
   // 同一运行时可被多个模块共享调用（无模块内状态）
-  assert.equal(win.text('bp.modernBan', '禁用'), catalog['bp.modernBan']);
+  assert.equal(win.text('schedule.bpRoom', 'BP 房间'), catalog['schedule.bpRoom']);
 });
 
 test('every t()/text() key referenced by frontend modules exists in the catalog', () => {
   const moduleFiles = fs.readdirSync(jsDir).filter(name => name.endsWith('.js'));
-  for (const required of ['operations-center.js', 'bp-control.js', 'communications.js', 'schedule-manager.js']) {
+  for (const required of ['operations-center.js', 'communications.js', 'schedule-manager.js']) {
     assert(moduleFiles.includes(required), `${required} should be scanned`);
   }
   const missing = [];
@@ -81,8 +81,8 @@ test('every declarative data-text key on public pages exists in the catalog', ()
   assert.equal(missing.length, 0, `missing catalog keys:\n${missing.join('\n')}`);
 });
 
-test('operations center and bp control keep their UI copy inside the catalog', () => {
-  for (const name of ['operations-center.js', 'bp-control.js']) {
+test('operations center keeps its UI copy inside the catalog', () => {
+  for (const name of ['operations-center.js']) {
     const source = fs.readFileSync(path.join(jsDir, name), 'utf8');
     const stripped = source.replace(/\btext\('([^']+)',\s*'[^']*'/g, `text('$1', ''`);
     assert.doesNotMatch(stripped, /\p{Script=Han}/u, `${name} still hardcodes UI text`);
@@ -113,12 +113,11 @@ test('data-text hosts never wrap icon children on any page', () => {
 test('static HTML keeps non-catalog Chinese text nodes at or below the ratchet baseline', () => {
   // 棘轮断言：宿主无 data-text 的静态中文文本节点不得超过基线。
   // 收编存量后应手动下调基线；新增硬编码文案会直接失败。
-  const pages = ['control.html', 'login.html', 'overlay.html', 'bp-overlay.html', 'bp-animation-design.html', 'match-intro-concept.html'];
+  const pages = ['control.html', 'login.html', 'overlay.html', 'bp-animation-design.html', 'match-intro-concept.html'];
   const baseline = {
     'control.html': 42,
     'login.html': 0,
     'overlay.html': 0,
-    'bp-overlay.html': 0,
     'bp-animation-design.html': 14,
     'match-intro-concept.html': 4
   };

@@ -13,11 +13,11 @@
     hudCenter: { titleKey: 'page.hudCenter.title', descriptionKey: 'page.hudCenter.desc' },
     riskResponse: { titleKey: 'page.riskResponse.title', descriptionKey: 'page.riskResponse.desc' },
     countdown: { titleKey: 'page.countdown.title', descriptionKey: 'page.countdown.desc' },
-    bp: { titleKey: 'page.bp.title', descriptionKey: 'page.bp.desc' },
     characterStats: { titleKey: 'page.characterStats.title', descriptionKey: 'page.characterStats.desc' },
     bracket: { titleKey: 'page.bracket.title', descriptionKey: 'page.bracket.desc' },
     materials: { titleKey: 'page.materials.title', descriptionKey: 'page.materials.desc' },
     profile: { titleKey: 'page.profile.title', descriptionKey: 'page.profile.desc' },
+    devices: { titleKey: 'page.devices.title', descriptionKey: 'page.devices.desc' },
     friends: { titleKey: 'page.friends.title', descriptionKey: 'page.friends.desc' },
     addFriend: { titleKey: 'page.addFriend.title', descriptionKey: 'page.addFriend.desc' },
     channels: { titleKey: 'page.channels.title', descriptionKey: 'page.channels.desc' },
@@ -232,13 +232,6 @@
         detail: { page }
       }))) return;
       document.body.classList.toggle('updates-mode', page === 'updates');
-      if (page === 'bp') {
-        try {
-          window.moveTo(0, 0);
-          window.resizeTo(window.screen.availWidth, window.screen.availHeight);
-        } catch {}
-        fetch('/api/window/maximize', { method: 'POST' }).catch(() => {});
-      }
       document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item === button));
       document.querySelectorAll('[data-page-panel]').forEach(panel => {
         const active = panel.dataset.pagePanel === page;
@@ -265,6 +258,8 @@
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {}
+    // Explicit logout also drops this device's auto-login token (the lease survives logout)
+    try { localStorage.removeItem('stella.autoLogin.token'); } catch {}
     window.location.href = '/';
   });
 
@@ -338,14 +333,9 @@
     start: document.getElementById('start'),
     pause: document.getElementById('pause'),
     reset: document.getElementById('reset'),
-    logList: document.getElementById('logList'),
-    bpAnimationStyle: document.getElementById('bpAnimationStyle'),
-    bpTimerSettings: document.getElementById('bpTimerSettings'),
-    bpTimerSettingsStatus: document.getElementById('bpTimerSettingsStatus'),
-    saveBpTimerSettings: document.getElementById('saveBpTimerSettings')
+    logList: document.getElementById('logList')
   };
 
-  let bpTimerConfig = null;
   let countdownLogCursor = null;
   let countdownLogsLoading = false;
   let countdownLogsComplete = false;
@@ -423,90 +413,6 @@
 
   async function jsonRequest(url, options) {
     return window.StellaDataCache.json(url, options);
-  }
-
-  function renderBpTimerSettings(config) {
-    bpTimerConfig = config;
-    const animationInput = elements.bpAnimationStyle.querySelector(`[value="${CSS.escape(config.animationStyle)}"]`);
-    if (animationInput) animationInput.checked = true;
-    const groups = [
-      { role: 'escape', titleKey: 'cd.escapeTimerGroup', descriptionKey: 'cd.escapeTimerGroupDesc' },
-      { role: 'hunter', titleKey: 'cd.hunterTimerGroup', descriptionKey: 'cd.hunterTimerGroupDesc' }
-    ];
-    elements.bpTimerSettings.replaceChildren(...groups.map(group => {
-      const section = document.createElement('section');
-      section.className = `bp-timer-group bp-timer-group-${group.role}`;
-      const header = document.createElement('header');
-      const title = document.createElement('h3');
-      title.textContent = group.title;
-      const description = document.createElement('p');
-      description.textContent = group.description;
-      header.append(title, description);
-      const list = document.createElement('div');
-      list.className = 'bp-timer-group-list';
-      config.phases.filter(phase => phase.role === group.role).forEach(phase => {
-        const index = config.phases.findIndex(item => item.id === phase.id);
-        const label = document.createElement('label');
-        label.className = 'bp-timer-setting';
-        const number = document.createElement('span');
-        number.textContent = String(index + 1).padStart(2, '0');
-        const copy = document.createElement('span');
-        copy.textContent = phase.label;
-        const input = document.createElement('input');
-        input.className = 'input';
-        input.type = 'number';
-        input.min = '1';
-        input.max = '300';
-        input.step = '1';
-        input.value = config.phaseDurations[phase.id];
-        input.dataset.phaseId = phase.id;
-        input.setAttribute('aria-label', t('cd.phaseSecondsAria', { label: phase.label }));
-        const unit = document.createElement('small');
-        unit.textContent = t('common.secondsUnit');
-        label.append(number, copy, input, unit);
-        list.append(label);
-      });
-      section.append(header, list);
-      return section;
-    }));
-  }
-
-  async function loadBpTimerSettings() {
-    try {
-      renderBpTimerSettings(await jsonRequest('/api/bp/timer-config'));
-      elements.bpTimerSettingsStatus.textContent = '';
-      elements.bpTimerSettingsStatus.className = '';
-    } catch (error) {
-      elements.bpTimerSettingsStatus.textContent = error.message;
-      elements.bpTimerSettingsStatus.className = 'error';
-    }
-  }
-
-  async function saveBpTimerSettings() {
-    const values = {};
-    elements.bpTimerSettings.querySelectorAll('[data-phase-id]').forEach(input => {
-      values[input.dataset.phaseId] = Number(input.value);
-    });
-    const selectedAnimation = elements.bpAnimationStyle.querySelector('input:checked')?.value;
-    elements.saveBpTimerSettings.disabled = true;
-    elements.bpTimerSettingsStatus.textContent = t('cd.saving');
-    elements.bpTimerSettingsStatus.className = '';
-    try {
-      const next = await jsonRequest('/api/bp/timer-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phaseDurations: values, animationStyle: selectedAnimation })
-      });
-      renderBpTimerSettings(next);
-      elements.bpTimerSettingsStatus.textContent = t('cd.saved');
-      elements.bpTimerSettingsStatus.className = 'success';
-      if (next.eventLog) addLog(next.eventLog);
-    } catch (error) {
-      elements.bpTimerSettingsStatus.textContent = error.message;
-      elements.bpTimerSettingsStatus.className = 'error';
-    } finally {
-      elements.saveBpTimerSettings.disabled = false;
-    }
   }
 
   async function createHub() {
@@ -640,8 +546,6 @@
     elements.seconds.value = 0;
     sendAction({ type: 'reset' }, t('cd.resetLog'));
   });
-  elements.saveBpTimerSettings.addEventListener('click', saveBpTimerSettings);
-  document.querySelector('[data-page="countdown"]').addEventListener('click', loadBpTimerSettings);
   elements.logList.addEventListener('scroll', () => {
     const remaining = elements.logList.scrollHeight - elements.logList.scrollTop - elements.logList.clientHeight;
     if (remaining < 80) loadCountdownLogs();
@@ -658,5 +562,4 @@
     addLog(error.message);
   });
   loadCountdownLogs(true);
-  loadBpTimerSettings();
 })();

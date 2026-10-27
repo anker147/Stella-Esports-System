@@ -6,7 +6,6 @@
   const DEFAULT_TTL_MS = 30 * 1000;
   const routeTtl = [
     ['/api/update-log', 10 * 60 * 1000],
-    ['/api/bp/bootstrap', 2 * 60 * 1000],
     ['/api/character-stats', 30 * 1000],
     ['/api/materials', 60 * 1000],
     ['/api/logs', 20 * 1000],
@@ -17,8 +16,7 @@
     ['/api/admin/accounts', 20 * 1000],
     ['/api/admin/permissions', 15 * 1000],
     ['/api/admin/system-access', 15 * 1000],
-    ['/api/operations/', 30 * 1000],
-    ['/api/bp/timer-config', 60 * 1000]
+    ['/api/operations/', 30 * 1000]
   ];
 
   function normalizedUrl(input) {
@@ -63,7 +61,6 @@
     if (pathname.startsWith('/api/admin/accounts')) invalidate('/api/admin/accounts');
     if (pathname.startsWith('/api/admin/characters')) {
       invalidate('/api/character-stats');
-      invalidate('/api/bp/bootstrap');
       invalidate('/api/logs');
     }
     if (pathname.startsWith('/api/admin/permissions')) {
@@ -80,18 +77,6 @@
     if (pathname.startsWith('/api/materials')) {
       invalidate('/api/materials');
       invalidate('/api/operations/resources');
-    }
-    if (pathname.startsWith('/api/bp')) {
-      invalidate('/api/bp/bootstrap');
-      invalidate('/api/bp/sessions');
-      invalidate('/api/character-stats');
-      invalidate('/api/logs');
-      invalidate('/api/operations/events');
-      invalidate('/api/events');
-      invalidate('/api/operations/schedule');
-      invalidate('/api/operations/teams');
-      invalidate('/api/operations/players');
-      invalidate('/api/operations/matches');
     }
     if (pathname.startsWith('/api/profile')) {
       invalidate('/api/profile');
@@ -181,8 +166,6 @@
       terminalStatus: ['/api/operations/terminal'],
       systemSettings: ['/api/operations/settings'],
       riskResponse: ['/api/operations/alerts'],
-      countdown: ['/api/bp/timer-config'],
-      bp: ['/api/bp/bootstrap'],
       characterStats: ['/api/character-stats?division=all'],
       materials: ['/api/materials?offset=0&limit=80'],
       friends: ['/api/friends'],
@@ -250,13 +233,10 @@
         terminalStatus: ['/api/operations/settings'],
         systemSettings: ['/api/admin/system-access'],
         riskResponse: ['/api/logs?category=account&offset=0&limit=50'],
-        bp: ['/api/logs?category=event&offset=0&limit=50'],
         characterStats: [
           '/api/character-stats?division=pc',
-          '/api/character-stats?division=pe',
-          '/api/bp/bootstrap'
+          '/api/character-stats?division=pe'
         ],
-        materials: ['/api/bp/bootstrap'],
         friends: ['/api/profile'],
         channels: ['/api/friends'],
         systemManagement: ['/api/admin/accounts'],
@@ -277,8 +257,6 @@
     for (const url of new Set(first)) prefetch(url);
 
     const queue = ['/api/notifications?offset=0&limit=30', '/api/update-log'];
-    if (permissions.has('countdown.operate')) queue.push('/api/bp/timer-config');
-    if (permissions.has('bp.view')) queue.push('/api/bp/bootstrap');
     if (permissions.has('operations.view')) queue.push(
       '/api/events?filter=all',
       '/api/operations/schedule?limit=60&offset=0',

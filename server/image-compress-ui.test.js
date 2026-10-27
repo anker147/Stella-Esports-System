@@ -50,7 +50,7 @@ test('ui-text preload version matches TEXT_DATA_VERSION on every page', () => {
   const version = textSource.match(/const TEXT_DATA_VERSION = (\d+);/)?.[1];
   assert.ok(version, 'TEXT_DATA_VERSION must be declared');
 
-  for (const page of ['control.html', 'overlay.html', 'login.html', 'bp-overlay.html', 'bp-animation-design.html', 'match-intro-concept.html']) {
+  for (const page of ['control.html', 'overlay.html', 'login.html', 'bp-animation-design.html', 'match-intro-concept.html']) {
     const html = fs.readFileSync(path.join(root, 'public', page), 'utf8');
     assert.match(html, new RegExp(`/assets/data/ui-text\\.json\\?v=${version}`), `${page} preload must track TEXT_DATA_VERSION`);
   }

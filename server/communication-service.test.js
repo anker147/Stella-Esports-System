@@ -1,19 +1,31 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
 process.env.STELLA_DB_PATH = ':memory:';
+process.env.STELLA_COMMUNICATION_MEDIA_ROOT
+  = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-comm-media-'));
 const { db } = require('./db');
 const {
+  MEDIA_ROOT,
   MESSAGE_LIMIT,
+  buildChannelTextDigest,
   communicationBootstrap,
   createCustomChannel,
   createPrivateChannel,
   deleteMessageForUser,
   editMessage,
+  exportChannelMessages,
+  exportMediaFiles,
   listMessages,
   markChannelRead,
+  readMessageMedia,
   recallMessage,
   sendMessage,
+  sendMediaMessage,
   setMessageUrgent,
   toggleMessagePlusOne
 } = require('./communication-service');
@@ -46,7 +58,10 @@ const bob = { userId: 'bob', activeIdentityKey: 'commentator' };
 const carol = { userId: 'carol', activeIdentityKey: 'administrator' };
 const developer = { userId: 'developer', activeIdentityKey: 'developer' };
 
-test.after(() => db.close());
+test.after(() => {
+  db.close();
+  fs.rmSync(process.env.STELLA_COMMUNICATION_MEDIA_ROOT, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+});
 
 test('bootstrap exposes global and only the active identity public channel', () => {
   const snapshot = communicationBootstrap(db, alice);
@@ -257,4 +272,216 @@ test('a failing post-send hook rolls the message and its notification back toget
   const notification = db.prepare("SELECT id FROM notifications WHERE source_kind = 'message' AND source_id = ?")
     .get(String(message.id));
   assert.ok(notification, 'notification should be committed together with the message');
+});
+
+const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+const webpThumb = Buffer.from([0x52, 0x49, 0x46, 0x46, 9, 9, 9, 9]);
+
+function mediaSha(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+test('media messages validate kind, mime, size and duration before touching storage', async () => {
+  const filesBefore = new Set(fs.readdirSync(MEDIA_ROOT));
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', { kind: 'sticker', mainBuffer: png }), /不支持的消息类型/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'voice', mainBuffer: Buffer.from([1]), mime: 'audio/mpeg', durationMs: 800
+  }), /不支持的文件格式/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'voice', mainBuffer: Buffer.from([1]), mime: 'audio/webm'
+  }), /语音时长/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'voice', mainBuffer: Buffer.from([1]), mime: 'audio/webm', durationMs: 61_000
+  }), /语音时长/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'voice', mainBuffer: Buffer.alloc(3 * 1024 * 1024 + 1, 1), mime: 'audio/webm', durationMs: 1000
+  }), /媒体文件不能超过 20MB/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'image', mainBuffer: png, mime: 'image/png'
+  }), /图片消息必须携带缩略图/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'image', mainBuffer: Buffer.alloc(5 * 1024 * 1024, 3), mime: 'image/png', thumbBuffer: webpThumb, thumbMime: 'image/webp'
+  }), /4MB/);
+  await assert.rejects(() => sendMediaMessage(db, alice, 'global', {
+    kind: 'image', mainBuffer: png, mime: 'image/png', thumbBuffer: webpThumb, thumbMime: 'audio/webm'
+  }), /缩略图仅支持/);
+  assert.deepEqual(new Set(fs.readdirSync(MEDIA_ROOT)), filesBefore, 'rejected media must not leave files behind');
+});
+
+test('voice messages persist bytes to disk and read back through readMessageMedia', async () => {
+  const voice = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 5, 6, 7, 8, 9]);
+  const message = await sendMediaMessage(db, bob, 'global', {
+    kind: 'voice', mainBuffer: voice, mime: 'audio/webm', durationMs: 5200
+  });
+  assert.equal(message.kind, 'voice');
+  assert.equal(message.content, '[语音]');
+  assert.equal(message.canEdit, false);
+  assert.equal(message.canRecall, true);
+  assert.match(message.media.url, new RegExp(`^/api/communications/messages/${message.id}/media\\?v=`));
+  assert.equal(message.media.thumbUrl, null);
+  assert.equal(message.media.durationMs, 5200);
+  assert.equal(message.media.byteSize, voice.length);
+
+  const media = readMessageMedia(db, alice, message.id, 'main');
+  assert.equal(media.mime, 'audio/webm');
+  assert.equal(media.byteSize, voice.length);
+  assert.equal(media.sha256, mediaSha(voice));
+  assert.deepEqual(fs.readFileSync(media.filePath), voice);
+
+  // 频道列表 lastMessage 走批量预取路径，媒体标记保持服务端权威
+  const channel = listMessages(db, bob, 'global', { limit: 1, markRead: false }).channel;
+  assert.equal(channel.lastMessage.kind, 'voice');
+  assert.equal(channel.lastMessage.content, '[语音]');
+
+  // 撤回后媒体对普通成员屏蔽、开发者审计仍可读
+  recallMessage(db, bob, message.id);
+  assert.throws(() => readMessageMedia(db, alice, message.id, 'main'), /消息已撤回/);
+  const auditMedia = readMessageMedia(db, developer, message.id, 'main');
+  assert.equal(auditMedia.sha256, mediaSha(voice));
+});
+
+test('image messages store main plus thumbnail variants and honour the original flag', async () => {
+  const main = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const compressed = await sendMediaMessage(db, alice, 'global', {
+    kind: 'image', mainBuffer: main, mime: 'image/png',
+    thumbBuffer: webpThumb, thumbMime: 'image/webp', width: 1600, height: 900,
+    thumbWidth: 320, thumbHeight: 180
+  });
+  assert.equal(compressed.kind, 'image');
+  assert.equal(compressed.media.original, false);
+  assert.match(compressed.media.url, new RegExp(`^/api/communications/messages/${compressed.id}/media\\?v=`));
+  assert.match(compressed.media.thumbUrl, /variant=thumb&v=/);
+  assert.deepEqual(fs.readFileSync(readMessageMedia(db, bob, compressed.id, 'thumb').filePath), webpThumb);
+  assert.equal(readMessageMedia(db, bob, compressed.id, 'thumb').sha256, mediaSha(webpThumb));
+
+  const original = await sendMediaMessage(db, alice, 'global', {
+    kind: 'image', mainBuffer: Buffer.alloc(5 * 1024 * 1024, 7), mime: 'image/png',
+    thumbBuffer: webpThumb, thumbMime: 'image/webp', isOriginal: true
+  });
+  assert.equal(original.media.original, true);
+  assert.equal(readMessageMedia(db, bob, original.id, 'main').byteSize, 5 * 1024 * 1024);
+});
+
+test('quoted messages snapshot sender and preview, refusing cross-channel or deleted targets', () => {
+  const target = sendMessage(db, alice, 'global', '这是被引用的原始消息内容');
+  const reply = sendMessage(db, bob, 'global', '引用回复', {}, { quotedMessageId: target.id });
+  assert.deepEqual(
+    { id: reply.quoted.id, senderName: reply.quoted.senderName, kind: reply.quoted.kind,
+      preview: reply.quoted.preview, recalled: reply.quoted.recalled },
+    { id: target.id, senderName: 'Alice', kind: 'text', preview: '这是被引用的原始消息内容', recalled: false }
+  );
+  // 批量列表路径同样带出引用快照（loadMessageExtras 预取）
+  const listed = listMessages(db, alice, 'global', { limit: 1, markRead: false }).messages[0];
+  assert.equal(listed.id, reply.id);
+  assert.equal(listed.quoted.senderName, 'Alice');
+
+  const privateChannel = createPrivateChannel(db, alice, 'bob');
+  assert.throws(() => sendMessage(db, bob, privateChannel.id, '跨频道引用', {}, { quotedMessageId: target.id }),
+    /只能引用本频道的消息/);
+  assert.throws(() => sendMessage(db, bob, 'global', '引用不存在', {}, { quotedMessageId: 999999999 }),
+    /引用的消息不存在/);
+
+  deleteMessageForUser(db, bob, target.id);
+  assert.throws(() => sendMessage(db, bob, 'global', '引用已删', {}, { quotedMessageId: target.id }),
+    /引用的消息已删除/);
+  // 引用者自己没删就能继续引用
+  const aliceReply = sendMessage(db, alice, 'global', '自己仍可引用', {}, { quotedMessageId: target.id });
+  assert.equal(aliceReply.quoted.id, target.id);
+
+  const recalledTarget = sendMessage(db, alice, 'global', '将被撤回的引用目标');
+  recallMessage(db, alice, recalledTarget.id);
+  const replyToRecalled = sendMessage(db, bob, 'global', '引用撤回消息', {}, { quotedMessageId: recalledTarget.id });
+  assert.equal(replyToRecalled.quoted.recalled, true);
+  assert.equal(replyToRecalled.quoted.preview, '');
+});
+
+test('a failing media post-insert hook rolls the message back and cleans staged files', async () => {
+  const filesBefore = new Set(fs.readdirSync(MEDIA_ROOT));
+  await assert.rejects(() => sendMediaMessage(db, bob, 'global', {
+    kind: 'voice', mainBuffer: Buffer.from([1, 2, 3]), mime: 'audio/webm', durationMs: 1500
+  }, {
+    afterInsert: () => { throw new Error('post-media failure'); }
+  }), /post-media failure/);
+  const rows = db.prepare(`SELECT COUNT(*) AS n FROM communication_message_media m
+    JOIN communication_messages msg ON msg.id = m.message_id
+    WHERE msg.content = '[语音]' AND m.duration_ms = 1500`).get().n;
+  assert.equal(rows, 0);
+  assert.deepEqual(new Set(fs.readdirSync(MEDIA_ROOT)), filesBefore);
+});
+
+test('export snapshots the full channel history with a media manifest', () => {
+  // bob 已删除的消息仍在频道级导出中（审计全量），且导出不改动任何人的已读水位
+  const watermarkBefore = db.prepare(`SELECT last_read_message_id FROM communication_channel_members
+    WHERE channel_id = 'global' AND user_id = 'carol'`).get().last_read_message_id;
+  const snapshot = exportChannelMessages(db, developer, 'global');
+  assert.equal(snapshot.channel.id, 'global');
+  assert.equal(snapshot.messages.some(message => message.content === '仅 Bob 删除'), true);
+  assert.equal(snapshot.messages.some(message => message.kind === 'voice'), true);
+  assert.equal(snapshot.messages.some(message => message.quoted && message.quoted.senderName === 'Alice'), true);
+  const watermarkAfter = db.prepare(`SELECT last_read_message_id FROM communication_channel_members
+    WHERE channel_id = 'global' AND user_id = 'carol'`).get().last_read_message_id;
+  assert.equal(watermarkAfter, watermarkBefore);
+
+  const { files, missingMessageIds } = exportMediaFiles(db, snapshot.messages);
+  assert.ok(files.length >= 2, 'voice and image messages should be listed');
+  for (const file of files) {
+    assert.match(file.fileName, /^media\/\d+\.(webm|png|jpg|webp|mov|m4a|ogg)$/);
+    assert.equal(fs.existsSync(file.absolutePath), true);
+    assert.equal(file.byteSize, fs.statSync(file.absolutePath).size);
+  }
+  assert.deepEqual(missingMessageIds, []);
+
+  // 文件丢失不炸导出：缺失的消息被标记进 missingMessageIds
+  const victim = files[0];
+  fs.rmSync(victim.absolutePath);
+  const afterLoss = exportMediaFiles(db, snapshot.messages);
+  assert.deepEqual(afterLoss.missingMessageIds, [victim.messageId]);
+  assert.equal(afterLoss.files.some(file => file.messageId === victim.messageId), false);
+});
+
+test('text digest renders header, read positions, edits, plus-ones, quotes and media annotations', async () => {
+  const channel = createCustomChannel(db, alice, {
+    name: '导出演练频道',
+    description: '整理版导出演练',
+    memberIds: ['bob']
+  });
+  const edited = sendMessage(db, alice, channel.id, '原始措辞');
+  editMessage(db, alice, edited.id, '最终措辞');
+  const quotedTarget = sendMessage(db, bob, channel.id, '被引用的原始消息');
+  sendMessage(db, alice, channel.id, '整理版引用回复', {}, { quotedMessageId: quotedTarget.id });
+  const plusTarget = sendMessage(db, bob, channel.id, '求加一');
+  toggleMessagePlusOne(db, alice, plusTarget.id);
+  toggleMessagePlusOne(db, bob, plusTarget.id);
+  sendMessage(db, alice, channel.id, '加急内容');
+  const urgent = sendMessage(db, alice, channel.id, '真的加急');
+  setMessageUrgent(db, alice, urgent.id, true);
+  const recalled = sendMessage(db, alice, channel.id, '将被撤回的原文');
+  recallMessage(db, alice, recalled.id);
+  await sendMediaMessage(db, alice, channel.id, {
+    kind: 'voice', mainBuffer: Buffer.from([1, 2, 3, 4]), mime: 'audio/webm', durationMs: 5200
+  });
+  markChannelRead(db, bob, channel.id);
+
+  const digest = buildChannelTextDigest(db, developer, channel.id);
+  assert.equal(digest.messageCount, 8);
+  assert.equal(digest.fileName.startsWith('聊天记录-导出演练频道-'), true);
+  assert.match(digest.body, /星澜赛事导播系统 · 导出演练频道 聊天记录/);
+  assert.match(digest.body, /导出时间: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \(北京时间\)/);
+  assert.match(digest.body, /类型: 自定义频道    频道ID: custom:/);
+  assert.match(digest.body, /频道说明: 整理版导出演练/);
+  assert.match(digest.body, /成员: Alice\(alice\)\(已读至#\d+\)、Bob\(bob\)\(已读至#\d+\)/);
+  assert.match(digest.body, /最终措辞/);
+  assert.match(digest.body, /编辑记录: 当前为最终版，历史版本依次: "原始措辞"\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} 由 Alice\(alice\) 修改\)/);
+  assert.match(digest.body, /└ \+1: Alice\(alice\)、Bob\(bob\)/);
+  assert.match(digest.body, new RegExp(`└ 引用 #${quotedTarget.id} Bob: 被引用的原始消息`));
+  assert.match(digest.body, /真的加急 【急】/);
+  assert.match(digest.body, /将被撤回的原文 【已撤回】/);
+  assert.match(digest.body, /\[语音 0:05/);
+  assert.equal(digest.body.includes('\r\n'), true);
+
+  // 管理员视角：编辑历史与撤回原文按界面可见性隐藏，撤回只留占位标记
+  const adminDigest = buildChannelTextDigest(db, alice, channel.id);
+  assert.equal(adminDigest.body.includes('编辑记录'), false);
+  assert.equal(adminDigest.body.includes('将被撤回的原文'), false);
+  assert.match(adminDigest.body, /【已撤回】/);
 });

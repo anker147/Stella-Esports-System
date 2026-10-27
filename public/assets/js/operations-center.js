@@ -497,7 +497,7 @@
     latestBlock.append(element('h4', '', text('ops.teamLineupTitle', '最近阵容')));
     const latest = detail.characters?.latest;
     if (!latest || !latest.lineup?.length) {
-      latestBlock.append(emptyState(text('ops.noLineup', '暂无阵容记录'), text('ops.noLineupDesc', '该战队完成 BP 后这里会展示最近一局的出场阵容。')));
+      latestBlock.append(emptyState(text('ops.noLineup', '暂无阵容记录'), text('ops.noLineupDesc', '该战队完成比赛结算后这里会展示最近一局的出场阵容。')));
     } else {
       const matchup = element('div', 'operations-team-lineup-match');
       matchup.append(element('strong', '', text('ops.matchupLine', '{home} vs {away}', {
@@ -530,7 +530,7 @@
     commonBlock.append(element('h4', '', text('ops.teamCharactersTitle', '常用角色')));
     const common = detail.characters?.common || [];
     if (!common.length) {
-      commonBlock.append(emptyState(text('ops.noCharacterRecords', '暂无角色记录'), text('ops.noCharacterRecordsDesc', '该战队完成 BP 后这里会统计常用角色、使用率与胜率。')));
+      commonBlock.append(emptyState(text('ops.noCharacterRecords', '暂无角色记录'), text('ops.noCharacterRecordsDesc', '该战队完成比赛结算后这里会统计常用角色、使用率与胜率。')));
     } else {
       const head = element('div', 'operations-character-row is-head');
       head.append(element('span'), element('span', '', text('ops.colGames', '局数')),
@@ -617,7 +617,7 @@
 
     const recordsBlock = element('section', 'operations-team-block');
     recordsBlock.append(element('h4', '', text('ops.teamRecordsTitle', '最近战绩')));
-    if (!detail.records.length) recordsBlock.append(emptyState(text('ops.teamNoRecords', '暂无比赛记录'), text('ops.teamNoRecordsDesc', '该战队完成 BP 结算后会显示近期战绩。')));
+    if (!detail.records.length) recordsBlock.append(emptyState(text('ops.teamNoRecords', '暂无比赛记录'), text('ops.teamNoRecordsDesc', '该战队完成比赛结算后会显示近期战绩。')));
     else {
       const list = element('div', 'operations-team-record-list');
       detail.records.forEach(record => {
@@ -776,7 +776,7 @@
         `${item.completedGameCount}/${item.effectiveGameCount}`,
         item.replayCount ? statusChip(text('ops.highestAttempt', '最高 attempt {count}', { count: item.highestAttempt }), 'warning') : text('ops.noneShort', '无')
       ];
-    })) : emptyState(text('ops.noMatchRecords', '没有匹配的比赛记录'), text('ops.noMatchRecordsDesc', '比赛完成 BP 结算后会自动显示。')));
+    })) : emptyState(text('ops.noMatchRecords', '没有匹配的比赛记录'), text('ops.noMatchRecordsDesc', '比赛完成结算后会自动显示。')));
     return matchPanel.section;
   }
 
@@ -817,8 +817,7 @@
     const connections = panel(text('ops.connectionsTitle', '实时链路'), text('ops.connectionsDesc', '页面打开时每 10 秒刷新一次，不建立额外长连接。'));
     connections.section.append(table([text('ops.colLink', '链路'), text('ops.colConnections', '连接数'), text('ops.colPurpose', '用途')], [
       [text('ops.linkCommunications', '通讯频道 SSE'), data.connections.communicationStreams, text('ops.purposeMessaging', '即时消息')],
-      [text('ops.linkNotifications', '通知中心 SSE'), data.connections.notificationStreams, text('ops.purposeNotify', '通知与加急')],
-      [text('ops.linkPresentation', 'BP 呈现 SSE'), data.connections.presentationStreams, text('ops.purposeBp', '动态 BP 画面')]
+      [text('ops.linkNotifications', '通知中心 SSE'), data.connections.notificationStreams, text('ops.purposeNotify', '通知与加急')]
     ]));
     fragment.append(connections.section);
     const processPanel = panel(text('ops.envTitle', '运行环境'), text('ops.envDesc', '正式服务当前进程信息。'));
@@ -834,57 +833,104 @@
 
   function renderSettings(data) {
     const fragment = document.createDocumentFragment();
-    const laboratory = panel(text('ops.labTitle', '实验室功能'), text('ops.labDesc', '实验功能默认关闭，可随时回退到现有稳定界面。'));
-    laboratory.section.classList.add('laboratory-settings-panel');
-    const row = element('div', 'laboratory-setting-row');
-    const copy = element('div', 'laboratory-setting-copy');
-    copy.append(element('strong', '', text('ops.labNewBp', '启用新版 BP 界面')));
-    copy.append(element('span', '', text('ops.labNewBpDesc', '切换 BP 控制台的操作布局，不影响 OBS 输出、比赛记录或既有 BP 数据。')));
-    const control = element('label', 'switch-control laboratory-setting-switch');
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.role = 'switch';
-    input.checked = Boolean(data.laboratory?.newBpInterface);
-    input.setAttribute('aria-label', text('ops.labNewBp', '启用新版 BP 界面'));
-    const track = element('span', 'switch-track');
-    track.setAttribute('aria-hidden', 'true');
-    track.append(element('span'));
-    const state = element('strong', '', input.checked ? text('ops.enabled', '已启用') : text('ops.disabled', '已关闭'));
-    control.append(input, track, state);
-    const feedback = element('div', 'laboratory-setting-feedback');
-    feedback.setAttribute('role', 'status');
-    feedback.setAttribute('aria-live', 'polite');
-    input.addEventListener('change', async () => {
-      const previous = !input.checked;
-      input.disabled = true;
-      state.textContent = text('ops.saving', '正在保存');
-      feedback.textContent = '';
-      feedback.classList.remove('is-error');
+    const guardsPanel = panel(text('ops.guardTitle', '链路环境守卫'), text('ops.guardDesc', '自动识别开发者工具节流、系统代理拦截、低带宽链路与升级后的缓存混合，并在页面角落提示原因。仅提示，不改变加载行为。'));
+    guardsPanel.section.classList.add('laboratory-settings-panel');
+    const guardRow = element('div', 'laboratory-setting-row');
+    const guardCopy = element('div', 'laboratory-setting-copy');
+    guardCopy.append(element('strong', '', text('ops.guardSwitch', '启用链路环境守卫')));
+    guardCopy.append(element('span', '', text('ops.guardSwitchDesc', '关闭后全站不再自动探测链路，也不弹出来源提示。')));
+    const guardControl = element('label', 'switch-control laboratory-setting-switch');
+    const guardInput = document.createElement('input');
+    guardInput.type = 'checkbox';
+    guardInput.role = 'switch';
+    guardInput.checked = Boolean(data.guards?.link);
+    guardInput.setAttribute('aria-label', text('ops.guardSwitch', '启用链路环境守卫'));
+    const guardTrack = element('span', 'switch-track');
+    guardTrack.setAttribute('aria-hidden', 'true');
+    guardTrack.append(element('span'));
+    const guardState = element('strong', '', guardInput.checked ? text('ops.enabled', '已启用') : text('ops.disabled', '已关闭'));
+    guardControl.append(guardInput, guardTrack, guardState);
+    const guardFeedback = element('div', 'laboratory-setting-feedback');
+    guardFeedback.setAttribute('role', 'status');
+    guardFeedback.setAttribute('aria-live', 'polite');
+    guardInput.addEventListener('change', async () => {
+      const previous = !guardInput.checked;
+      guardInput.disabled = true;
+      guardState.textContent = text('ops.saving', '正在保存');
+      guardFeedback.textContent = '';
+      guardFeedback.classList.remove('is-error');
       try {
-        const saved = await api('/api/admin/laboratory-settings', {
+        const saved = await api('/api/admin/link-guard-settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ newBpInterface: input.checked })
+          body: JSON.stringify({ link: guardInput.checked })
         });
-        input.checked = Boolean(saved.newBpInterface);
-        state.textContent = input.checked ? text('ops.enabled', '已启用') : text('ops.disabled', '已关闭');
-        data.laboratory = saved;
+        guardInput.checked = Boolean(saved.link);
+        guardState.textContent = saved.link ? text('ops.enabled', '已启用') : text('ops.disabled', '已关闭');
+        data.guards = saved;
         window.StellaDataCache?.invalidate('/api/operations/settings');
-        window.dispatchEvent(new CustomEvent('stella:lab-settings-change', { detail: saved }));
-        feedback.textContent = text('ops.savedFeedback', '设置已保存');
-        feedback.classList.remove('is-error');
+        guardFeedback.textContent = text('ops.savedFeedback', '设置已保存');
+        guardFeedback.classList.remove('is-error');
       } catch (error) {
-        input.checked = previous;
-        state.textContent = previous ? text('ops.enabled', '已启用') : text('ops.disabled', '已关闭');
-        feedback.textContent = error.message;
-        feedback.classList.add('is-error');
+        guardInput.checked = previous;
+        guardState.textContent = previous ? text('ops.enabled', '已启用') : text('ops.disabled', '已关闭');
+        guardFeedback.textContent = error.message;
+        guardFeedback.classList.add('is-error');
       } finally {
-        input.disabled = false;
+        guardInput.disabled = false;
       }
     });
-    row.append(copy, control);
-    laboratory.section.append(row, feedback);
-    fragment.append(laboratory.section);
+    guardRow.append(guardCopy, guardControl);
+
+    const guardStatusRows = element('div', 'laboratory-setting-status');
+    const addGuardStatusRow = label => {
+      const statusRow = element('div', 'laboratory-setting-row');
+      const statusCopy = element('div', 'laboratory-setting-copy');
+      statusCopy.append(element('strong', '', label));
+      const value = element('span', '');
+      statusCopy.append(value);
+      statusRow.append(statusCopy);
+      guardStatusRows.append(statusRow);
+      return value;
+    };
+    const hostValue = addGuardStatusRow(text('ops.guardHost', '访问来源'));
+    const probeValue = addGuardStatusRow(text('ops.guardProbe', '最近探测'));
+    const versionValue = addGuardStatusRow(text('ops.guardVersion', '版本缓存'));
+    const renderGuardStatus = () => {
+      const snapshot = window.LinkGuard ? window.LinkGuard.snapshot() : null;
+      if (!snapshot) {
+        hostValue.textContent = '';
+        probeValue.textContent = text('ops.guardModuleMissing', '守卫模块未加载，请按 Ctrl+F5 硬刷新。');
+        versionValue.textContent = '';
+        return;
+      }
+      if (!snapshot.enabled) {
+        hostValue.textContent = snapshot.host;
+        probeValue.textContent = text('ops.guardOff', '检测已关闭');
+        versionValue.textContent = text('ops.guardOff', '检测已关闭');
+        return;
+      }
+      const hostKindKey = snapshot.hostKind === 'loopback' ? 'ops.guardHostLoopback'
+        : snapshot.hostKind === 'lan' ? 'ops.guardHostLan' : 'ops.guardHostWan';
+      hostValue.textContent = text(hostKindKey, '') + `（${snapshot.host}）`;
+      const probe = snapshot.lastProbe;
+      if (!probe) {
+        probeValue.textContent = text('ops.guardProbeIdle', '尚未探测');
+      } else {
+        probeValue.textContent = text('ops.guardProbeValue', 'RTT {rtt}ms · 约 {speed} KB/s · {state}', {
+          rtt: probe.rttMs,
+          speed: probe.kbps === null ? '—' : probe.kbps,
+          state: snapshot.slow ? text('ops.guardProbeSlow', '链路偏慢') : text('ops.guardProbeOk', '链路正常')
+        });
+      }
+      versionValue.textContent = snapshot.versionChanged
+        ? text('ops.guardVersionChanged', '服务端已更新，建议硬刷新')
+        : text('ops.guardVersionOk', '与服务端一致');
+    };
+    renderGuardStatus();
+    window.addEventListener('stella:link-guard', renderGuardStatus);
+    guardsPanel.section.append(guardStatusRows);
+    fragment.append(guardsPanel.section);
     return fragment;
   }
 

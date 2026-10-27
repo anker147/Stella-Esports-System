@@ -11,6 +11,8 @@
   };
   const order = ['user', 'developer'];
   const AUTH_NOTICE_KEY = 'stella.auth.notice';
+  const AUTO_LOGIN_KEY = 'stella.autoLogin.token';
+  const LEASE_USER_KEY = 'stella.lease.userId';
   const loginErrorTextKeys = Object.freeze({
     ACCOUNT_DISABLED: 'login.accountDisabled',
     SYSTEM_ACCESS_CLOSED: 'login.systemClosed',
@@ -161,8 +163,60 @@
     return {
       deviceId,
       deviceFingerprint,
-      deviceName: `${navigator.platform || '未知平台'} · ${browserName()}`
+      deviceName: `${navigator.platform || '未知平台'} · ${browserName()}`,
+      networkEnv: networkEnvironment()
     };
+  }
+
+  // Network environment hint stored on the device record: host class plus effective connection type
+  function networkEnvironment() {
+    const host = location.hostname;
+    const hostClass = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+      ? 'loopback'
+      : /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) ? 'lan' : 'wan';
+    const connection = navigator.connection?.effectiveType || '';
+    return [hostClass, connection].filter(Boolean).join('-').slice(0, 24);
+  }
+
+  function storeAutoLogin(payload) {
+    try {
+      if (payload?.token) localStorage.setItem(AUTO_LOGIN_KEY, payload.token);
+      else localStorage.removeItem(AUTO_LOGIN_KEY);
+    } catch {}
+  }
+
+  function storeLeaseUser(userId) {
+    try {
+      if (userId) localStorage.setItem(LEASE_USER_KEY, userId);
+    } catch {}
+  }
+
+  // Silent re-entry: auto-login token first, then device lease. Any failure falls back to the form.
+  async function attemptSilentLogin() {
+    const deviceContext = await readDeviceContext();
+    const autoToken = (() => { try { return localStorage.getItem(AUTO_LOGIN_KEY); } catch { return null; } })();
+    if (autoToken) {
+      try {
+        const data = await postJson('/api/auth/auto-login', {
+          autoLoginToken: autoToken, ...deviceContext
+        });
+        storeAutoLogin(data.autoLogin);
+        storeLeaseUser(data.userId);
+        window.location.replace('/?page=personalCenter');
+        return true;
+      } catch {
+        try { localStorage.removeItem(AUTO_LOGIN_KEY); } catch {}
+      }
+    }
+    const leaseUserId = (() => { try { return localStorage.getItem(LEASE_USER_KEY); } catch { return null; } })();
+    if (leaseUserId) {
+      try {
+        await postJson('/api/auth/lease-login', { userId: leaseUserId, ...deviceContext });
+        window.location.replace('/?page=personalCenter');
+        return true;
+      } catch { /* Lease expired or revoked: stay on the form */ }
+    }
+    return false;
   }
 
   function fail(message) {
@@ -194,12 +248,15 @@
     const account = forms.user.account.value.trim();
     const password = forms.user.password.value;
     try {
-      await postLogin({
+      const data = await postLogin({
         role: 'user',
         account,
         password,
-        remember: Boolean(forms.user.remember?.checked)
+        remember: Boolean(forms.user.remember?.checked),
+        autoLogin: Boolean(forms.user.autoLogin?.checked)
       });
+      storeAutoLogin(data.autoLogin);
+      storeLeaseUser(data.userId);
       status.textContent = '';
       window.location.href = '/?page=personalCenter';
     } catch (error) {
@@ -227,7 +284,7 @@
         status.className = 'login-status success';
         return;
       }
-      await postLogin({ role: 'developer', account, password, remember: true });
+      await postLogin({ role: 'developer', account, password, remember: true }).then(data => storeLeaseUser(data.userId));
       status.textContent = '';
       window.location.href = '/?page=personalCenter';
     } catch (error) {
@@ -240,15 +297,22 @@
   fetch('/api/auth/status')
     .then(response => response.json())
     .then(data => window.Text.ready.then(() => data))
-    .then(data => {
-      if (!data.setupRequired) return;
-      setupRequired = true;
-      switchTo('developer');
-      forms.developer.querySelector('[name="account"]').closest('.login-field').hidden = true;
-      document.querySelector('.login-card-title').textContent = t('login.setupTitle');
-      document.querySelector('.login-hint').textContent = t('login.setupDesc');
-      forms.developer.querySelector('button[type="submit"]').textContent = t('login.setupSubmit');
-      forms.developer.password.focus();
+    .then(async data => {
+      if (data.setupRequired) {
+        setupRequired = true;
+        switchTo('developer');
+        forms.developer.querySelector('[name="account"]').closest('.login-field').hidden = true;
+        document.querySelector('.login-card-title').textContent = t('login.setupTitle');
+        document.querySelector('.login-hint').textContent = t('login.setupDesc');
+        forms.developer.querySelector('button[type="submit"]').textContent = t('login.setupSubmit');
+        forms.developer.password.focus();
+        return;
+      }
+      const started = await attemptSilentLogin();
+      if (started) {
+        status.textContent = t('login.autoLoginPending');
+        status.className = 'login-status success';
+      }
     })
     .catch(() => {});
 })();

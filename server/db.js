@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DATA_ROOT } = require('./data-paths');
 
-const SCHEMA_VERSION = 35;
+const SCHEMA_VERSION = 37;
 const DB_PATH = process.env.STELLA_DB_PATH || path.join(DATA_ROOT, 'app.db');
 const IN_MEMORY = DB_PATH === ':memory:';
 
@@ -373,13 +373,47 @@ function migrateCommunicationMessagesV13() {
     ['edited_at', 'INTEGER'],
     ['recalled_at', 'INTEGER'],
     ['recalled_by_user_id', 'TEXT REFERENCES users(id) ON DELETE SET NULL'],
-    ['urgent', 'INTEGER NOT NULL DEFAULT 0 CHECK (urgent IN (0, 1))']
+    ['urgent', "INTEGER NOT NULL DEFAULT 0 CHECK (urgent IN (0, 1))"]
   ];
   for (const [name, definition] of columns) {
     if (!tableHasColumn('communication_messages', name)) {
       db.exec(`ALTER TABLE communication_messages ADD COLUMN ${name} ${definition}`);
     }
   }
+}
+
+// v36（schema 36）：消息多形态——kind 区分文本/语音/图片/视频、quoted_message_id 支持引用回复；
+// 媒体字节落盘 data/media/communications（v33 赛事媒体先例），communication_message_media 只存
+// 元数据与文件路径，主图/缩略图两套变体同行存放。
+function migrateCommunicationMediaV36() {
+  if (!tableHasColumn('communication_messages', 'kind')) {
+    db.exec("ALTER TABLE communication_messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'voice', 'image', 'video'))");
+  }
+  if (!tableHasColumn('communication_messages', 'quoted_message_id')) {
+    db.exec('ALTER TABLE communication_messages ADD COLUMN quoted_message_id INTEGER REFERENCES communication_messages(id) ON DELETE SET NULL');
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS communication_message_media (
+    message_id INTEGER PRIMARY KEY REFERENCES communication_messages(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('voice', 'image', 'video')),
+    mime TEXT NOT NULL,
+    byte_size INTEGER NOT NULL CHECK (byte_size BETWEEN 1 AND 20971520),
+    sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+    width INTEGER CHECK (width IS NULL OR width BETWEEN 1 AND 10000),
+    height INTEGER CHECK (height IS NULL OR height BETWEEN 1 AND 10000),
+    duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms BETWEEN 1 AND 600000),
+    is_original INTEGER NOT NULL DEFAULT 0 CHECK (is_original IN (0, 1)),
+    file_path TEXT NOT NULL,
+    thumb_mime TEXT CHECK (thumb_mime IS NULL OR thumb_mime IN ('image/png', 'image/jpeg', 'image/webp')),
+    thumb_byte_size INTEGER CHECK (thumb_byte_size IS NULL OR thumb_byte_size BETWEEN 1 AND 2097152),
+    thumb_sha256 TEXT CHECK (thumb_sha256 IS NULL OR length(thumb_sha256) = 64),
+    thumb_width INTEGER,
+    thumb_height INTEGER,
+    thumb_file_path TEXT,
+    created_at INTEGER NOT NULL,
+    CHECK ((thumb_file_path IS NULL) = (thumb_sha256 IS NULL))
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_communication_messages_quoted
+    ON communication_messages(quoted_message_id) WHERE quoted_message_id IS NOT NULL`);
 }
 
 function migrateCharacterProfilesV15() {
@@ -884,6 +918,18 @@ if (currentVersion === 0) {
       db.exec('PRAGMA user_version = 35');
     });
   }
+  if (currentVersion < 36) {
+    withTransaction(() => {
+      migrateCommunicationMediaV36();
+      db.exec('PRAGMA user_version = 36');
+    });
+  }
+  if (currentVersion < 37) {
+    withTransaction(() => {
+      migrateDeviceSecurityV37();
+      db.exec('PRAGMA user_version = 37');
+    });
+  }
 }
 
 // v31（schema 32）：会话从 app_settings 的 JSON blob 迁到独立表 auth_sessions；
@@ -999,6 +1045,11 @@ function migrateSessionStoreAndForeignKeysV31() {
     db.exec('PRAGMA foreign_keys = ON');
   }
 }
+
+// 引用反查索引：列由 v36 补加（新建库在 DDL 内、老库在迁移内），但索引本身不能进
+// SCHEMA_DDL——老库执行 DDL 时列尚不存在会直接失败，统一在迁移链结束后补建。
+db.exec(`CREATE INDEX IF NOT EXISTS idx_communication_messages_quoted
+  ON communication_messages(quoted_message_id) WHERE quoted_message_id IS NOT NULL`);
 
 seedCommunicationChannels();
 
@@ -1137,6 +1188,90 @@ function migrateEventMediaToFilesV33() {
     });
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+// v37（schema 37）：常用设备与安全密码——user_devices 设备登记表（含自动登录单设备状态与租约）、
+// user_security_credentials 安全密码凭据表（可逆加密列 + scrypt 校验列并存）。
+// 从 user_login_history 按（user_id, device_fingerprint）取最近一条回填种子，老用户设备列表不为空。
+function migrateDeviceSecurityV37() {
+  db.exec(`CREATE TABLE IF NOT EXISTS user_security_credentials (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('numeric', 'pattern', 'mixed')),
+    secret_encrypted TEXT NOT NULL,
+    secret_hash TEXT NOT NULL,
+    secret_salt TEXT NOT NULL,
+    verify_window_minutes INTEGER NOT NULL DEFAULT 0 CHECK (verify_window_minutes >= 0),
+    updated_at INTEGER NOT NULL
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS user_devices (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_fingerprint TEXT NOT NULL,
+    device_name TEXT NOT NULL DEFAULT '',
+    device_type TEXT NOT NULL DEFAULT 'desktop',
+    device_os TEXT NOT NULL DEFAULT '',
+    device_model TEXT NOT NULL DEFAULT '',
+    browser TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    network_env TEXT NOT NULL DEFAULT '',
+    last_ip TEXT NOT NULL DEFAULT '',
+    last_region TEXT NOT NULL DEFAULT '',
+    last_login_at INTEGER NOT NULL DEFAULT 0,
+    auto_login_enabled INTEGER NOT NULL DEFAULT 0,
+    auto_login_token_hash TEXT,
+    auto_login_expires_at INTEGER,
+    lease_until INTEGER,
+    lease_granted_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+  )`);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_fp ON user_devices(user_id, device_fingerprint)');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_auto_token ON user_devices(auto_login_token_hash)');
+  const seedRows = db.prepare(`
+    SELECT h.* FROM user_login_history h
+    JOIN (
+      SELECT user_id, device_fingerprint, MAX(logged_in_at) AS latest
+      FROM user_login_history
+      WHERE device_fingerprint IS NOT NULL AND device_fingerprint != 'unknown' AND device_fingerprint != ''
+      GROUP BY user_id, device_fingerprint
+    ) g ON h.user_id = g.user_id AND h.device_fingerprint = g.device_fingerprint AND h.logged_in_at = g.latest
+  `).all();
+  const classify = ua => {
+    const value = String(ua || '').toLowerCase();
+    let type = 'desktop';
+    let os = '';
+    if (value.includes('android')) {
+      type = value.includes('mobile') ? 'mobile' : 'tablet';
+      os = 'Android';
+    } else if (value.includes('iphone') || value.includes('ipod')) {
+      type = 'mobile';
+      os = 'iOS';
+    } else if (value.includes('ipad')) {
+      type = 'tablet';
+      os = 'iPadOS';
+    } else if (value.includes('windows')) {
+      os = 'Windows';
+    } else if (value.includes('mac os') || value.includes('macintosh')) {
+      os = 'macOS';
+    } else if (value.includes('linux')) {
+      os = 'Linux';
+    }
+    return { type, os };
+  };
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO user_devices
+      (id, user_id, device_fingerprint, device_name, device_type, device_os, user_agent, last_ip, last_region, last_login_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const row of seedRows) {
+    const info = classify(row.user_agent);
+    const now = Date.now();
+    insert.run(
+      crypto.randomUUID(), row.user_id, row.device_fingerprint, row.device_name || '',
+      info.type, info.os, String(row.user_agent || '').slice(0, 500),
+      row.ip_address || '', row.region || '', row.logged_in_at || 0, now, now
+    );
   }
 }
 

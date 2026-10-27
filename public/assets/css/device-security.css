@@ -1,0 +1,349 @@
+/* 常用设备与安全密码（独立功能页 + 租约验证弹窗）。
+   依赖 tokens.css 令牌与 components.css 基础件；仅在本功能内生效，选择器全部加 ds- 前缀。 */
+
+/* 独立页面容器：与其它 page-view 的内容区保持一致的呼吸感 */
+.devices-page {
+  padding: var(--f2-space-5) var(--f2-space-6);
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.device-security-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-4);
+  min-height: 220px;
+}
+
+.ds-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-4);
+}
+
+.ds-card {
+  border: 1px solid var(--f2-border);
+  border-radius: var(--f2-radius-md);
+  background: var(--f2-bg-card);
+  padding: var(--f2-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-3);
+}
+
+.ds-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: var(--f2-weight-semi);
+  color: var(--f2-text-primary);
+}
+
+.ds-card-desc {
+  margin: 0;
+  font-size: var(--f2-font-caption);
+  color: var(--f2-text-secondary);
+  line-height: 1.6;
+}
+
+.ds-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-3);
+}
+
+.ds-field small.ds-help {
+  color: var(--f2-text-tertiary);
+}
+
+.ds-status {
+  min-height: 18px;
+  font-size: var(--f2-font-caption);
+  color: var(--f2-text-secondary);
+}
+
+.ds-status.is-error {
+  color: var(--f2-red);
+}
+
+.ds-status.is-ok {
+  color: var(--f2-green);
+}
+
+.ds-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--f2-space-2);
+  flex-wrap: wrap;
+}
+
+.ds-secret-host {
+  display: block;
+}
+
+.ds-secret-input {
+  width: 100%;
+}
+
+.ds-secret-hint {
+  margin: 0;
+  font-size: var(--f2-font-caption);
+  color: var(--f2-text-tertiary);
+}
+
+.ds-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--f2-space-2);
+}
+
+.ds-type-option {
+  border: 1px solid var(--f2-border);
+  border-radius: var(--f2-radius-sm);
+  background: var(--f2-bg-card);
+  padding: var(--f2-space-2) var(--f2-space-3);
+  font-size: var(--f2-font-caption);
+  color: var(--f2-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--f2-transition-fast), color var(--f2-transition-fast),
+    background var(--f2-transition-fast);
+}
+
+.ds-type-option:hover {
+  background: var(--f2-bg-hover);
+}
+
+.ds-type-option.is-active {
+  border-color: var(--f2-blue);
+  color: var(--f2-blue);
+  background: color-mix(in srgb, var(--f2-blue) 8%, var(--f2-bg-card));
+}
+
+/* 图案锁：3×3 节点，指针拖动连线 */
+.ds-pattern {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--f2-space-2);
+  max-width: 220px;
+  touch-action: none;
+  user-select: none;
+}
+
+.ds-pattern-dot {
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 56px;
+  border-radius: 50%;
+  border: 2px solid var(--f2-border);
+  background: var(--f2-bg-subtle);
+  transition: border-color var(--f2-transition-fast), background var(--f2-transition-fast),
+    transform var(--f2-transition-fast);
+}
+
+.ds-pattern-dot.is-on {
+  border-color: var(--f2-blue);
+  background: var(--f2-blue);
+  transform: scale(1.08);
+}
+
+.ds-select {
+  min-width: 0;
+}
+
+/* 设备列表 */
+.ds-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-3);
+}
+
+.ds-device {
+  border: 1px solid var(--f2-border);
+  border-radius: var(--f2-radius-sm);
+  padding: var(--f2-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-3);
+  background: var(--f2-bg-subtle);
+}
+
+.ds-device-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--f2-space-2);
+}
+
+.ds-device-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ds-device-name strong {
+  font-size: 14px;
+  color: var(--f2-text-primary);
+}
+
+.ds-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  border: 1px solid var(--f2-border);
+  color: var(--f2-text-secondary);
+  background: var(--f2-bg-card);
+}
+
+.ds-badge.is-self {
+  border-color: color-mix(in srgb, var(--f2-blue) 45%, transparent);
+  color: var(--f2-blue);
+}
+
+.ds-badge.is-auto {
+  border-color: color-mix(in srgb, var(--f2-green) 45%, transparent);
+  color: var(--f2-green);
+}
+
+.ds-badge.is-lease {
+  border-color: color-mix(in srgb, var(--f2-orange) 50%, transparent);
+  color: var(--f2-orange);
+}
+
+.ds-badge.is-developer {
+  border-color: color-mix(in srgb, var(--f2-purple) 45%, transparent);
+  color: var(--f2-purple);
+}
+
+.ds-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--f2-space-2) var(--f2-space-4);
+}
+
+.ds-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ds-meta-label {
+  font-size: 12px;
+  color: var(--f2-text-tertiary);
+}
+
+.ds-meta-value {
+  display: flex;
+  align-items: center;
+  gap: var(--f2-space-2);
+  font-size: 13px;
+  color: var(--f2-text-primary);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ds-mono {
+  font-family: var(--f2-font-mono);
+  font-size: 12px;
+  color: var(--f2-text-secondary);
+  word-break: break-all;
+}
+
+.ds-secret-value {
+  font-family: var(--f2-font-mono);
+  letter-spacing: 1px;
+}
+
+.ds-device-actions {
+  border-top: 1px dashed var(--f2-border);
+  padding-top: var(--f2-space-3);
+}
+
+.ds-device-actions .ds-select {
+  max-width: 180px;
+}
+
+.ds-developer-bar {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--f2-space-3);
+}
+
+.ds-developer-bar .ds-select {
+  flex: 1;
+  max-width: 320px;
+}
+
+.ds-empty {
+  margin: 0;
+  color: var(--f2-text-tertiary);
+  font-size: var(--f2-font-caption);
+}
+
+.ds-error-card {
+  align-items: flex-start;
+}
+
+.ds-error-text {
+  margin: 0;
+  color: var(--f2-red);
+  font-size: var(--f2-font-caption);
+}
+
+/* 加载骨架 */
+.ds-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--f2-space-3);
+}
+
+.ds-loading-bar {
+  height: 56px;
+  border-radius: var(--f2-radius-sm);
+  background: linear-gradient(90deg, var(--f2-bg-subtle) 25%, var(--f2-bg-hover) 50%, var(--f2-bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: ds-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes ds-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* 租约登录的敏感页验证弹窗 */
+.ds-pages-dialog {
+  width: min(380px, calc(100vw - 32px));
+  border: none;
+  border-radius: var(--f2-radius-md);
+  padding: var(--f2-space-5);
+  background: var(--f2-bg-card);
+  color: var(--f2-text-primary);
+  box-shadow: var(--f2-shadow-md);
+}
+
+.ds-pages-dialog::backdrop {
+  background: rgba(16, 20, 29, 0.45);
+}
+
+.ds-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--f2-space-3);
+  margin-bottom: var(--f2-space-2);
+}
+
+.ds-dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: var(--f2-weight-semi);
+}

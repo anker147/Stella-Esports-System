@@ -3,6 +3,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 4fr);
   gap: 16px;
   height: calc(100vh - 104px);
+  height: calc(100dvh - 104px);
   min-height: 560px;
   padding: 0 24px 24px;
 }
@@ -227,7 +228,44 @@
 .communications-conversation-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+/* 行位显式锁定：在流子元素可能少于行数（公告隐藏、播报区 absolute 不占格），
+   自动放置会把消息区掉进 auto 行、把输入框掉进 1fr 行导致不贴底 */
+.communications-conversation-card > .communications-conversation-header {
+  grid-row: 1;
+}
+
+.communications-conversation-card > .communications-announcement {
+  grid-row: 2;
+}
+
+.communications-conversation-card > .communications-message-scroll {
+  grid-row: 3;
+}
+
+.communications-conversation-card > .communications-composer {
+  grid-row: 4;
+}
+
+.communications-back-button {
+  display: none;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--f2-text-secondary);
+  cursor: pointer;
+}
+
+.communications-back-button svg {
+  width: 17px;
+  height: 17px;
 }
 
 .communications-conversation-header {
@@ -815,7 +853,7 @@
 
 .communications-composer-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
   align-items: center;
   gap: 10px;
   min-height: 40px;
@@ -1087,31 +1125,52 @@
 
 @media (max-width: 760px) {
   .communications-page {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 30vh) minmax(520px, 70vh);
-    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
     min-height: 0;
-    padding: 0 16px 20px;
+    padding: 0 10px 10px;
   }
 
-  .communications-channel-list {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    overflow-y: hidden;
+  .communications-page > .communications-channel-card,
+  .communications-page > .communications-conversation-card {
+    grid-row: 1;
+    grid-column: 1;
+    min-height: 0;
   }
 
-  .communications-channel-group {
-    display: contents;
-  }
-
-  .communications-channel-group-title {
+  /* 双屏切换：列表视图只显示频道卡，会话视图只显示会话卡（微信式层级导航） */
+  .communications-page[data-mobile-view="list"] > .communications-conversation-card {
     display: none;
   }
 
-  .communications-channel-row {
-    flex: 0 0 190px;
+  .communications-page[data-mobile-view="conversation"] > .communications-channel-card {
+    display: none;
+  }
+
+  .communications-page[data-mobile-view="conversation"] .communications-back-button {
+    display: grid;
+  }
+
+  .communications-channel-header {
+    min-height: 58px;
+    padding: 9px 12px;
+  }
+
+  .communications-conversation-header {
+    min-height: 56px;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .communications-current-avatar {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .communications-conversation-header p {
+    display: none;
   }
 
   .communications-list-state {
@@ -1119,24 +1178,50 @@
   }
 
   .communications-message-list {
-    padding: 18px 14px;
+    gap: 10px;
+    padding: 14px 10px;
   }
 
   .communications-message-row {
     max-width: 94%;
   }
-}
 
-@media (max-width: 480px) {
-  .communications-conversation-header {
-    padding-inline: 12px;
+  .communications-composer {
+    padding: 8px 10px max(10px, env(safe-area-inset-bottom));
   }
 
+  .communications-composer textarea {
+    min-height: 42px;
+    max-height: 120px;
+    resize: none;
+  }
+
+  /* 触控目标 ≥44px；小屏收起字数统计与实时徽标 */
+  .communications-composer-tool,
+  .communications-send-button,
+  .communications-icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .communications-message-action,
+  .communications-message-menu > summary {
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .communications-character-count,
   .communications-live-state {
     display: none;
   }
 
-  .communications-composer {
+  .communications-dialog {
+    width: calc(100vw - 16px);
+  }
+}
+
+@media (max-width: 480px) {
+  .communications-conversation-header {
     padding-inline: 10px;
   }
 
@@ -1250,6 +1335,10 @@
   border: 1px solid rgba(0, 120, 212, 0.22);
   border-radius: 10px;
   background: rgba(0, 120, 212, 0.06);
+}
+
+.communications-announcement[hidden] {
+  display: none;
 }
 
 .communications-announcement-tag {
@@ -1564,6 +1653,395 @@
 @media (prefers-reduced-motion: reduce) {
   .communications-dialog[open],
   .communications-dialog.dialog-closing {
+    animation: none;
+  }
+}
+
+
+/* ===== 消息多形态：引用块 / 语音条 / 图片视频 / Lightbox / 待发预览 / 录音 ===== */
+.communications-quoted {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 7px;
+  padding: 6px 9px;
+  border: 0;
+  border-left: 3px solid rgba(0, 120, 212, 0.4);
+  border-radius: 5px;
+  background: rgba(0, 120, 212, 0.05);
+  font-size: 11px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.communications-quoted:active {
+  opacity: 0.75;
+}
+
+.communications-quoted strong {
+  color: var(--f2-blue);
+  font-size: 10.5px;
+}
+
+.communications-quoted span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--f2-text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.communications-quoted.is-recalled span {
+  color: var(--f2-text-tertiary);
+  font-style: italic;
+}
+
+.communications-voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 168px;
+  min-height: 36px;
+}
+
+.communications-voice-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(0, 120, 212, 0.3);
+  border-radius: 50%;
+  background: rgba(0, 120, 212, 0.08);
+  color: var(--f2-blue);
+  cursor: pointer;
+}
+
+.communications-voice-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.communications-voice.is-playing .communications-voice-button {
+  border-color: var(--f2-blue);
+  background: var(--f2-blue);
+  color: #fff;
+}
+
+.communications-voice-track {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(15, 35, 60, 0.1);
+}
+
+.communications-voice-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--f2-blue);
+}
+
+.communications-voice-time {
+  flex: 0 0 auto;
+  color: var(--f2-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.communications-media-frame {
+  position: relative;
+  display: block;
+  max-width: min(260px, 100%);
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(15, 35, 60, 0.05);
+  cursor: zoom-in;
+}
+
+.communications-media-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.communications-media-frame video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  background: #10233a;
+}
+
+.communications-media-badge {
+  position: absolute;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(12, 24, 38, 0.55);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.communications-media-badge.is-original {
+  top: 6px;
+  left: 6px;
+}
+
+.communications-media-badge.is-duration {
+  right: 6px;
+  bottom: 6px;
+  font-weight: 400;
+}
+
+.communications-lightbox {
+  width: min(860px, 100vw);
+  max-height: 100dvh;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.communications-lightbox::backdrop {
+  background: rgba(8, 14, 22, 0.82);
+}
+
+.communications-lightbox img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100dvh - 120px);
+  margin: 0 auto;
+  border-radius: 6px;
+}
+
+.communications-lightbox-close {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+}
+
+.communications-lightbox-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.communications-lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.communications-lightbox-caption {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communications-quote-mode svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--f2-blue);
+}
+
+.communications-quote-copy {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communications-composer-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -2px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(15, 35, 60, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 35, 60, 0.03);
+}
+
+.communications-composer-preview[hidden] {
+  display: none;
+}
+
+.communications-preview-list {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.communications-preview-item {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(15, 35, 60, 0.12);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--f2-text-tertiary);
+}
+
+.communications-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.communications-preview-item svg {
+  width: 18px;
+  height: 18px;
+}
+
+.communications-preview-item span {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  padding: 1px 2px;
+  background: rgba(12, 24, 38, 0.55);
+  color: #fff;
+  font-size: 9px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.communications-preview-original {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: var(--f2-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.communications-preview-original input {
+  accent-color: var(--f2-blue);
+}
+
+.communications-preview-cancel,
+.communications-preview-send {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--f2-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--f2-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.communications-preview-send {
+  border-color: var(--f2-blue);
+  background: var(--f2-blue);
+  color: #fff;
+  font-weight: 600;
+}
+
+.communications-preview-send:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.communications-recorder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(196, 43, 28, 0.22);
+  border-radius: 8px;
+  background: rgba(196, 43, 28, 0.07);
+  color: var(--f2-red);
+  font-size: 11.5px;
+}
+
+.communications-recorder[hidden] {
+  display: none;
+}
+
+.communications-recorder-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--f2-red);
+  animation: communications-recorder-pulse 1s ease-in-out infinite;
+}
+
+.communications-recorder.is-cancel {
+  border-style: dashed;
+  background: rgba(15, 35, 60, 0.04);
+  color: var(--f2-text-tertiary);
+}
+
+.communications-recorder.is-cancel .communications-recorder-dot {
+  background: var(--f2-text-tertiary);
+  animation: none;
+}
+
+.communications-recorder-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.communications-recorder-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes communications-recorder-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* 触屏：操作区常显（不依赖 hover），长按菜单让路系统手势 */
+@media (pointer: coarse) {
+  .communications-message-actions {
+    opacity: 1;
+  }
+
+  .communications-message-row,
+  .communications-channel-row {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .communications-recorder-dot {
     animation: none;
   }
 }

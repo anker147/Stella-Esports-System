@@ -14,7 +14,7 @@ const SCHEMA_OBJECTS = [
   'event_management_profiles', 'teams', 'events', 'user_game_history', 'user_event_history', 'user_duty_logs',
   'communication_message_plus_ones', 'communication_message_deletions', 'communication_message_edits',
   'communication_messages', 'communication_channel_observers', 'communication_channel_members', 'communication_channels',
-  'user_login_history', 'user_relationships', 'user_profile_stat_visibility', 'user_profile_covers',
+  'user_login_history', 'user_devices', 'user_security_credentials', 'user_relationships', 'user_profile_stat_visibility', 'user_profile_covers',
   'user_profile_quick_links', 'user_avatars', 'user_profiles', 'app_settings', 'auth_sessions', 'users'
 ];
 
@@ -551,6 +551,8 @@ CREATE TABLE IF NOT EXISTS communication_messages (
   sender_display_name TEXT NOT NULL,
   sender_identity_key TEXT NOT NULL,
   content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 500),
+  kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'voice', 'image', 'video')),
+  quoted_message_id INTEGER REFERENCES communication_messages(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL,
   edited_at INTEGER,
   recalled_at INTEGER,
@@ -559,6 +561,27 @@ CREATE TABLE IF NOT EXISTS communication_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_communication_messages_channel
   ON communication_messages(channel_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS communication_message_media (
+  message_id INTEGER PRIMARY KEY REFERENCES communication_messages(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('voice', 'image', 'video')),
+  mime TEXT NOT NULL,
+  byte_size INTEGER NOT NULL CHECK (byte_size BETWEEN 1 AND 20971520),
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  width INTEGER CHECK (width IS NULL OR width BETWEEN 1 AND 10000),
+  height INTEGER CHECK (height IS NULL OR height BETWEEN 1 AND 10000),
+  duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms BETWEEN 1 AND 600000),
+  is_original INTEGER NOT NULL DEFAULT 0 CHECK (is_original IN (0, 1)),
+  file_path TEXT NOT NULL,
+  thumb_mime TEXT CHECK (thumb_mime IS NULL OR thumb_mime IN ('image/png', 'image/jpeg', 'image/webp')),
+  thumb_byte_size INTEGER CHECK (thumb_byte_size IS NULL OR thumb_byte_size BETWEEN 1 AND 2097152),
+  thumb_sha256 TEXT CHECK (thumb_sha256 IS NULL OR length(thumb_sha256) = 64),
+  thumb_width INTEGER,
+  thumb_height INTEGER,
+  thumb_file_path TEXT,
+  created_at INTEGER NOT NULL,
+  CHECK ((thumb_file_path IS NULL) = (thumb_sha256 IS NULL))
+);
 
 CREATE TABLE IF NOT EXISTS communication_message_edits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -907,6 +930,41 @@ CREATE TABLE IF NOT EXISTS obs_operation_logs (
   category TEXT NOT NULL DEFAULT 'obs'
 );
 CREATE INDEX IF NOT EXISTS idx_obs_logs_time ON obs_operation_logs(timestamp_ms);
+
+CREATE TABLE IF NOT EXISTS user_security_credentials (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('numeric', 'pattern', 'mixed')),
+  secret_encrypted TEXT NOT NULL,
+  secret_hash TEXT NOT NULL,
+  secret_salt TEXT NOT NULL,
+  verify_window_minutes INTEGER NOT NULL DEFAULT 0 CHECK (verify_window_minutes >= 0),
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_devices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_fingerprint TEXT NOT NULL,
+  device_name TEXT NOT NULL DEFAULT '',
+  device_type TEXT NOT NULL DEFAULT 'desktop',
+  device_os TEXT NOT NULL DEFAULT '',
+  device_model TEXT NOT NULL DEFAULT '',
+  browser TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  network_env TEXT NOT NULL DEFAULT '',
+  last_ip TEXT NOT NULL DEFAULT '',
+  last_region TEXT NOT NULL DEFAULT '',
+  last_login_at INTEGER NOT NULL DEFAULT 0,
+  auto_login_enabled INTEGER NOT NULL DEFAULT 0,
+  auto_login_token_hash TEXT,
+  auto_login_expires_at INTEGER,
+  lease_until INTEGER,
+  lease_granted_at INTEGER,
+  created_at INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_fp ON user_devices(user_id, device_fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_auto_token ON user_devices(auto_login_token_hash);
 
 CREATE VIEW IF NOT EXISTS v_team_candidates AS
 SELECT team_id, role, player_id, nickname, official_id, slot

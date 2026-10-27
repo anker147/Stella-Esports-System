@@ -9,6 +9,7 @@ const { migrateLegacyData, readAppSetting, writeAppSetting } = require('./db-mig
 migrateLegacyData();
 const { db, withTransaction } = require('./db');
 const { MANAGEMENT_VIEWS, operationsView, teamDetail } = require('./operations-service');
+const deviceSecurity = require('./device-security-service');
 const {
   applyEventAction,
   createTournamentStage,
@@ -32,7 +33,7 @@ const {
   updateStageMatch
 } = require('./tournament-stage-runtime');
 const { ensureLegacyScheduleMigration } = require('./legacy-schedule-migration');
-const { laboratorySettings, saveLaboratorySettings } = require('./laboratory-settings');
+const { linkGuardSettings, saveLinkGuardSettings } = require('./link-guard-settings');
 const { formatGeoRegion, needsLocalizedLookup, providerGeoRegion, readGeoJson } = require('./location-service');
 const {
   IDENTITY_LABELS,
@@ -43,16 +44,21 @@ const {
   saveAccountOverrides
 } = require('./permissions-service');
 const {
+  buildChannelTextDigest,
   canAccessChannel,
   communicationBootstrap,
   createCustomChannel,
   createPrivateChannel,
   deleteMessageForUser,
   editMessage,
+  exportChannelMessages,
+  exportMediaFiles,
   listMessages,
   markChannelRead,
   recallMessage,
+  readMessageMedia,
   sendMessage,
+  sendMediaMessage,
   setMessageUrgent,
   toggleMessagePlusOne,
   clearChannelAvatar,
@@ -61,6 +67,7 @@ const {
   updateChannelPreferences,
   updateChannelSettings
 } = require('./communication-service');
+const { StoreZipWriter } = require('./zip-store-writer');
 const {
   channelRecipientUserIds,
   createMessageNotification,
@@ -345,7 +352,7 @@ function revokeSessionClients(session, reason = 'session-revoked') {
   sessionEventClients.delete(session.token);
 }
 
-function createSession(user, remember, requestContext) {
+function createSession(user, remember, requestContext, options = {}) {
   const storedSessions = loadSessions();
   storedSessions.filter(item => item.expiresAt <= Date.now()).forEach(closeDutySession);
   const activeSessions = storedSessions.filter(item => item.expiresAt > Date.now());
@@ -371,6 +378,9 @@ function createSession(user, remember, requestContext) {
     deviceName: requestContext.deviceName,
     userAgent: requestContext.userAgent,
     persistent: Boolean(remember),
+    leaseGated: Boolean(options.leaseGated),
+    devicesAuthAt: null,
+    pagesUnlockedAt: null,
     createdAt: new Date().toISOString(),
     expiresAt: Date.now() + SESSION_TTL_MS
   };
@@ -456,6 +466,58 @@ function destroySession(token) {
   saveSessions(sessions.filter(item => item.token !== token));
 }
 
+// —— 常用设备安全解锁态：存会话对象（data_json），用户一旦离线（心跳断档）即整体作废 ——
+
+function setSessionSecurityUnlock(session, field) {
+  if (!session?.token) return;
+  const sessions = loadSessions();
+  const target = sessions.find(item => item.token === session.token);
+  if (!target) return;
+  target[field] = Date.now();
+  saveSessions(sessions);
+}
+
+function clearUserSecurityUnlocks(userId) {
+  if (!userId) return;
+  const sessions = loadSessions();
+  let changed = false;
+  for (const item of sessions) {
+    if (item.userId !== userId) continue;
+    if (item.devicesAuthAt != null || item.pagesUnlockedAt != null) {
+      item.devicesAuthAt = null;
+      item.pagesUnlockedAt = null;
+      changed = true;
+    }
+  }
+  if (changed) saveSessions(sessions);
+}
+
+// 解锁有效性：状态位在 + devices 范围还在时间窗内 + 用户当前在线（离线即全部作废，固定的不可改变策略）
+function securityUnlockValid(session, scope) {
+  if (!session?.userId) return false;
+  if (refreshPresence(session.userId) === 'offline') return false;
+  if (scope === 'pages') return session.pagesUnlockedAt != null;
+  if (session.devicesAuthAt == null) return false;
+  const credential = deviceSecurity.getCredential(db, session.userId);
+  const minutes = credential?.verify_window_minutes ?? 0;
+  if (minutes <= 0) return false;
+  return Date.now() - session.devicesAuthAt <= minutes * 60 * 1000;
+}
+
+function buildSecuritySummary(session) {
+  const credential = deviceSecurity.getCredential(db, session.userId);
+  return {
+    configured: Boolean(credential),
+    type: credential?.type || null,
+    verifyWindowMinutes: credential?.verify_window_minutes ?? 0,
+    leaseGated: Boolean(session.leaseGated),
+    unlocked: {
+      devices: securityUnlockValid(session, 'devices'),
+      pages: securityUnlockValid(session, 'pages')
+    }
+  };
+}
+
 function hasSystemManagementEntitlement(subject) {
   let permissions = subject?.permissions;
   if (!Array.isArray(permissions)) {
@@ -523,8 +585,15 @@ const PROFILE_STATS = new Set(['duty_time', 'account_expiry', 'event_count', 'ga
 const PROFILE_GENDERS = new Set(['unspecified', 'male', 'female', 'other']);
 const MANUAL_PRESENCE_STATUSES = new Set(['online', 'offline', 'away', 'busy']);
 const PRESENCE_PREFERENCES = new Set(['auto', ...MANUAL_PRESENCE_STATUSES]);
-const PRESENCE_HEARTBEAT_TIMEOUT_MS = 75 * 1000;
+const PRESENCE_HEARTBEAT_TIMEOUT_MS = Number(process.env.STELLA_PRESENCE_TIMEOUT_MS) > 0
+  ? Math.floor(Number(process.env.STELLA_PRESENCE_TIMEOUT_MS)) : 75 * 1000;
+const PRESENCE_SWEEP_INTERVAL_MS = Number(process.env.STELLA_PRESENCE_SWEEP_MS) > 0
+  ? Math.floor(Number(process.env.STELLA_PRESENCE_SWEEP_MS)) : 15 * 1000;
 const PRESENCE_AWAY_TIMEOUT_MS = 5 * 60 * 1000;
+// 离线审计：seenOnlineUsers 记录本进程内确实在线过的用户（排除 ensurePresence 生成的从未上线占位行），
+// offlineEpisodeLogged 防止 sweep 对同一离线事件重复写日志；页面刷新会在心跳宽限期内恢复心跳，不会误记
+const seenOnlineUsers = new Set();
+const offlineEpisodeLogged = new Set();
 const ACCOUNT_STATUSES = new Set(['active', 'disabled']);
 
 function profileText(value, label, maxLength) {
@@ -635,6 +704,8 @@ function presenceForUser(userId) {
 function connectPresence(userId) {
   const now = Date.now();
   ensurePresence(userId);
+  seenOnlineUsers.add(userId);
+  offlineEpisodeLogged.delete(userId);
   db.prepare(`UPDATE user_presence SET
     status = 'online', last_heartbeat_at = ?, last_activity_at = ?,
     activity_window_started_at = ?, activity_count = 0,
@@ -647,9 +718,14 @@ function recordPresenceHeartbeat(userId, body = {}) {
   const now = Date.now();
   const row = ensurePresence(userId);
   if (!row.last_heartbeat_at || now - row.last_heartbeat_at > PRESENCE_HEARTBEAT_TIMEOUT_MS) {
+    // 心跳断档意味着期间离线过：安全解锁态全部作废（离线后必须重新验证）
+    clearUserSecurityUnlocks(userId);
     db.prepare(`UPDATE user_presence SET working_context_id = NULL, working_started_at = NULL
       WHERE user_id = ?`).run(userId);
+    // 断档后回归：重新开启这一用户的离线事件记录资格
+    offlineEpisodeLogged.delete(userId);
   }
+  seenOnlineUsers.add(userId);
   const reportedActivity = Number(body.lastActivityAt);
   const boundedActivity = Number.isFinite(reportedActivity) && reportedActivity > 0
     ? Math.min(now, Math.max(now - 24 * 60 * 60 * 1000, reportedActivity))
@@ -705,18 +781,44 @@ function disconnectPresence(userId) {
   return presenceSnapshot(userId);
 }
 
+function recordUserOffline(userId, reason) {
+  if (!userId) return;
+  const row = db.prepare('SELECT id, username, display_name, role FROM users WHERE id = ?').get(userId);
+  if (!row) return; // 账号已删除：不补写离线记录
+  recordAuditLog('account', {
+    userId: row.id,
+    actorDisplayName: row.display_name || row.username,
+    activeIdentityKey: identityKeysForUser(row.id, row.role)[0] || 'guest'
+  }, '账号离线', { account: row.username, reason });
+}
+
 function sweepPresence() {
   const now = Date.now();
-  const rows = db.prepare('SELECT user_id, last_heartbeat_at FROM user_presence').all();
+  const processStartedAt = Date.parse(STARTED_AT);
+  const rows = db.prepare('SELECT user_id, status, last_heartbeat_at, updated_at FROM user_presence').all();
   for (const row of rows) {
-    if (!row.last_heartbeat_at || now - row.last_heartbeat_at > PRESENCE_HEARTBEAT_TIMEOUT_MS) {
-      db.prepare(`UPDATE user_presence SET
+    const heartbeatStale = !row.last_heartbeat_at || now - row.last_heartbeat_at > PRESENCE_HEARTBEAT_TIMEOUT_MS;
+    if (!heartbeatStale) {
+      refreshPresence(row.user_id, now);
+      continue;
+    }
+    if (row.status !== 'offline' && row.last_heartbeat_at
+      && row.last_heartbeat_at >= processStartedAt) {
+      // 情形一：本进程内有过心跳但断档（页面崩溃、休眠断网），状态翻转为离线时记录
+      recordUserOffline(row.user_id, '心跳超时');
+    } else if (row.status === 'offline' && !row.last_heartbeat_at
+      && row.updated_at >= processStartedAt
+      && now - row.updated_at > PRESENCE_HEARTBEAT_TIMEOUT_MS
+      && seenOnlineUsers.has(row.user_id)
+      && !offlineEpisodeLogged.has(row.user_id)) {
+      // 情形二：beacon 主动断开（页面关闭/会话失效）后超过心跳宽限期仍无新心跳（排除页面刷新）才记录
+      recordUserOffline(row.user_id, '连接断开');
+      offlineEpisodeLogged.add(row.user_id);
+    }
+    db.prepare(`UPDATE user_presence SET
         status = 'offline', working_context_id = NULL, working_started_at = NULL, updated_at = ?
         WHERE user_id = ? AND (status <> 'offline' OR working_context_id IS NOT NULL)`)
-        .run(now, row.user_id);
-    } else {
-      refreshPresence(row.user_id, now);
-    }
+      .run(now, row.user_id);
   }
 }
 
@@ -856,6 +958,7 @@ function readUserProfile(session, targetUserId = session.userId) {
     relationship: relationshipStatus(session.userId, targetUserId),
     isSelf: session.userId === targetUserId,
     canManage: canManageSystem(session),
+    security: session.userId === targetUserId ? buildSecuritySummary(session) : null,
     home: { defaultPage: 'personalCenter' },
     updatedAt: isoTime(row.updated_at)
   };
@@ -1140,7 +1243,9 @@ function deviceContext(body, req, location) {
     : crypto.createHash('sha256').update(`${suppliedDeviceId}|${userAgent}|${location.ipAddress}`).digest('hex');
   const deviceName = String(body.deviceName || '').trim().slice(0, 80)
     || (userAgent ? userAgent.split(/[;(]/)[0].trim() : '未知设备');
-  return { ...location, deviceFingerprint, deviceName, userAgent };
+  const networkEnv = String(body.networkEnv || '').trim().slice(0, 24);
+  const deviceModel = String(body.deviceModel || '').trim().slice(0, 40);
+  return { ...location, deviceFingerprint, deviceName, userAgent, networkEnv, deviceModel };
 }
 
 function applyRequestContext(session, req) {
@@ -1163,6 +1268,7 @@ function recordUserLogin(userId, context) {
       (id, user_id, ip_hash, ip_address, region, device_fingerprint, device_name, user_agent, logged_in_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(crypto.randomUUID(), userId, context.ipHash,
       context.ipAddress, context.region, context.deviceFingerprint, context.deviceName, context.userAgent, now);
+    deviceSecurity.upsertDevice(db, userId, context);
   });
 }
 
@@ -1256,6 +1362,14 @@ function listManagedAccounts(session) {
     presenceStatus: presenceForUser(row.id),
     isCurrent: row.id === session.userId
   }));
+}
+
+// 批量操作日志用：按 id 列表取账号名（去重、忽略空值），删除类操作须在删除前调用
+function accountNamesByIds(ids) {
+  const unique = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+  if (!unique.length) return [];
+  return db.prepare(`SELECT username FROM users WHERE id IN (${unique.map(() => '?').join(',')})`)
+    .all(...unique).map(row => row.username);
 }
 
 function createManagedAccount(session, body) {
@@ -1520,8 +1634,7 @@ function recordUserExecution(userId, sessionId) {
   });
 }
 
-const { BpService } = require('./bp-service');
-const { BpPresentationService } = require('./bp-presentation');
+const matchOutcome = require('./match-outcome');
 const {
   calculateCharacterStats,
   createCharacter,
@@ -1531,7 +1644,7 @@ const {
   readCharacterPortrait,
   readCharacterSkillIcon
 } = require('./character-stats');
-const { CONFIG, ESCAPE_CHARACTERS, HUNTER_CHARACTERS, PHASES, SLOT_CONFIG, phaseDurations, animationStyle, updateBpTimerConfig, commentatorImageId, updateCommentatorImageId, commentatorLogoImageId, updateCommentatorLogoImageId, reloadCharacterRoster, getCharacterVersion } = require('./bp-config');
+const { CONFIG, commentatorImageId, updateCommentatorImageId, commentatorLogoImageId, updateCommentatorLogoImageId, reloadCharacterRoster } = require('./bp-config');
 const { ObsController } = require('./obs-controller');
 const { ObsWebSocketClient } = require('./obs-websocket');
 const { MusicController } = require('./music-controller');
@@ -1548,20 +1661,18 @@ const { createAssetResolver, indexedCommentatorImages } = require('./asset-fallb
 const PORT = Number(process.env.PORT || 3788);
 const ROOT = path.resolve(__dirname, '..', 'public');
 const COUNTDOWN_HUB_ID = 'countdown';
-const BP_HUB_ID = 'bp';
-const HUB_IDS = new Set([COUNTDOWN_HUB_ID, BP_HUB_ID]);
+const HUB_IDS = new Set([COUNTDOWN_HUB_ID]);
 const HUD_SOURCE_ENABLED_KEY = 'hud.sourceEnabled';
 
 function readHudSourceEnabled() {
   const stored = readAppSetting(HUD_SOURCE_ENABLED_KEY);
   const value = stored && typeof stored === 'object' ? stored : {};
-  return { countdown: value.countdown !== false, bp: value.bp === true };
+  return { countdown: value.countdown !== false };
 }
 
 function writeHudSourceEnabled(next) {
   writeAppSetting(HUD_SOURCE_ENABLED_KEY, { ...readHudSourceEnabled(), ...next });
 }
-const BP_OVERLAY_URL = `http://127.0.0.1:${PORT}/bp-overlay.html`;
 const WINDOW_CONTROL_SCRIPT = path.join(__dirname, 'window-control.ps1');
 const MATERIAL_PICKER_SCRIPT = path.join(__dirname, 'material-picker.ps1');
 const MATERIAL_OPEN_SCRIPT = path.join(__dirname, 'material-open.ps1');
@@ -1596,10 +1707,6 @@ const STARTED_AT = new Date().toISOString();
 const CONTROL_TOKEN = String(process.env.STELLA_CONTROL_TOKEN || '');
 
 const hubs = new Map();
-const bpClients = new Set();
-const bpPresentationClients = new Set();
-// bp/bootstrap 全量缓存：键随数据版本变化，sendJson 每请求仍做 gzip 协商
-let bpBootstrapCache = { key: '', parts: null };
 const communicationClients = new Set();
 const notificationClients = new Set();
 try { ensureLegacyScheduleMigration(db); } catch (error) { console.warn('[legacy-migration]', error.message); }
@@ -1644,7 +1751,6 @@ function invalidateCommentatorImagesCache() {
 
 const ssePingHeartbeat = setInterval(() => {
   const ping = ': ping\n\n';
-  for (const client of bpClients) sseWrite(client, ping);
   for (const clients of sessionEventClients.values()) {
     for (const client of clients) sseWrite(client, ping);
   }
@@ -1662,12 +1768,7 @@ const musicController = new MusicController();
 const sceneMusicController = new SceneMusicController({ musicController });
 let activeCommentatorImage = commentatorImagesCached().find(image => image.id === commentatorImageId()) || null;
 let activeCommentatorLogoImage = commentatorLogoImages().find(image => image.id === commentatorLogoImageId()) || commentatorLogoImages()[0] || null;
-const bpService = new BpService({ resolver: tournamentResolver, commentatorImage: activeCommentatorImage });
-tournamentResolver.setOutcomeResolver(matchId => bpService.matchWinner(matchId));
-const bpPresentation = new BpPresentationService({
-  resolver: tournamentResolver,
-  getSession: id => bpService.serialize(bpService.getSession(id))
-});
+tournamentResolver.setOutcomeResolver(matchId => matchOutcome.matchWinner(tournamentResolver, matchId));
 const obsPathMigration = new ObsPathMigration({ client: obsClient, obsController, materialLibrary });
 ensureHub(COUNTDOWN_HUB_ID);
 
@@ -1704,7 +1805,7 @@ function openMaterialPath(targetPath) {
 function currentSchedulePresentation(now = Date.now()) {
   return selectSchedulePresentation(
     tournamentResolver.schedules,
-    matchId => Boolean(bpService.matchWinner(matchId)),
+    matchId => Boolean(matchOutcome.matchWinner(tournamentResolver, matchId)),
     now
   );
 }
@@ -1771,12 +1872,6 @@ function commentatorLogoImage(imageId) {
   const image = commentatorLogoImages().find(item => item.id === imageId);
   if (!image) throw new Error('所选解说 LOGO 或兑换码不存在');
   return image;
-}
-
-function sessionForObs(session) {
-  if (!session?.commentatorImage?.id) return session;
-  const image = commentatorImages().find(item => item.id === session.commentatorImage.id);
-  return image ? { ...session, commentatorImage: image } : session;
 }
 
 function defaultCountdownState() {
@@ -1875,11 +1970,6 @@ function broadcastCountdownLog(hub, eventLog) {
   }
 }
 
-function broadcastBp(event, payload) {
-  const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const client of bpClients) sseWrite(client, message);
-}
-
 function broadcastCommunication(payload) {
   const message = `event: communication\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const client of [...communicationClients]) {
@@ -1908,31 +1998,7 @@ function broadcastNotification(payload) {
     sseWrite(client, message);
   }
 }
-
-function presentationStatus(reason) {
-  return {
-    ...bpPresentation.payload(reason),
-    clientCount: bpPresentationClients.size,
-    overlayUrl: BP_OVERLAY_URL
-  };
-}
-
-function broadcastPresentation(event, payload) {
-  const message = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const client of bpPresentationClients) sseWrite(client, message);
-  if (event === 'presentation') broadcastBp('bp-presentation', {
-    ...payload,
-    clientCount: bpPresentationClients.size,
-    overlayUrl: BP_OVERLAY_URL
-  });
-}
-
-bpPresentation.on('presentation', payload => broadcastPresentation('presentation', payload));
-const bpPresentationHeartbeat = setInterval(() => {
-  if (bpPresentationClients.size) broadcastPresentation('heartbeat', bpPresentation.heartbeat());
-}, 1000);
-bpPresentationHeartbeat.unref?.();
-const presenceSweep = setInterval(sweepPresence, 15 * 1000);
+const presenceSweep = setInterval(sweepPresence, PRESENCE_SWEEP_INTERVAL_MS);
 const communicationHeartbeat = setInterval(() => {
   for (const client of [...communicationClients]) {
     const session = validateSession(client.token);
@@ -1974,9 +2040,6 @@ const ROUTE_PERMISSIONS = {
   'POST /api/friends/requests': 'friends.manage',
   'POST /api/friends/:id/accept': 'friends.manage',
   'DELETE /api/friends/:id': 'friends.manage',
-  'GET /api/bp/presentation': 'bp.view',
-  'GET /api/bp/timer-config': 'countdown.operate',
-  'POST /api/bp/timer-config': 'bp.configure',
   'GET /api/bp/commentator-options': 'bp.view',
   'GET /api/obs/status': 'obs.view',
   'GET /api/hubs/obs/status': 'countdown.operate',
@@ -2004,6 +2067,10 @@ const ROUTE_PERMISSIONS = {
   'GET /api/communications/events': 'communication.use',
   'GET /api/communications/channels/:id/messages': 'communication.use',
   'POST /api/communications/channels/:id/messages': 'communication.use',
+  'POST /api/communications/channels/:id/media': 'communication.use',
+  'GET /api/communications/messages/:id#/media': 'communication.use',
+  'GET /api/communications/channels/:id/export': 'communication.use',
+  'GET /api/communications/channels/:id/export-text': 'communication.use',
   'PATCH /api/communications/messages/:id#': 'communication.use',
   'DELETE /api/communications/messages/:id#': 'communication.use',
   'POST /api/communications/messages/:id#/recall': 'communication.use',
@@ -2023,8 +2090,18 @@ const ROUTE_PERMISSIONS = {
   'PUT /api/admin/permissions/accounts/:id': 'permissions.manage',
   'GET /api/admin/system-access': 'system.manage',
   'PUT /api/admin/system-access': 'system.manage',
-  'GET /api/admin/laboratory-settings': 'system.manage',
-  'PUT /api/admin/laboratory-settings': 'system.manage',
+  'GET /api/admin/link-guard-settings': 'system.manage',
+  'PUT /api/admin/link-guard-settings': 'system.manage',
+  'POST /api/auth/auto-login': null,
+  'POST /api/auth/lease-login': null,
+  'GET /api/security/overview': null,
+  'GET /api/security/accounts': 'system.manage',
+  'POST /api/security/devices/challenge-account': null,
+  'POST /api/security/challenge-security': null,
+  'PUT /api/security/credential': null,
+  'PUT /api/security/window': null,
+  'PUT /api/security/devices/:id': null,
+  'DELETE /api/security/devices/:id': null,
   'GET /api/admin/accounts': 'accounts.manage',
   'POST /api/admin/accounts': 'accounts.manage',
   'POST /api/admin/accounts/import': 'accounts.manage',
@@ -2049,21 +2126,13 @@ const ROUTE_PERMISSIONS = {
   'POST /api/materials/:id/delete': 'materials.manage',
   'POST /api/materials/:id/open': 'materials.manage',
   'POST /api/materials/bulk-delete': 'materials.manage',
-  'GET /api/bp/bootstrap': 'bp.view',
   'POST /api/bp/commentator-image': 'bp.operate',
   'POST /api/bp/commentator-logo-image': 'bp.operate',
-  'POST /api/bp/presentation/settings': 'bp.configure',
-  'GET /api/bp/events': 'bp.view',
-  'POST /api/bp/sessions': 'bp.operate',
-  'GET /api/bp/sessions/:id': 'bp.view',
-  'POST /api/bp/sessions/:id/actions': 'bp.operate',
-  'POST /api/bp/sessions/:id/result-image': 'bp.operate',
   'POST /api/hubs': 'countdown.operate',
   'GET /api/hubs/:id/state': 'countdown.operate',
   'GET /api/hubs/:id/logs': 'countdown.operate',
   'POST /api/hubs/:id/obs-toggle': 'countdown.operate',
   'POST /api/hubs/:id/actions': 'countdown.operate',
-  'POST /api/obs/bp-overlay': 'obs.manage',
   'POST /api/obs/connect': 'obs.manage',
   'POST /api/bracket-image': 'bracket.publish'
 };
@@ -2082,7 +2151,8 @@ route('GET', '/api/system/health', ctx => {
     status: 'ready',
     pid: process.pid,
     startedAt: STARTED_AT,
-    dataDir: DATA_ROOT
+    dataDir: DATA_ROOT,
+    guards: { link: linkGuardSettings(db).link }
   });
 });
 
@@ -2112,18 +2182,6 @@ route('GET', '/api/friends', ctx => {
   sendJson(ctx.res, 200, listFriends(ctx.requestSession));
 });
 
-route('GET', '/api/bp/presentation', ctx => {
-  sendJson(ctx.res, 200, presentationStatus());
-});
-
-route('GET', '/api/bp/timer-config', ctx => {
-  sendJson(ctx.res, 200, {
-    phases: timerPhaseMetadata(),
-    phaseDurations: phaseDurations(),
-    animationStyle: animationStyle()
-  });
-});
-
 route('GET', '/api/bp/commentator-options', ctx => {
   sendJson(ctx.res, 200, {
     commentatorImages: commentatorImagesCached(),
@@ -2141,23 +2199,19 @@ route('GET', '/api/hubs/obs/status', async ctx => {
   const connected = Boolean(obsClient.connected);
   const memory = readHudSourceEnabled();
   if (!connected) {
-    sendJson(ctx.res, 200, { connected, sources: { countdown: { enabled: memory.countdown }, bp: { enabled: memory.bp } } });
+    sendJson(ctx.res, 200, { connected, sources: { countdown: { enabled: memory.countdown } } });
     return;
   }
   try {
-    const [countdown, bp] = await Promise.all([
-      obsController.sourceVisible(OBS_INPUTS.countdownBrowser).catch(() => null),
-      obsController.sourceVisible(OBS_INPUTS.bpOverlay).catch(() => null)
-    ]);
+    const countdown = await obsController.sourceVisible(OBS_INPUTS.countdownBrowser).catch(() => null);
     sendJson(ctx.res, 200, {
       connected,
       sources: {
-        countdown: countdown ? { sceneName: countdown.sceneName, enabled: countdown.sceneItemEnabled } : { enabled: memory.countdown },
-        bp: bp ? { sceneName: bp.sceneName, enabled: bp.sceneItemEnabled } : { enabled: memory.bp }
+        countdown: countdown ? { sceneName: countdown.sceneName, enabled: countdown.sceneItemEnabled } : { enabled: memory.countdown }
       }
     });
   } catch (error) {
-    sendJson(ctx.res, 200, { connected, error: error.message, sources: { countdown: { enabled: memory.countdown }, bp: { enabled: memory.bp } } });
+    sendJson(ctx.res, 200, { connected, error: error.message, sources: { countdown: { enabled: memory.countdown } } });
   }
 });
 
@@ -2263,12 +2317,115 @@ route('POST', '/api/auth/login', async ({ req, res }) => {
       replacedOtherDevice: replacedSessions.some(item => item.deviceFingerprint !== context.deviceFingerprint)
     });
     res.setHeader('Set-Cookie', sessionCookie(session.token, body.remember, secureRequest(req)));
+    let autoLogin = null;
+    if (body.autoLogin) {
+      const deviceRow = db.prepare('SELECT * FROM user_devices WHERE user_id = ? AND device_fingerprint = ?')
+        .get(user.id, context.deviceFingerprint);
+      if (deviceRow) {
+        // 单设备约束：enableAutoLogin 会先清掉同账号其他设备的自动登录状态
+        const issued = deviceSecurity.enableAutoLogin(db, user.id, deviceRow.id);
+        autoLogin = { token: issued.token, expiresAt: new Date(issued.expiresAt).toISOString() };
+        recordAuditLog('account', session, '开启本机自动登录', { deviceName: context.deviceName });
+      }
+    }
     sendJson(res, 200, {
       ok: true,
+      userId: user.id,
       role: user.role,
       account: user.account,
-      replacedSessionCount: replacedSessions.length
+      replacedSessionCount: replacedSessions.length,
+      autoLogin
     });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 自动登录：本机存有 token 的设备免账号密码静默重登；单设备唯一，成功后重签 token 并滑动续期 7 天
+route('POST', '/api/auth/auto-login', async ({ req, res }) => {
+  try {
+    if (authSetupRequired()) {
+      sendJson(res, 409, { ok: false, setupRequired: true, error: '请先初始化开发者密码' });
+      return;
+    }
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const device = deviceSecurity.findAutoLoginDevice(db, body.autoLoginToken);
+    if (!device) {
+      sendJson(res, 401, { ok: false, code: 'AUTO_LOGIN_INVALID', error: '自动登录已失效，请重新输入账号密码' });
+      return;
+    }
+    const activeIdentityKey = identityKeysForUser(device.user_id, device.user_role)[0];
+    if (!systemAccessOpen() && !hasSystemManagementEntitlement({
+      userId: device.user_id, role: device.user_role, activeIdentityKey
+    })) {
+      sendJson(res, 403, { ok: false, code: 'SYSTEM_ACCESS_CLOSED', error: '系统暂未开放用户登录，请联系管理员' });
+      return;
+    }
+    let context = deviceContext(body, req, requestLocation(req));
+    context = deviceContext(body, req, await resolveRequestLocation(req));
+    const user = {
+      id: device.user_id,
+      account: device.username,
+      role: device.user_role,
+      activeIdentityKey
+    };
+    const { session } = createSession(user, true, context);
+    deviceSecurity.upsertDevice(db, user.id, context);
+    const currentRow = db.prepare('SELECT * FROM user_devices WHERE user_id = ? AND device_fingerprint = ?')
+      .get(user.id, context.deviceFingerprint);
+    let autoLogin = null;
+    if (currentRow) {
+      // 指纹漂移（浏览器升级等）时行会换新：统一在当前行重签 token，旧设备状态被单设备约束清掉
+      const issued = deviceSecurity.enableAutoLogin(db, user.id, currentRow.id);
+      autoLogin = { token: issued.token, expiresAt: new Date(issued.expiresAt).toISOString() };
+    }
+    recordUserLogin(user.id, context);
+    connectPresence(user.id);
+    recordAuditLog('account', session, '自动登录系统', { deviceName: context.deviceName });
+    res.setHeader('Set-Cookie', sessionCookie(session.token, true, secureRequest(req)));
+    sendJson(res, 200, { ok: true, userId: user.id, role: user.role, account: user.account, autoLogin });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 租约登录：指纹与账号对命中有效租约即可免密进入，会话标记 leaseGated，敏感页先验安全密码
+route('POST', '/api/auth/lease-login', async ({ req, res }) => {
+  try {
+    if (authSetupRequired()) {
+      sendJson(res, 409, { ok: false, setupRequired: true, error: '请先初始化开发者密码' });
+      return;
+    }
+    const body = JSON.parse((await readBody(req)) || '{}');
+    let context = deviceContext(body, req, requestLocation(req));
+    const device = deviceSecurity.findLeaseDevice(db, String(body.userId || '').trim(), context.deviceFingerprint);
+    if (!device) {
+      sendJson(res, 401, { ok: false, code: 'LEASE_LOGIN_INVALID', error: '本设备没有生效中的租约' });
+      return;
+    }
+    const activeIdentityKey = identityKeysForUser(device.user_id, device.user_role)[0];
+    if (!systemAccessOpen() && !hasSystemManagementEntitlement({
+      userId: device.user_id, role: device.user_role, activeIdentityKey
+    })) {
+      sendJson(res, 403, { ok: false, code: 'SYSTEM_ACCESS_CLOSED', error: '系统暂未开放用户登录，请联系管理员' });
+      return;
+    }
+    context = deviceContext(body, req, await resolveRequestLocation(req));
+    const user = {
+      id: device.user_id,
+      account: device.username,
+      role: device.user_role,
+      activeIdentityKey
+    };
+    const { session } = createSession(user, false, context, { leaseGated: true });
+    recordUserLogin(user.id, context);
+    connectPresence(user.id);
+    recordAuditLog('account', session, '租约登录系统', {
+      deviceName: device.device_name,
+      leaseUntil: device.lease_until >= deviceSecurity.PERMANENT_LEASE_AT ? 'permanent' : new Date(device.lease_until).toISOString()
+    });
+    res.setHeader('Set-Cookie', sessionCookie(session.token, false, secureRequest(req)));
+    sendJson(res, 200, { ok: true, role: user.role, account: user.account, leaseGated: true });
   } catch (error) {
     sendJson(res, 400, { ok: false, error: error.message });
   }
@@ -2279,7 +2436,8 @@ route('GET', '/api/auth/session', ({ req, res }) => {
   sendJson(res, 200, session
     ? { authenticated: true, role: session.role, account: session.account,
       identityKeys: session.identityKeys || identityKeysForUser(session.userId, session.role),
-      activeIdentityKey: session.activeIdentityKey }
+      activeIdentityKey: session.activeIdentityKey,
+      security: buildSecuritySummary(session) }
     : { authenticated: false });
 });
 
@@ -2287,7 +2445,9 @@ route('POST', '/api/auth/logout', ({ req, res }) => {
   const session = validateSession(getSessionToken(req));
   if (session) {
     disconnectPresence(session.userId);
-    recordAuditLog('account', session, '退出系统');
+    // 主动退出由「退出系统」日志记录，且用户可能仍有其他标签页在心跳，不在此补写离线记录
+    seenOnlineUsers.delete(session.userId);
+    recordAuditLog('account', session, '退出系统', { reason: 'manual-logout' });
   }
   destroySession(getSessionToken(req));
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
@@ -2318,6 +2478,241 @@ route('POST', '/api/presence/heartbeat', async ({ req, res, requestSession }) =>
 
 route('POST', '/api/presence/disconnect', ({ res, requestSession }) => {
   sendJson(res, 200, disconnectPresence(requestSession.userId));
+});
+
+// —— 常用设备与安全密码 ——
+
+// 进入常用设备页的第一道门：账号登录密码挑战，通过后打开 5 分钟的安全密码设置/重置窗口
+route('POST', '/api/security/devices/challenge-account', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const row = db.prepare('SELECT * FROM users WHERE id = ?').get(requestSession.userId);
+    if (!checkUserPassword(row, String(body.password || ''))) {
+      recordAuditLog('account', requestSession, '常用设备页身份验证失败', {}, false);
+      sendJson(res, 401, { ok: false, error: '账号密码不正确' });
+      return;
+    }
+    deviceSecurity.grantSetupWindow(db, requestSession.userId);
+    recordAuditLog('account', requestSession, '通过常用设备页身份验证');
+    sendJson(res, 200, {
+      ok: true,
+      windowExpiresAt: new Date(Date.now() + deviceSecurity.SETUP_WINDOW_MS).toISOString()
+    });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 安全密码验证：scope=devices 解锁常用设备页，scope=pages 解锁租约登录的敏感功能页（两套策略不互通）
+route('POST', '/api/security/challenge-security', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const scope = body.scope === 'pages' ? 'pages' : 'devices';
+    const credential = deviceSecurity.getCredential(db, requestSession.userId);
+    if (!credential) {
+      sendJson(res, 409, { ok: false, code: 'SECURITY_NOT_CONFIGURED', error: '尚未设置安全密码' });
+      return;
+    }
+    if (!deviceSecurity.verifySecurityPassword(db, requestSession.userId, body.secret)) {
+      recordAuditLog('account', requestSession, '安全密码验证失败', { scope }, false);
+      sendJson(res, 401, { ok: false, error: '安全密码不正确' });
+      return;
+    }
+    setSessionSecurityUnlock(requestSession, scope === 'pages' ? 'pagesUnlockedAt' : 'devicesAuthAt');
+    recordAuditLog('account', requestSession, '安全密码验证通过', { scope });
+    sendJson(res, 200, { ok: true, scope });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 常用设备总览：默认看自己；开发者可指定 userId 查看任意账号并附带敏感字段（?reveal=1 附带安全密码明文）
+route('GET', '/api/security/overview', ({ res, url, requestSession }) => {
+  try {
+    const viewerIsDeveloper = canManageSystem(requestSession);
+    const requestedUserId = String(url.searchParams.get('userId') || '').trim();
+    const targetUserId = requestedUserId || requestSession.userId;
+    const isSelf = targetUserId === requestSession.userId;
+    if (!isSelf && !viewerIsDeveloper) {
+      sendJson(res, 403, { code: 'PERMISSION_DENIED', error: '仅开发者可查看其他账号的常用设备' });
+      return;
+    }
+    const targetRow = db.prepare('SELECT id, username, display_name, status FROM users WHERE id = ?')
+      .get(targetUserId);
+    if (!targetRow) {
+      sendJson(res, 404, { error: '账号不存在' });
+      return;
+    }
+    const reveal = viewerIsDeveloper && url.searchParams.get('reveal') === '1';
+    const credential = deviceSecurity.getCredential(db, targetUserId);
+    sendJson(res, 200, {
+      viewer: { userId: requestSession.userId, isDeveloper: viewerIsDeveloper },
+      target: {
+        userId: targetRow.id,
+        account: targetRow.username,
+        displayName: targetRow.display_name || targetRow.username,
+        isSelf
+      },
+      credential: deviceSecurity.credentialView(credential, { includeSecret: reveal, database: db }),
+      unlocked: isSelf ? {
+        devices: securityUnlockValid(requestSession, 'devices'),
+        pages: securityUnlockValid(requestSession, 'pages')
+      } : { devices: false, pages: false },
+      leaseGated: Boolean(requestSession.leaseGated),
+      devices: deviceSecurity.listDevices(db, targetUserId).map(row => deviceSecurity.deviceView(row, {
+        includeSensitive: viewerIsDeveloper,
+        currentFingerprint: isSelf ? requestSession.deviceFingerprint : ''
+      }))
+    });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+// 设置/重置安全密码：需要账号密码挑战窗口（5 分钟内）
+route('PUT', '/api/security/credential', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const credential = deviceSecurity.setCredential(db, requestSession.userId, {
+      type: String(body.type || ''),
+      secret: body.secret,
+      windowMinutes: body.windowMinutes
+    });
+    // 新凭据生效后旧的解锁态全部作废，需要用新密码重新验证
+    clearUserSecurityUnlocks(requestSession.userId);
+    recordAuditLog('account', requestSession, '设置安全密码', { type: credential.type });
+    sendJson(res, 200, { ok: true, credential: deviceSecurity.credentialView(credential) });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 调整安全密码的重新认证窗口（0 = 每次进入都验证）；本人需处于已解锁状态，开发者可直接调整
+route('PUT', '/api/security/window', async ({ req, res, requestSession }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    if (!canManageSystem(requestSession) && !securityUnlockValid(requestSession, 'devices')) {
+      sendJson(res, 403, { code: 'SECURITY_UNLOCK_REQUIRED', error: '请先验证安全密码' });
+      return;
+    }
+    const minutes = deviceSecurity.normalizeWindowMinutes(body.minutes);
+    const now = Date.now();
+    db.prepare('UPDATE user_security_credentials SET verify_window_minutes = ?, updated_at = ? WHERE user_id = ?')
+      .run(minutes, now, requestSession.userId);
+    recordAuditLog('account', requestSession, '调整安全密码认证窗口', { minutes });
+    sendJson(res, 200, { ok: true, verifyWindowMinutes: minutes });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 设备操作：开关自动登录 / 设置租约。本人需 devices 解锁态，开发者可直接操作任意账号
+route('PUT', '/api/security/devices/:id', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const viewerIsDeveloper = canManageSystem(requestSession);
+    const targetUserId = String(body.userId || '').trim() || requestSession.userId;
+    const isSelf = targetUserId === requestSession.userId;
+    if (!isSelf && !viewerIsDeveloper) {
+      sendJson(res, 403, { code: 'PERMISSION_DENIED', error: '仅开发者可操作其他账号的设备' });
+      return;
+    }
+    if (!viewerIsDeveloper && !(isSelf && securityUnlockValid(requestSession, 'devices'))) {
+      sendJson(res, 403, { code: 'SECURITY_UNLOCK_REQUIRED', error: '请先验证安全密码' });
+      return;
+    }
+    const device = deviceSecurity.getDevice(db, targetUserId, params.id);
+    if (!device) {
+      sendJson(res, 404, { ok: false, error: '设备不存在' });
+      return;
+    }
+    if (body.autoLogin === true || body.autoLogin === false) {
+      if (body.autoLogin) {
+        // token 只发给操作时的本机：远程设备开启拿不到 token，无意义，直接拒绝
+        if (!isSelf || device.device_fingerprint !== requestSession.deviceFingerprint) {
+          sendJson(res, 400, { ok: false, error: '自动登录只能在本机设备上开启' });
+          return;
+        }
+        const issued = deviceSecurity.enableAutoLogin(db, targetUserId, params.id);
+        recordAuditLog('account', requestSession, '开启设备自动登录', { deviceName: device.device_name });
+        sendJson(res, 200, {
+          ok: true,
+          autoLogin: { token: issued.token, expiresAt: new Date(issued.expiresAt).toISOString() }
+        });
+      } else {
+        deviceSecurity.disableAutoLogin(db, targetUserId, params.id);
+        recordAuditLog('account', requestSession, '关闭设备自动登录', { deviceName: device.device_name });
+        sendJson(res, 200, { ok: true });
+      }
+      return;
+    }
+    if (body.leaseUntil === undefined) {
+      sendJson(res, 400, { ok: false, error: '缺少设备操作参数' });
+      return;
+    }
+    const updated = deviceSecurity.setLease(db, targetUserId, params.id, body.leaseUntil);
+    recordAuditLog('account', requestSession, '调整设备租约', {
+      deviceName: device.device_name,
+      leaseUntil: updated.lease_until
+        ? (updated.lease_until >= deviceSecurity.PERMANENT_LEASE_AT ? 'permanent' : new Date(updated.lease_until).toISOString())
+        : null
+    });
+    sendJson(res, 200, {
+      ok: true,
+      device: deviceSecurity.deviceView(updated, { includeSensitive: viewerIsDeveloper })
+    });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message });
+  }
+});
+
+// 删除设备：同时清掉该设备的自动登录状态并踢掉来自该设备的在途会话
+route('DELETE', '/api/security/devices/:id', ({ res, url, requestSession, params }) => {
+  try {
+    const viewerIsDeveloper = canManageSystem(requestSession);
+    const targetUserId = String(url.searchParams.get('userId') || '').trim() || requestSession.userId;
+    const isSelf = targetUserId === requestSession.userId;
+    if (!isSelf && !viewerIsDeveloper) {
+      sendJson(res, 403, { code: 'PERMISSION_DENIED', error: '仅开发者可操作其他账号的设备' });
+      return;
+    }
+    if (!viewerIsDeveloper && !(isSelf && securityUnlockValid(requestSession, 'devices'))) {
+      sendJson(res, 403, { code: 'SECURITY_UNLOCK_REQUIRED', error: '请先验证安全密码' });
+      return;
+    }
+    const device = deviceSecurity.getDevice(db, targetUserId, params.id);
+    if (!device) {
+      sendJson(res, 404, { error: '设备不存在' });
+      return;
+    }
+    deviceSecurity.deleteDevice(db, targetUserId, params.id);
+    const sessions = loadSessions();
+    const removed = sessions.filter(item => item.userId === targetUserId
+      && item.deviceFingerprint === device.device_fingerprint);
+    if (removed.length) {
+      removed.forEach(closeDutySession);
+      saveSessions(sessions.filter(item => !removed.includes(item)));
+      removed.forEach(session => revokeSessionClients(session));
+    }
+    recordAuditLog('account', requestSession, '删除常用设备', { deviceName: device.device_name });
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+  }
+});
+
+// 开发者切换查看账号的下拉数据源
+route('GET', '/api/security/accounts', ({ res }) => {
+  const rows = db.prepare('SELECT id, username, display_name, status FROM users ORDER BY username COLLATE NOCASE')
+    .all();
+  sendJson(res, 200, {
+    accounts: rows.map(row => ({
+      id: row.id,
+      account: row.username,
+      displayName: row.display_name || row.username,
+      status: row.status
+    }))
+  });
 });
 
 route('POST', '/api/presence/preference', async ({ req, res, requestSession }) => {
@@ -2370,11 +2765,22 @@ route('PUT', '/api/profile', async ({ req, res, requestSession }) => {
       sensitiveFields.push('account');
     }
     if (body.newPassword) sensitiveFields.push('password');
+    const previousTitle = db.prepare('SELECT title FROM user_profiles WHERE user_id = ?')
+      .get(requestSession.userId)?.title || '';
     const profile = saveUserProfile(requestSession, body);
     recordAuditLog('account', requestSession, '修改个人资料', {
       fields: ['displayName', 'title', 'bio', 'gender', 'birthDate', 'presencePreference', 'visibleStats'],
       sensitiveFields
     });
+    // 非管理身份改岗位会生成待审申请（saveUserProfile 内部落库），这里补一条申请动作日志
+    const requestedTitle = String(body.title ?? '').trim();
+    const pendingTitle = db.prepare(`SELECT requested_title FROM user_title_requests
+      WHERE user_id = ? AND status = 'pending' ORDER BY requested_at DESC LIMIT 1`)
+      .get(requestSession.userId)?.requested_title || '';
+    if (!canManageSystem(requestSession) && requestedTitle && requestedTitle !== previousTitle
+      && pendingTitle === requestedTitle) {
+      recordAuditLog('account', requestSession, '提交岗位申请', { requestedTitle });
+    }
     sendJson(res, 200, profile);
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -2544,7 +2950,6 @@ route('GET', '/api/operations/:view', ({ res, requestSession, url, params }) => 
       activeSessions: loadSessions().filter(item => item.expiresAt > Date.now()).length,
       communicationStreams: communicationClients.size,
       notificationStreams: notificationClients.size,
-      presentationStreams: bpPresentationClients.size,
       systemOpen: systemAccessOpen(),
       obs: obsController.status()
     };
@@ -2785,6 +3190,46 @@ route('POST', '/api/communications/channels/:id/messages', async ({ req, res, re
     let notification = null;
     const message = sendMessage(db, requestSession, params.id, body.content, {
       afterInsert: (serialized) => { notification = createMessageNotification(db, serialized, false); }
+    }, { quotedMessageId: body.quotedMessageId });
+    const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
+    broadcastCommunication({ type: 'message', channelId: message.channelId, messageId: message.id });
+    if (notification) broadcastNotification({
+      type: 'created', notificationId: notification.id, urgent: false, targetUserIds
+    });
+    sendJson(res, 201, { message });
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+// 媒体消息上传：body 为「缩略图字节 + 主文件字节」拼接的纯二进制，thumbBytes 指明切分点
+// （零依赖前提不引入 multipart 解析器）；其余元数据经 query 传递，一次请求原子建消息与媒体。
+route('POST', '/api/communications/channels/:id/media', async ({ req, res, url, requestSession, params }) => {
+  try {
+    const buffer = await readBuffer(req, 23 * 1024 * 1024);
+    const thumbBytes = Number(url.searchParams.get('thumbBytes') || 0);
+    let thumbBuffer = null;
+    let mainBuffer = buffer;
+    if (Number.isInteger(thumbBytes) && thumbBytes > 0 && thumbBytes < buffer.length) {
+      thumbBuffer = buffer.subarray(0, thumbBytes);
+      mainBuffer = buffer.subarray(thumbBytes);
+    }
+    let notification = null;
+    const message = await sendMediaMessage(db, requestSession, params.id, {
+      kind: url.searchParams.get('kind'),
+      mime: String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase(),
+      mainBuffer,
+      thumbBuffer,
+      thumbMime: url.searchParams.get('thumbMime'),
+      durationMs: url.searchParams.get('durationMs'),
+      quotedMessageId: url.searchParams.get('quotedMessageId'),
+      width: url.searchParams.get('width'),
+      height: url.searchParams.get('height'),
+      thumbWidth: url.searchParams.get('thumbWidth'),
+      thumbHeight: url.searchParams.get('thumbHeight'),
+      isOriginal: url.searchParams.get('original') === '1'
+    }, {
+      afterInsert: (serialized) => { notification = createMessageNotification(db, serialized, false); }
     });
     const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
     broadcastCommunication({ type: 'message', channelId: message.channelId, messageId: message.id });
@@ -2797,11 +3242,83 @@ route('POST', '/api/communications/channels/:id/messages', async ({ req, res, re
   }
 });
 
+function streamFileRange(res, filePath, start, end) {
+  const stream = fs.createReadStream(filePath, { start, end });
+  stream.on('error', () => res.destroy());
+  stream.pipe(res);
+}
+
+// 媒体读取：sha256 ETag + immutable 长缓存（看过一次永不再请求），支持单段 Range 供视频拖动。
+route('GET', '/api/communications/messages/:id#/media', ({ req, res, url, requestSession, params }) => {
+  try {
+    const variant = url.searchParams.get('variant') === 'thumb' ? 'thumb' : 'main';
+    const media = readMessageMedia(db, requestSession, Number(params.id), variant);
+    const etag = `"${media.sha256}"`;
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { ETag: etag });
+      res.end();
+      return;
+    }
+    const baseHeaders = {
+      'Content-Type': media.mime,
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      ETag: etag,
+      'X-Content-Type-Options': 'nosniff',
+      'Accept-Ranges': 'bytes'
+    };
+    const rangeMatch = String(req.headers.range || '').match(/^bytes=(\d*)-(\d*)$/);
+    if (rangeMatch && (rangeMatch[1] !== '' || rangeMatch[2] !== '')) {
+      let start;
+      let end;
+      if (rangeMatch[1] === '') {
+        const suffix = Number(rangeMatch[2]);
+        start = Math.max(0, media.byteSize - suffix);
+        end = media.byteSize - 1;
+      } else {
+        start = Number(rangeMatch[1]);
+        end = rangeMatch[2] === '' ? media.byteSize - 1 : Math.min(Number(rangeMatch[2]), media.byteSize - 1);
+      }
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start >= media.byteSize || start > end) {
+        res.writeHead(416, { 'Content-Range': `bytes */${media.byteSize}` });
+        res.end();
+        return;
+      }
+      res.writeHead(206, {
+        ...baseHeaders,
+        'Content-Range': `bytes ${start}-${end}/${media.byteSize}`,
+        'Content-Length': String(end - start + 1)
+      });
+      streamFileRange(res, media.filePath, start, end);
+      return;
+    }
+    res.writeHead(200, { ...baseHeaders, 'Content-Length': String(media.byteSize) });
+    streamFileRange(res, media.filePath, 0, media.byteSize - 1);
+  } catch (error) {
+    const status = error.code === 'CHANNEL_FORBIDDEN' || error.code === 'MESSAGE_FORBIDDEN' ? 403 : 404;
+    if (!res.headersSent) sendJson(res, status, { code: error.code, error: error.message });
+    else res.destroy();
+  }
+});
+
+// 审计日志用的消息内容预览：压缩空白并截断，避免 details_json 膨胀
+function logContentPreview(content) {
+  return String(content || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
 route('PATCH', '/api/communications/messages/:id#', async ({ req, res, requestSession, params }) => {
   const messageId = Number(params.id);
   try {
     const body = JSON.parse((await readBody(req)) || '{}');
+    const before = db.prepare('SELECT kind, content, created_at FROM communication_messages WHERE id = ?').get(messageId);
     const message = editMessage(db, requestSession, messageId, body.content);
+    recordAuditLog('account', requestSession, '修改消息', {
+      contentPreview: logContentPreview(message.content),
+      previousContentPreview: logContentPreview(before?.content),
+      kind: before?.kind || 'text',
+      channelId: message.channelId,
+      messageId,
+      sentAt: before?.created_at || null
+    });
     broadcastCommunication({ type: 'message-updated', channelId: message.channelId, messageId });
     sendJson(res, 200, { message });
   } catch (error) {
@@ -2828,7 +3345,18 @@ route('DELETE', '/api/communications/messages/:id#', ({ res, requestSession, par
 route('POST', '/api/communications/messages/:id#/recall', ({ res, requestSession, params }) => {
   const messageId = Number(params.id);
   try {
+    const before = db.prepare('SELECT kind, content, created_at FROM communication_messages WHERE id = ?').get(messageId);
     const message = recallMessage(db, requestSession, messageId);
+    // 撤回日志记录消息的初始内容（编辑链最早版本）：内容演变已由「修改消息」日志完整记录
+    const initialContent = db.prepare(`SELECT content FROM communication_message_edits
+      WHERE message_id = ? ORDER BY id ASC LIMIT 1`).get(messageId)?.content;
+    recordAuditLog('account', requestSession, '撤回消息', {
+      contentPreview: logContentPreview(initialContent || before?.content),
+      kind: before?.kind || 'text',
+      channelId: message.channelId,
+      messageId,
+      sentAt: before?.created_at || null
+    });
     broadcastCommunication({ type: 'message-recalled', channelId: message.channelId, messageId });
     sendJson(res, 200, { message });
   } catch (error) {
@@ -2855,6 +3383,12 @@ route('POST', '/api/communications/messages/:id#/urgent', async ({ req, res, req
     const body = JSON.parse((await readBody(req)) || '{}');
     const message = setMessageUrgent(db, requestSession, messageId, Boolean(body.urgent));
     const notification = syncMessageUrgency(db, message);
+    recordAuditLog('account', requestSession, message.urgent ? '设置消息加急' : '取消消息加急', {
+      channelId: message.channelId,
+      kind: message.kind,
+      messageId,
+      contentPreview: logContentPreview(message.content)
+    });
     const targetUserIds = channelRecipientUserIds(db, message.channelId, requestSession.userId);
     broadcastCommunication({ type: 'message-urgent', channelId: message.channelId, messageId });
     if (notification) broadcastNotification({
@@ -2949,6 +3483,102 @@ route('POST', '/api/communications/channels', async ({ req, res, requestSession 
   }
 });
 
+// 管理员导出：流式 ZIP（store 模式）边生成边下载——messages.json 清单 + media/ 主文件，
+// 缩略图可再生成不入包。仅 developer/administrator 身份且能访问该频道，导出动作落审计日志。
+route('GET', '/api/communications/channels/:id/export', async ({ req, res, requestSession, params }) => {
+  let snapshot;
+  let exportFiles;
+  let missingMediaMessageIds;
+  try {
+    const identityKey = requestSession?.activeIdentityKey;
+    if (identityKey !== 'developer' && identityKey !== 'administrator') {
+      sendJson(res, 403, { code: 'EXPORT_FORBIDDEN', error: '只有管理员或开发者可以导出消息记录' });
+      return;
+    }
+    snapshot = exportChannelMessages(db, requestSession, params.id);
+    const mediaExport = exportMediaFiles(db, snapshot.messages);
+    exportFiles = mediaExport.files;
+    missingMediaMessageIds = mediaExport.missingMessageIds;
+    recordAuditLog('account', requestSession, '导出频道消息记录', {
+      channelId: params.id,
+      channelName: snapshot.channel.name,
+      messageCount: snapshot.messages.length,
+      mediaCount: exportFiles.length,
+      missingMediaCount: missingMediaMessageIds.length
+    });
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 404, { code: error.code, error: error.message });
+    return;
+  }
+  const manifest = {
+    exportedAt: new Date().toISOString(),
+    exportedBy: {
+      account: requestSession?.account || '',
+      displayName: requestSession?.actorDisplayName || '',
+      identityKey: requestSession?.activeIdentityKey || '',
+      identityLabel: IDENTITY_LABELS[requestSession?.activeIdentityKey] || ''
+    },
+    channel: snapshot.channel,
+    messageCount: snapshot.messages.length,
+    mediaCount: exportFiles.length,
+    missingMediaMessageIds,
+    messages: snapshot.messages
+  };
+  const safeChannelName = String(snapshot.channel.name || 'channel').replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 40) || 'channel';
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Cache-Control': 'no-store',
+    'Content-Disposition': `attachment; filename="messages-${stamp}.zip"; filename*=UTF-8''${encodeURIComponent(`原始记录-${safeChannelName}-${stamp}.zip`)}`
+  });
+  const writeChunk = async chunk => {
+    if (res.destroyed || res.writableEnded) throw new Error('client aborted');
+    if (res.write(chunk)) return;
+    await new Promise(resolve => {
+      const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
+      res.once('drain', done);
+      res.once('close', done);
+    });
+  };
+  try {
+    const zip = new StoreZipWriter(writeChunk);
+    await zip.addBuffer('messages.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+    for (const file of exportFiles) {
+      if (res.destroyed) return;
+      await zip.addFile(file.fileName, file.absolutePath, file.byteSize);
+    }
+    await zip.finalize();
+    res.end();
+  } catch {
+    res.destroy();
+  }
+});
+
+// 整理版聊天记录导出：人类可读的纯文本（北京时间、编辑/+1/引用/撤回/加急标注），
+// 权限门与审计同原始记录导出一致。
+route('GET', '/api/communications/channels/:id/export-text', ({ res, requestSession, params }) => {
+  try {
+    const identityKey = requestSession?.activeIdentityKey;
+    if (identityKey !== 'developer' && identityKey !== 'administrator') {
+      sendJson(res, 403, { code: 'EXPORT_FORBIDDEN', error: '只有管理员或开发者可以导出聊天记录' });
+      return;
+    }
+    const digest = buildChannelTextDigest(db, requestSession, params.id);
+    recordAuditLog('account', requestSession, '导出聊天记录', {
+      channelId: params.id,
+      messageCount: digest.messageCount
+    });
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Disposition': `attachment; filename="chat-${new Date().toISOString().slice(0, 10)}.txt"; filename*=UTF-8''${encodeURIComponent(digest.fileName)}`
+    });
+    res.end(digest.body);
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 404, { code: error.code, error: error.message });
+  }
+});
+
 route('GET', '/api/admin/notifications', ({ res, url }) => {
   const published = listPublishedNotifications(db, {
     offset: url.searchParams.get('offset'),
@@ -2974,6 +3604,8 @@ route('POST', '/api/admin/notifications', async ({ req, res, requestSession }) =
     const result = publishNotification(db, requestSession, body);
     recordAuditLog('account', requestSession, '发布系统通知', {
       notificationId: result.notification?.id,
+      title: result.notification?.title || null,
+      summary: result.notification?.summary || null,
       targetKind: body.target?.kind || body.targetKind,
       targetValue: body.target?.value || body.targetValue,
       urgent: Boolean(body.urgent),
@@ -3011,7 +3643,8 @@ route('PUT', '/api/admin/permissions/identities/:id', async ({ req, res, request
     saveSessions(sessions);
     recordAuditLog('account', requestSession, '修改身份权限', {
       identityKey: result.identityKey,
-      permissionCount: result.permissions.length
+      permissionCount: result.permissions.length,
+      permissions: result.permissions
     });
     sendJson(res, 200, permissionCenterSnapshot());
   } catch (error) {
@@ -3032,7 +3665,9 @@ route('PUT', '/api/admin/permissions/accounts/:id', async ({ req, res, requestSe
     recordAuditLog('account', requestSession, '修改账号权限', {
       targetUserId: result.userId,
       grantCount: result.grants.length,
-      denyCount: result.denies.length
+      denyCount: result.denies.length,
+      grants: result.grants,
+      denies: result.denies
     });
     sendJson(res, 200, permissionCenterSnapshot());
   } catch (error) {
@@ -3061,16 +3696,16 @@ route('PUT', '/api/admin/system-access', async ({ req, res, requestSession }) =>
   }
 });
 
-route('GET', '/api/admin/laboratory-settings', ({ res }) => {
-  sendJson(res, 200, laboratorySettings(db));
+route('GET', '/api/admin/link-guard-settings', ({ res }) => {
+  sendJson(res, 200, linkGuardSettings(db));
 });
 
-route('PUT', '/api/admin/laboratory-settings', async ({ req, res, requestSession }) => {
+route('PUT', '/api/admin/link-guard-settings', async ({ req, res, requestSession }) => {
   try {
     const body = JSON.parse((await readBody(req)) || '{}');
-    const settings = saveLaboratorySettings(db, body);
+    const settings = saveLinkGuardSettings(db, body);
     recordAuditLog('account', requestSession,
-      settings.newBpInterface ? '启用新版 BP 界面' : '停用新版 BP 界面', settings);
+      settings.link ? '启用链路环境守卫' : '停用链路环境守卫', settings);
     sendJson(res, 200, settings);
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -3085,7 +3720,9 @@ route('POST', '/api/admin/accounts', async ({ req, res, requestSession }) => {
   try {
     const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
     const account = createManagedAccount(requestSession, body);
-    recordAuditLog('account', requestSession, '创建账号', { targetUserId: account.id, account: account.account });
+    recordAuditLog('account', requestSession, '创建账号', {
+      targetUserId: account.id, account: account.account, response: account
+    });
     sendJson(res, 201, account);
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -3097,7 +3734,10 @@ route('POST', '/api/admin/accounts/import', async ({ req, res, requestSession })
     const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
     const result = importManagedAccounts(requestSession, body.accounts);
     recordAuditLog('account', requestSession, '批量导入账号', {
-      imported: result.imported.length, rejected: result.rejected.length
+      imported: result.imported.length,
+      rejected: result.rejected.length,
+      importedAccounts: result.imported.map(item => item.account),
+      rejectedList: result.rejected
     });
     sendJson(res, 200, result);
   } catch (error) {
@@ -3110,7 +3750,9 @@ route('POST', '/api/admin/accounts/bulk-status', async ({ req, res, requestSessi
     const body = JSON.parse((await readBody(req)) || '{}');
     const result = bulkUpdateManagedAccountStatus(requestSession, body.ids, body.status);
     recordAuditLog('account', requestSession, '批量变更账号状态', {
-      status: body.status, count: result.changed
+      status: body.status, count: result.changed,
+      ids: [...new Set((Array.isArray(body.ids) ? body.ids : []).map(String).filter(Boolean))],
+      accounts: accountNamesByIds(body.ids)
     });
     sendJson(res, 200, result);
   } catch (error) {
@@ -3121,8 +3763,12 @@ route('POST', '/api/admin/accounts/bulk-status', async ({ req, res, requestSessi
 route('POST', '/api/admin/accounts/bulk-delete', async ({ req, res, requestSession }) => {
   try {
     const body = JSON.parse((await readBody(req)) || '{}');
+    const targetIds = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(String).filter(Boolean))];
+    const targetAccounts = accountNamesByIds(targetIds);
     const result = bulkDeleteManagedAccounts(requestSession, body.ids);
-    recordAuditLog('account', requestSession, '批量删除账号', { count: result.deleted });
+    recordAuditLog('account', requestSession, '批量删除账号', {
+      count: result.deleted, ids: targetIds, accounts: targetAccounts
+    });
     sendJson(res, 200, result);
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -3133,7 +3779,9 @@ route('PUT', '/api/admin/accounts/:id', async ({ req, res, requestSession, param
   try {
     const body = JSON.parse((await readBody(req, 4 * 1024 * 1024)) || '{}');
     const account = updateManagedAccount(requestSession, params.id, body);
-    recordAuditLog('account', requestSession, '修改账号', { targetUserId: params.id, account: account.account });
+    recordAuditLog('account', requestSession, '修改账号', {
+      targetUserId: params.id, account: account.account, response: account
+    });
     sendJson(res, 200, account);
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -3142,8 +3790,15 @@ route('PUT', '/api/admin/accounts/:id', async ({ req, res, requestSession, param
 
 route('DELETE', '/api/admin/accounts/:id', ({ res, requestSession, params }) => {
   try {
+    const target = db.prepare('SELECT username, display_name, role, status FROM users WHERE id = ?').get(params.id);
     deleteManagedAccount(requestSession, params.id);
-    recordAuditLog('account', requestSession, '删除账号', { targetUserId: params.id });
+    recordAuditLog('account', requestSession, '删除账号', {
+      targetUserId: params.id,
+      account: target?.username || null,
+      displayName: target?.display_name || null,
+      role: target?.role || null,
+      status: target?.status || null
+    });
     sendJson(res, 200, { ok: true });
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -3154,8 +3809,12 @@ route('POST', '/api/admin/accounts/:id/title-review', async ({ req, res, request
   try {
     const body = JSON.parse((await readBody(req)) || '{}');
     const account = reviewTitleRequest(requestSession, params.id, body.decision);
+    const reviewedRequest = db.prepare(`SELECT requested_title FROM user_title_requests
+      WHERE user_id = ? ORDER BY requested_at DESC LIMIT 1`).get(params.id);
     recordAuditLog('account', requestSession, body.decision === 'approved' ? '批准岗位申请' : '驳回岗位申请', {
-      targetUserId: params.id
+      targetUserId: params.id,
+      requestedTitle: reviewedRequest?.requested_title || null,
+      response: account
     });
     sendJson(res, 200, account);
   } catch (error) {
@@ -3350,36 +4009,6 @@ route('POST', '/api/materials/bulk-delete', async ({ req, res }) => {
   }
 });
 
-route('GET', '/api/bp/bootstrap', ({ res }) => {
-  // 全量缓存：键随 BP 数据版本与角色版本变化，命中时免去 36ms 同步序列化；
-  // 每请求现算的低成本字段（obs、dynamicBp、timer、laboratory、解说席列表）不入缓存
-  const cacheKey = `${bpService.getBootstrapVersion()}|${getCharacterVersion()}`;
-  if (bpBootstrapCache.key !== cacheKey) {
-    bpBootstrapCache = { key: cacheKey, parts: {
-      tournament: tournamentResolver.data,
-      schedules: tournamentResolver.schedules,
-      characters: { escape: ESCAPE_CHARACTERS, hunter: HUNTER_CHARACTERS },
-      characterMeta: CONFIG.characterMeta || {},
-      phases: PHASES,
-      slots: SLOT_CONFIG,
-      ui: CONFIG.ui,
-      sessions: bpService.listSessionSummaries(),
-      testMatchIds: ['bp-interface-test-match'],
-      commentatorImages: commentatorImagesCached().map(({ filePath, ...image }) => image),
-      commentatorLogoImages: commentatorLogoImages().map(({ filePath, ...image }) => image),
-      commentatorImage: activeCommentatorImage ? { id: activeCommentatorImage.id, name: activeCommentatorImage.name } : null,
-      commentatorLogoImage: activeCommentatorLogoImage ? { id: activeCommentatorLogoImage.id, name: activeCommentatorLogoImage.name } : null
-    } };
-  }
-  sendJson(res, 200, {
-    ...bpBootstrapCache.parts,
-    timer: { ...CONFIG.timer, phaseDurations: phaseDurations(), animationStyle: animationStyle() },
-    obs: obsController.status(),
-    dynamicBp: presentationStatus(),
-    laboratory: laboratorySettings(db)
-  });
-});
-
 route('POST', '/api/bp/commentator-image', async ({ req, res }) => {
   try {
     const body = JSON.parse((await readBody(req)) || '{}');
@@ -3387,7 +4016,6 @@ route('POST', '/api/bp/commentator-image', async ({ req, res }) => {
     await obsController.syncCommentatorImage(image.filePath);
     updateCommentatorImageId(image.id);
     activeCommentatorImage = image;
-    bpService.setGlobalCommentatorImage(image);
     sendJson(res, 200, { id: image.id, name: image.name });
   } catch (error) {
     sendJson(res, 400, { error: error.message });
@@ -3402,233 +4030,6 @@ route('POST', '/api/bp/commentator-logo-image', async ({ req, res }) => {
     updateCommentatorLogoImageId(image.id);
     activeCommentatorLogoImage = image;
     sendJson(res, 200, { id: image.id, name: image.name });
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-  }
-});
-
-route('GET', '/api/bp/presentation/events', ({ req, res }) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-store',
-    Connection: 'keep-alive'
-  });
-  bpPresentationClients.add(res);
-  res.on('error', () => bpPresentationClients.delete(res));
-  res.write(`event: presentation\ndata: ${JSON.stringify(presentationStatus('connected'))}\n\n`);
-  broadcastBp('bp-presentation', presentationStatus('client-connected'));
-  req.on('close', () => {
-    bpPresentationClients.delete(res);
-    broadcastBp('bp-presentation', presentationStatus('client-disconnected'));
-  });
-});
-
-route('POST', '/api/bp/presentation/settings', async ({ req, res }) => {
-  try {
-    const body = JSON.parse((await readBody(req)) || '{}');
-    const enabled = Boolean(body.enabled);
-    let obsError = null;
-    bpPresentation.setEnabled(enabled);
-    await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled })
-      .catch(error => { obsError = error.message; });
-    sendJson(res, 200, { ...presentationStatus(), obsSynced: !obsError, obsError });
-  } catch (error) {
-    sendJson(res, 400, { error: error.message, ...presentationStatus() });
-  }
-});
-
-route('POST', '/api/bp/timer-config', async ({ req, res, requestSession }) => {
-  let body = {};
-  const beforeSettings = {
-    phaseDurations: phaseDurations(),
-    animationStyle: animationStyle()
-  };
-  try {
-    body = JSON.parse((await readBody(req)) || '{}');
-    const settings = updateBpTimerConfig(body);
-    bpPresentation.commit('animation-style-updated');
-    const eventLog = recordCountdownEvent(COUNTDOWN_HUB_ID, requestSession,
-      { type: 'update-bp-timer-config', ...body }, beforeSettings, settings);
-    broadcastCountdownLog(ensureHub(COUNTDOWN_HUB_ID), eventLog);
-    sendJson(res, 200, {
-      phases: timerPhaseMetadata(),
-      ...settings,
-      eventLog
-    });
-  } catch (error) {
-    recordCountdownEvent(COUNTDOWN_HUB_ID, requestSession,
-      { type: 'update-bp-timer-config', ...body }, beforeSettings, null, false, error.message);
-    sendJson(res, 400, { error: error.message });
-  }
-});
-
-route('GET', '/api/bp/events', ({ req, res }) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-store',
-    Connection: 'keep-alive'
-  });
-  res.write(`event: obs-status\ndata: ${JSON.stringify(obsController.status())}\n\n`);
-  bpClients.add(res);
-  res.on('error', () => bpClients.delete(res));
-  req.on('close', () => bpClients.delete(res));
-});
-
-route('POST', '/api/bp/sessions', async ({ req, res, requestSession }) => {
-  try {
-    const body = JSON.parse((await readBody(req)) || '{}');
-    const auditActor = {
-      userId: requestSession.userId,
-      displayName: actorDisplayName(requestSession.userId),
-      identityKey: requestSession.activeIdentityKey
-    };
-    const session = bpService.ensureSession(body.matchId, Number(body.gameNumber), String(body.room).toUpperCase(), Number(body.attempt || 1), auditActor);
-    sendJson(res, 200, bpService.serialize(session));
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-  }
-});
-
-route('GET', '/api/bp/sessions/:id', ({ res, params }) => {
-  try {
-    sendJson(res, 200, bpService.serialize(bpService.getSession(params.id)));
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-  }
-});
-
-route('POST', '/api/bp/sessions/:id/actions', async ({ req, res, requestSession, params }) => {
-  const id = params.id;
-  try {
-    const action = JSON.parse((await readBody(req)) || '{}');
-    const auditActor = {
-      userId: requestSession.userId,
-      displayName: actorDisplayName(requestSession.userId),
-      identityKey: requestSession.activeIdentityKey
-    };
-    bpService.setAuditActor(id, auditActor);
-    let session;
-    if (action.type === 'start') {
-      if (bpService.isTestMatch(bpService.getSession(id).matchId) && bpService.getSession(id).status !== 'ready') {
-        const testMatchId = bpService.getSession(id).matchId;
-        const testGameNumber = bpService.getSession(id).gameNumber;
-        const testRoom = bpService.getSession(id).room;
-        bpService.purgeTestMatchData(testMatchId);
-        const rebuilt = bpService.ensureSession(testMatchId, testGameNumber, testRoom, 1, auditActor);
-        session = bpService.startSession(rebuilt.id);
-      } else {
-        session = bpService.startSession(id);
-      }
-      setWorkingPresence(requestSession.userId, true, `bp:${id}`);
-      if (!bpService.isTestMatch(session.matchId)) obsController.syncMatch(session, auditActor).catch(() => {});
-    } else if (action.type === 'complete') {
-      session = bpService.completeSession(id);
-    } else if (action.type === 'set-slot') {
-      session = bpService.updateSlot(id, action);
-    } else if (action.type === 'clear-slot') {
-      session = bpService.clearSlot(id, action.slotId);
-    } else if (action.type === 'restore-revision') {
-      session = bpService.restoreRevision(id, Number(action.revision));
-    } else if (action.type === 'create-replay') {
-      session = bpService.createReplay(id);
-      await syncCurrentScheduleImage().catch(() => {});
-    } else if (action.type === 'sync-obs') {
-      session = bpService.serialize(bpService.getSession(id));
-      if (!bpService.isTestMatch(session.matchId)) {
-        await obsController.syncSession(sessionForObs(session), auditActor);
-        if (bpPresentation.state.dynamicEnabled) bpPresentation.prepare(session, 'obs-sync-prepared');
-      }
-    } else if (action.type === 'sync-match') {
-      session = bpService.serialize(bpService.getSession(id));
-      if (!bpService.isTestMatch(session.matchId)) await obsController.syncMatch(session, auditActor);
-    } else if (action.type === 'sync-match-and-switch') {
-      session = bpService.serialize(bpService.getSession(id));
-      if (bpService.isTestMatch(session.matchId)) {
-      } else {
-        await obsController.syncMatch(session, auditActor);
-        await obsController.switchScene('matchup');
-      }
-    } else if (action.type === 'switch-scene-bp') {
-      session = bpService.serialize(bpService.getSession(id));
-      if (bpService.isTestMatch(session.matchId)) {
-        sendJson(res, 200, session);
-        return;
-      }
-      let dynamicReady = false;
-      if (bpPresentation.state.dynamicEnabled) {
-        bpPresentation.prepare(session, 'scene-switch-prepared');
-        dynamicReady = await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled: true })
-          .then(() => true, () => {
-            bpPresentation.hide('overlay-obs-failed');
-            return false;
-          });
-      } else {
-        bpPresentation.hide('dynamic-disabled-switch');
-        await obsController.configureBpOverlay({ url: BP_OVERLAY_URL, enabled: false }).catch(() => {});
-      }
-      await obsController.switchScene('bp');
-      if (dynamicReady) bpPresentation.armIntro(session, 2000);
-    } else if (action.type === 'set-commentator-image') {
-      const image = commentatorImage(action.imageId);
-      await obsController.syncCommentatorImage(image.filePath);
-      updateCommentatorImageId(image.id);
-      activeCommentatorImage = image;
-      session = bpService.setCommentatorImage(id, image);
-    } else if (action.type === 'set-output-mode') {
-      session = bpService.setOutputMode(id, action.mode);
-    } else if (action.type === 'set-result') {
-      session = bpService.setResult(id, action.winnerRole);
-      setWorkingPresence(requestSession.userId, false, `bp:${id}`);
-      recordUserExecution(requestSession.userId, id);
-      await obsController.syncResult(session).catch(() => {});
-      await syncCurrentScheduleImage().catch(() => {});
-    } else if (action.type === 'declare-forfeit') {
-      session = bpService.declareForfeit(id, action.forfeitingTeamId);
-      setWorkingPresence(requestSession.userId, false, `bp:${id}`);
-      await obsController.syncScore(session.score).catch(() => {});
-      await syncCurrentScheduleImage().catch(() => {});
-    } else if (action.type === 'revoke-forfeit') {
-      session = bpService.revokeForfeit(id);
-      setWorkingPresence(requestSession.userId, true, `bp:${id}`);
-      await obsController.syncScore(session.score).catch(() => {});
-      await syncCurrentScheduleImage().catch(() => {});
-    } else if (action.type === 'reset-session') {
-      session = bpService.resetSession(id);
-      setWorkingPresence(requestSession.userId, false, `bp:${id}`);
-      await syncCurrentScheduleImage().catch(() => {});
-    } else {
-      throw new Error(`未知BP操作: ${action.type}`);
-    }
-    recordAuditLog('event', requestSession, action.type, {
-      sessionId: id,
-      gameNumber: session?.gameNumber,
-      room: session?.room
-    });
-    sendJson(res, 200, session);
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-  }
-});
-
-route('POST', '/api/bp/sessions/:id/result-image', async ({ req, res, params }) => {
-  try {
-    const id = params.id;
-    const current = bpService.serialize(bpService.getSession(id));
-    if (!current.result?.winnerRole) throw new Error('请先选择本局战果');
-    const buffer = await readBuffer(req);
-    const extension = imageExtension(req.headers['content-type']);
-    const saved = writeImage(
-      CONFIG.assets.resultUploadRoot,
-      `${divisionLabel(current.matchId)}-${chineseRound(current.matchId)}-MATCH ${current.gameNumber}-${current.room}房`,
-      extension,
-      buffer
-    );
-    const session = bpService.setResultImage(id, saved);
-    const obsSynced = await obsController.syncResult(session)
-      .then(() => obsController.syncResultImage(saved.filePath))
-      .then(() => obsController.switchScene('result'))
-      .then(() => true, () => false);
-    sendJson(res, 200, { session, ...saved, obsSynced });
   } catch (error) {
     sendJson(res, 400, { error: error.message });
   }
@@ -3698,8 +4099,7 @@ route('POST', '/api/hubs/:id/obs-toggle', async ({ req, res, params }) => {
     return;
   }
   try {
-    const sourceName = id === BP_HUB_ID ? OBS_INPUTS.bpOverlay : OBS_INPUTS.countdownBrowser;
-    const result = await obsController.setSourceVisible(sourceName, enabled);
+    const result = await obsController.setSourceVisible(OBS_INPUTS.countdownBrowser, enabled);
     sendJson(res, 200, { enabled, applied: true, sceneName: result.sceneName });
   } catch (error) {
     sendJson(res, 200, { enabled, applied: false, error: error.message });
@@ -3730,19 +4130,6 @@ route('POST', '/api/hubs/:id/actions', async ({ req, res, requestSession, params
   }
 });
 
-route('POST', '/api/obs/bp-overlay', async ({ req, res }) => {
-  try {
-    const body = JSON.parse((await readBody(req)) || '{}');
-    const result = await obsController.configureBpOverlay({
-      url: body.url || BP_OVERLAY_URL,
-      enabled: true
-    });
-    sendJson(res, 200, result);
-  } catch (error) {
-    sendJson(res, 400, { error: error.message });
-  }
-});
-
 route('POST', '/api/obs/connect', async ({ req, res }) => {
   try {
     const body = JSON.parse((await readBody(req)) || '{}');
@@ -3754,11 +4141,7 @@ route('POST', '/api/obs/connect', async ({ req, res }) => {
     await obsController.syncCountdownUrl(body.countdownUrl);
     await syncCurrentScheduleImage();
     if (activeCommentatorLogoImage) await obsController.syncCommentatorLogo(activeCommentatorLogoImage.filePath);
-    const dynamicObs = await obsController.configureBpOverlay({
-      url: BP_OVERLAY_URL,
-      enabled: bpPresentation.state.dynamicEnabled
-    }).then(() => ({ synced: true }), error => ({ synced: false, error: error.message }));
-    sendJson(res, 200, { ...status, dynamicBp: dynamicObs });
+    sendJson(res, 200, { ...status });
   } catch (error) {
     sendJson(res, 400, { error: error.message, ...obsController.status() });
   }
@@ -3798,34 +4181,10 @@ for (const permissionKey of Object.keys(ROUTE_PERMISSIONS)) {
   }
 }
 
-bpService.on('session', payload => {
-  broadcastBp('session', payload);
-  bpPresentation.publishSession(payload.session, payload.reason);
-});
-bpService.on('push-slot', ({ session, slotId }) => {
-  obsController.pushSlot(session, slotId).catch(() => {});
-});
-bpService.on('clear-slot', ({ session, slotId }) => {
-  obsController.clearSlot(session, slotId).catch(() => {});
-});
-bpService.on('timer', ({ seconds }) => {
-  obsController.setTimer(seconds).catch(() => {});
-});
-bpService.on('sync-session', ({ session }) => {
-  obsController.syncSession(sessionForObs(session), session.auditActor || null).catch(() => {});
-});
-bpService.on('score', ({ score }) => {
-  obsController.syncScore(score).catch(() => {});
-});
-obsClient.on('status', status => broadcastBp('obs-status', obsController.status(status)));
 obsClient.on('CurrentProgramSceneChanged', event => {
   // 音乐联动内部钩子，暂不激活
   // sceneMusicController.setScene(event.sceneName).catch(() => {});
-  if (event.sceneName !== CONFIG.obsScenes.bp && bpPresentation.state.visibility !== 'hidden') {
-    bpPresentation.hide('scene-left-bp');
-  }
 });
-obsController.on('operation', operation => broadcastBp('obs-operation', operation));
 obsController.on('operation', operation => {
   const actor = operation.actor || null;
   db.prepare(`INSERT INTO obs_operation_logs
@@ -3902,8 +4261,7 @@ const COUNTDOWN_ACTION_LABELS = {
   'set-duration': '设置指定倒计时',
   start: '启动倒计时',
   pause: '暂停倒计时',
-  reset: '重置倒计时',
-  'update-bp-timer-config': '保存 BP 流程计时设置'
+  reset: '重置倒计时'
 };
 
 function countdownActionLabel(action = {}) {
@@ -4210,7 +4568,7 @@ function applyCountdownAction(state, action) {
 }
 
 // 单一入口：全部页面收敛到 /，地址栏始终只显示站点根地址；OBS 输出源地址保持不变
-const OBS_PAGE_PATHS = new Set(['/overlay', '/overlay.html', '/bp-overlay', '/bp-overlay.html']);
+const OBS_PAGE_PATHS = new Set(['/overlay', '/overlay.html']);
 
 function sendShell(res, file) {
   fs.readFile(path.resolve(ROOT, file), (error, data) => {
@@ -4246,7 +4604,7 @@ function serveStatic(req, res, pathname) {
     return;
   }
   if (OBS_PAGE_PATHS.has(pathname)) {
-    sendShell(res, pathname.startsWith('/bp-overlay') ? 'bp-overlay.html' : 'overlay.html');
+    sendShell(res, 'overlay.html');
     return;
   }
   const looksLikePage = pathname.endsWith('.html') || !path.extname(pathname);
@@ -4315,7 +4673,7 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-// 骨架残留路径权限：仅覆盖不入路由表的边界路径（sha256 媒体五组、素材 content 流、BP 导出）。
+// 骨架残留路径权限：仅覆盖不入路由表的边界路径（sha256 媒体五组、素材 content 流）。
 // 表未命中且此处为 null 的 /api 路径落入 if 链或静态兜底（404）——原 requiredPermission 对
 // 无 handler 组合（错误方法访问受限路径）兜底的 403 已随其退役收敛为 404。
 function residualPermission(req, pathname) {
@@ -4329,14 +4687,6 @@ function residualPermission(req, pathname) {
   return null;
 }
 
-function timerPhaseMetadata() {
-  return PHASES.map(phase => ({
-    id: phase.id,
-    label: phase.label,
-    role: SLOT_CONFIG[phase.slots[0]]?.role || null
-  }));
-}
-
 async function handleRequest(req, res) {
   // 全响应安全头：nosniff 防类型嗅探；SAMEORIGIN 允许同源 iframe 预览、拒绝外站嵌套
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -4346,8 +4696,7 @@ async function handleRequest(req, res) {
 
   // 登录态鉴权：API 默认要求有效会话；只豁免认证、系统接口与 OBS 确实需要的 SSE
   const publicObsEvents = req.method === 'GET' && (
-    pathname === '/api/bp/presentation/events'
-    || /^\/api\/hubs\/[^/]+\/events$/.test(pathname)
+    /^\/api\/hubs\/[^/]+\/events$/.test(pathname)
   );
   const authExempt = pathname.startsWith('/api/auth/')
     || pathname.startsWith('/api/system/')
@@ -4375,6 +4724,15 @@ async function handleRequest(req, res) {
       code: 'PERMISSION_DENIED',
       permission,
       error: '当前身份没有执行此操作的权限'
+    });
+    return;
+  }
+  // 租约登录的会话：敏感功能页的数据接口在验证一次安全密码前一律拒绝
+  if (requestSession?.leaseGated && requestSession.pagesUnlockedAt == null
+    && deviceSecurity.SENSITIVE_API_PREFIXES.some(prefix => pathname.startsWith(prefix))) {
+    sendJson(res, 403, {
+      code: 'SECURITY_UNLOCK_REQUIRED',
+      error: '租约登录需要先验证安全密码才能访问该功能页'
     });
     return;
   }
@@ -4535,43 +4893,6 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // BP 对局导出下载：特殊路径边界内留骨架；state 与 actions 已入路由表
-  const bpExportMatch = pathname.match(/^\/api\/bp\/sessions\/([^/]+)\/export$/);
-  if (req.method === 'GET' && bpExportMatch) {
-    try {
-      const id = bpExportMatch[1];
-      const session = bpService.serialize(bpService.getSession(id));
-      const body = Buffer.from(JSON.stringify(session, null, 2), 'utf8');
-      const headers = {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json"`,
-        'Cache-Control': 'no-store',
-        Vary: 'Accept-Encoding'
-      };
-      const send = (payload, encoding) => {
-        headers['Content-Length'] = payload.length;
-        if (encoding) headers['Content-Encoding'] = encoding;
-        res.writeHead(200, headers);
-        res.end(payload);
-      };
-      if (body.length > 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
-        zlib.gzip(body, (gzipError, gzipped) => {
-          if (gzipError) {
-            send(body);
-            return;
-          }
-          send(gzipped, 'gzip');
-        });
-        return;
-      }
-      send(body);
-    } catch (error) {
-      sendJson(res, 400, { error: error.message });
-      return;
-    }
-    return;
-  }
-
   const characterPortraitMatch = pathname.match(/^\/api\/characters\/([^/]+)\/portrait$/);
   if (req.method === 'GET' && characterPortraitMatch) {
     try {
@@ -4636,10 +4957,6 @@ async function handleRequest(req, res) {
 
   const overlayMatch = pathname.match(/^\/hub\/([^/]+)$/);
   if (req.method === 'GET' && overlayMatch) {
-    if (overlayMatch[1] === BP_HUB_ID) {
-      serveStatic(req, res, '/bp-overlay.html');
-      return;
-    }
     if (!HUB_IDS.has(overlayMatch[1])) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('HUB 不存在');
@@ -4691,10 +5008,6 @@ server.listen(PORT, '127.0.0.1', () => {
       await obsController.syncCountdownUrl(process.env.COUNTDOWN_URL || `http://localhost:${PORT}/hub/countdown`);
       await syncCurrentScheduleImage();
       if (activeCommentatorLogoImage) await obsController.syncCommentatorLogo(activeCommentatorLogoImage.filePath);
-      await obsController.configureBpOverlay({
-        url: BP_OVERLAY_URL,
-        enabled: bpPresentation.state.dynamicEnabled
-      }).catch(() => {});
       // 音乐联动内部钩子，暂不激活
       // const scenes = await obsController.sceneCatalog();
       // await sceneMusicController.setScene(scenes.currentScene);
@@ -4716,12 +5029,10 @@ let shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  clearInterval(bpPresentationHeartbeat);
   clearInterval(presenceSweep);
   clearInterval(communicationHeartbeat);
   clearInterval(notificationHeartbeat);
   clearInterval(dailyDbMaintenance);
-  bpService.close();
   obsClient.disconnect();
 }
 

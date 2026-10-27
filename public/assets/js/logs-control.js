@@ -58,18 +58,26 @@
     return present(item.sessionId || item.details?.sessionId, t('lg.noSession'));
   }
 
+  // 摘要列跳过的键：会话/设备上下文（详情面板已有专区）与各类 UUID 标识
+  const SUMMARY_CONTEXT_KEYS = new Set([
+    'ipAddress', 'region', 'deviceFingerprint', 'deviceName', 'userAgent',
+    'sessionId', 'actorIdentityKey', 'sensitive', 'userId', 'targetUserId',
+    'targetIdentityKey', 'previousIdentityKey', 'sessionAuthenticated', 'reasonCode'
+  ]);
+
   function contentSummary(item) {
     if (item.error) return item.error;
-    if (item.category === 'account') {
+    const details = item.details && typeof item.details === 'object' ? item.details : {};
+    const entries = Object.entries(details)
+      .filter(([key, value]) => ['string', 'number', 'boolean'].includes(typeof value)
+        && value !== '' && value !== null && !SUMMARY_CONTEXT_KEYS.has(key))
+      .slice(0, 3)
+      .map(([key, value]) => `${key}: ${String(value).slice(0, 48)}`);
+    if (!entries.length && item.category === 'account') {
       return [statusLabel(item), present(item.ipAddress || item.details?.ipAddress),
         present(item.region || item.details?.region)].join(' · ');
     }
-    const details = item.details && typeof item.details === 'object' ? item.details : {};
-    const values = Object.entries(details)
-      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) && value !== '')
-      .slice(0, 3)
-      .map(([key, value]) => `${key}: ${value}`);
-    return values.join(' · ') || statusLabel(item);
+    return [statusLabel(item), ...entries].join(' · ');
   }
 
   function addDetailItem(list, label, value, mono = false) {
@@ -109,6 +117,18 @@
     addDetailItem(list, t('lg.detail.userAgent'), item.userAgent || item.details?.userAgent, true);
     addDetailItem(list, t('lg.detail.error'), item.error, true);
     panel.appendChild(list);
+    const response = item.details && typeof item.details.response === 'object' && item.details.response
+      ? item.details.response : null;
+    if (response) {
+      const responseBlock = document.createElement('div');
+      responseBlock.className = 'log-detail-payload';
+      const responseLabel = document.createElement('strong');
+      responseLabel.textContent = t('lg.detail.response');
+      const responseValue = document.createElement('pre');
+      responseValue.textContent = JSON.stringify(response, null, 2);
+      responseBlock.append(responseLabel, responseValue);
+      panel.appendChild(responseBlock);
+    }
     const payload = document.createElement('div');
     payload.className = 'log-detail-payload';
     const payloadLabel = document.createElement('strong');

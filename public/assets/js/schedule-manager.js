@@ -405,7 +405,8 @@
       resultBtn.type = 'button';
       resultBtn.addEventListener('click', () => openResultDialog(stage, match));
       actions.append(editBtn, resultBtn);
-      if (match.bpReady) {
+      // BP 控制台重做期间隐藏入口；按钮与 launchBp 链路保留，重做恢复 data-page="bp" 导航后自动回归
+      if (match.bpReady && document.querySelector('.nav-btn[data-page="bp"]')) {
         const bpButton = node('button', 'schedule-mini-btn schedule-start-bp', t('schedule.startBp'));
         bpButton.type = 'button';
         bpButton.addEventListener('click', () => launchBp(stage, match));

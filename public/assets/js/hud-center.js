@@ -15,11 +15,6 @@
   }
 
   const HUBS = {
-    bp: {
-      titleKey: 'hud.cardBpTitle', title: 'BP 呈现',
-      descKey: 'hud.cardBpDesc', desc: '动态 BP 舞台画面，同步比分与选角。',
-      path: '/hub/bp'
-    },
     countdown: {
       titleKey: 'hud.cardCountdownTitle', title: '倒计时',
       descKey: 'hud.cardCountdownDesc', desc: '透明倒计时画面，计时中心实时联动。',
@@ -29,7 +24,7 @@
 
   const state = {
     obsConnected: false,
-    enabled: { bp: false, countdown: false },
+    enabled: { countdown: false },
     applying: false
   };
 
@@ -89,14 +84,14 @@
     try {
       const payload = await api('/api/hubs/obs/status');
       state.obsConnected = Boolean(payload.connected);
-      for (const hubId of ['bp', 'countdown']) {
+      for (const hubId of ['countdown']) {
         const source = payload.sources?.[hubId] || {};
         applySwitch(hubId, Boolean(source.enabled), state.applying);
         setCardState(hubId, source);
       }
     } catch {
       state.obsConnected = false;
-      for (const hubId of ['bp', 'countdown']) {
+      for (const hubId of ['countdown']) {
         applySwitch(hubId, state.enabled[hubId], state.applying);
         setCardState(hubId, null);
       }
@@ -106,7 +101,7 @@
   async function toggleHub(hubId, enabled) {
     if (state.applying) return false;
     state.applying = true;
-    for (const other of ['bp', 'countdown']) {
+    for (const other of ['countdown']) {
       const input = document.querySelector(`[data-hub-switch="${other}"]`);
       if (input) input.disabled = true;
     }
@@ -137,7 +132,7 @@
       return false;
     } finally {
       state.applying = false;
-      for (const other of ['bp', 'countdown']) {
+      for (const other of ['countdown']) {
         const input = document.querySelector(`[data-hub-switch="${other}"]`);
         if (input) input.disabled = false;
       }
@@ -252,40 +247,11 @@
     const controls = node('div');
     const url = new URL(hub.path, window.location.origin).toString();
     controls.append(buildLinkRow(text('hud.hubLinkLabel', 'OBS 浏览器源链接'), url));
-    if (hubId === 'bp') {
-      const syncButton = node('button', 'btn btn-accent hud-sync-button', text('hud.syncToObs', '同步到 OBS'));
-      syncButton.type = 'button';
-      syncButton.addEventListener('click', async () => {
-        syncButton.disabled = true;
-        try {
-          await api('/api/obs/bp-overlay', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
-          });
-          syncButton.textContent = text('hud.syncDone', '已同步');
-        } catch (error) {
-          syncButton.textContent = text('hud.syncRetry', '重试同步');
-          await window.StellaDialog?.alert?.({
-            title: text('hud.syncFailedTitle', '同步失败'),
-            message: error.message,
-            tone: 'danger'
-          });
-        } finally {
-          setTimeout(() => { syncButton.disabled = false; }, 800);
-        }
-      });
-      controls.append(syncButton);
-      const note = node('p', 'hud-side-note', text('hud.bpNote', '链接指向本服务的 BP 呈现页，OBS 源「BP动态底板」随动态 BP 自动刷新。'));
-      controls.append(note);
-    } else {
-      controls.append(buildCountdownControls());
-    }
+    controls.append(buildCountdownControls());
     dialogControls.append(controls);
 
     dialog.showModal();
-    const previewSuffix = hubId === 'bp' ? '?preview=1&v=' + Date.now() : '?v=' + Date.now();
-    dialogFrame.src = hub.path + previewSuffix;
+    dialogFrame.src = hub.path + '?v=' + Date.now();
     dialogFrame.hidden = false;
     dialogNote.hidden = true;
     if (hubId === 'countdown') {

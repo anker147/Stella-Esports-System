@@ -15,6 +15,8 @@
     messageState: document.getElementById('communicationsMessageState'),
     channelSearch: document.getElementById('communicationsChannelSearch'),
     announcementBar: document.getElementById('communicationsAnnouncement'),
+    liveAnnouncer: document.getElementById('communicationsLiveAnnouncer'),
+    back: document.getElementById('communicationsBack'),
     settingsOpen: document.getElementById('communicationsSettingsOpen'),
     settingsDialog: document.getElementById('communicationsSettingsDialog'),
     settingsClose: document.getElementById('communicationsSettingsClose'),
@@ -29,13 +31,32 @@
     avatarInput: document.getElementById('communicationsAvatarInput'),
     avatarRemove: document.getElementById('communicationsAvatarRemove'),
     contextMenu: document.getElementById('communicationsContextMenu'),
-    announcement: document.getElementById('communicationsAnnouncement'),
+    announcement: document.getElementById('communicationsLiveAnnouncer'),
     historyState: document.getElementById('communicationsHistoryState'),
     composer: document.getElementById('communicationsComposer'),
     input: document.getElementById('communicationsInput'),
     count: document.getElementById('communicationsCharacterCount'),
     send: document.getElementById('communicationsSend'),
     paste: document.getElementById('communicationsPaste'),
+    media: document.getElementById('communicationsMedia'),
+    voice: document.getElementById('communicationsVoice'),
+    mediaInput: document.getElementById('communicationsMediaInput'),
+    quoteMode: document.getElementById('communicationsQuoteMode'),
+    quoteLabel: document.getElementById('communicationsQuoteLabel'),
+    quoteCancel: document.getElementById('communicationsQuoteCancel'),
+    composerPreview: document.getElementById('communicationsComposerPreview'),
+    previewList: document.getElementById('communicationsPreviewList'),
+    previewOriginal: document.getElementById('communicationsPreviewOriginal'),
+    previewCancel: document.getElementById('communicationsPreviewCancel'),
+    previewSend: document.getElementById('communicationsPreviewSend'),
+    recorder: document.getElementById('communicationsRecorder'),
+    recorderTime: document.getElementById('communicationsRecorderTime'),
+    recorderHint: document.getElementById('communicationsRecorderHint'),
+    lightbox: document.getElementById('communicationsLightbox'),
+    lightboxImage: document.getElementById('communicationsLightboxImage'),
+    lightboxCaption: document.getElementById('communicationsLightboxCaption'),
+    lightboxClose: document.getElementById('communicationsLightboxClose'),
+    lightboxDownload: document.getElementById('communicationsLightboxDownload'),
     composerMode: document.getElementById('communicationsComposerMode'),
     composerModeLabel: document.getElementById('communicationsComposerModeLabel'),
     editCancel: document.getElementById('communicationsEditCancel'),
@@ -78,6 +99,12 @@
     hasNewer: false,
     firstUnreadMessageId: null,
     editingMessageId: null,
+    quotedMessageId: null,
+    pendingFiles: [],
+    sendingMedia: false,
+    activeIdentityKey: '',
+    lightboxMessageId: null,
+    lastLongPressAt: 0,
     eventSource: null,
     refreshTimer: 0,
     pendingEvents: new Map(),
@@ -104,6 +131,63 @@
       if (!response.ok) throw new Error(payload.error || text('channels.requestFailed', '请求失败'));
       return payload;
     });
+  }
+
+  const voicePlayback = { audio: null, messageId: null };
+  const voiceRecording = {
+    active: false, stream: null, recorder: null, chunks: [],
+    startedAt: 0, timer: 0, cancelZone: false, pointerId: null, desktop: false
+  };
+  const coarsePointer = window.matchMedia('(pointer: coarse)');
+
+  function formatDuration(ms) {
+    const total = Math.max(0, Math.round(Number(ms) / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
+  function setMobileView(view) {
+    elements.page.dataset.mobileView = view;
+  }
+
+  function isMobileLayout() {
+    return window.matchMedia('(max-width: 760px)').matches;
+  }
+
+  // 触屏长按（iOS 无原生 contextmenu）：480ms 触发，位移 >10px 视为滚动取消；
+  // 触发后短窗内吞掉原生 contextmenu（Android 会两者都发）与行点击。
+  function attachLongPress(target, handler) {
+    const control = { timer: 0, x: 0, y: 0 };
+    target.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse' || !event.isPrimary || event.button !== 0) return;
+      control.x = event.clientX;
+      control.y = event.clientY;
+      clearTimeout(control.timer);
+      control.timer = window.setTimeout(() => {
+        control.timer = 0;
+        state.lastLongPressAt = Date.now();
+        handler({ x: control.x, y: control.y });
+      }, 480);
+    });
+    const cancel = () => {
+      clearTimeout(control.timer);
+      control.timer = 0;
+    };
+    target.addEventListener('pointermove', event => {
+      if (control.timer && (Math.abs(event.clientX - control.x) > 10 || Math.abs(event.clientY - control.y) > 10)) cancel();
+    }, { passive: true });
+    target.addEventListener('pointerup', cancel, { passive: true });
+    target.addEventListener('pointercancel', cancel, { passive: true });
+  }
+
+  function longPressJustFired(withinMs = 500) {
+    return Date.now() - state.lastLongPressAt < withinMs;
+  }
+
+  function messageQuotedPreview(message) {
+    if (message.recalled) return text('channels.quotedMessageRecalled', '原消息已撤回');
+    if (message.unavailable) return text('channels.quotedUnavailable', '原消息不可见');
+    if (message.kind && message.kind !== 'text') return message.content;
+    return codePoints(String(message.content || '').replace(/\s+/g, ' ')).slice(0, 60).join('');
   }
 
   function codePoints(value) {
@@ -225,7 +309,12 @@
   }
 
   function channelSummary(channel) {
-    if (channel.lastMessage?.content) return channel.lastMessage.content.replace(/\s+/g, ' ');
+    const last = channel.lastMessage;
+    if (last) {
+      const who = last.sender?.displayName ? `${last.sender.displayName}：` : '';
+      // 非文本消息的 content 由服务端写权威标记（[语音]/[图片]/[视频]），直接复用
+      return `${who}${last.content}`.replace(/\s+/g, ' ');
+    }
     if (channel.description) return channel.description;
     if (channel.kind === 'identity') return text('channels.identitySummary', '{identity}身份成员可见', { identity: channel.identityLabel || state.activeIdentityLabel });
     if (channel.kind === 'global') return text('channels.globalSummary', '所有在线成员可见');
@@ -310,7 +399,13 @@
           unread.setAttribute('aria-label', text('channels.unreadCount', '{count} 条未读消息', { count: channel.unreadCount }));
           button.appendChild(unread);
         }
-        button.addEventListener('click', () => selectChannel(channel.id));
+        button.addEventListener('click', () => {
+          if (longPressJustFired()) return;
+          selectChannel(channel.id);
+        });
+        attachLongPress(button, point => {
+          openChannelMenu(channel, button, point);
+        });
         section.appendChild(button);
       }
       elements.channelList.appendChild(section);
@@ -561,6 +656,7 @@
   }
 
   function startEditing(message) {
+    cancelQuoting();
     state.editingMessageId = message.id;
     elements.input.value = message.content;
     elements.composerMode.hidden = false;
@@ -577,6 +673,20 @@
     elements.composerMode.hidden = true;
     if (options.keepContent !== true) elements.input.value = '';
     updateComposer();
+  }
+
+  function startQuoting(message) {
+    if (message.recalled) return;
+    cancelEditing({ keepContent: true });
+    state.quotedMessageId = message.id;
+    elements.quoteLabel.textContent = `${text('channels.quoting', '正在引用')}：${message.sender?.displayName || text('channels.unknownUser', '未知用户')} · ${messageQuotedPreview(message)}`;
+    elements.quoteMode.hidden = false;
+    elements.input.focus();
+  }
+
+  function cancelQuoting() {
+    state.quotedMessageId = null;
+    elements.quoteMode.hidden = true;
   }
 
   async function mutateMessage(message, action, options = {}) {
@@ -637,6 +747,14 @@
       });
     }
     if (!message.recalled) {
+      regular.push({
+        key: 'quote',
+        label: text('channels.quote', '引用'),
+        paths: ['M13.5 12.8v-2.6a3.2 3.2 0 0 0-3.2-3.2H3.4', 'M6.6 3.9 3.3 6.9l3.3 3'],
+        handler: () => startQuoting(message)
+      });
+    }
+    if (!message.recalled) {
       const plusOneLabel = text('channels.plusOne', '+1');
       regular.push({
         key: 'plusOne',
@@ -653,6 +771,14 @@
         checked: Boolean(message.plusOneByMe),
         pressed: Boolean(message.plusOneByMe),
         handler: () => mutateMessage(message, 'plus-one', { method: 'POST' })
+      });
+    }
+    if (message.media && !message.recalled) {
+      management.push({
+        key: 'download',
+        label: text('channels.download', '下载'),
+        paths: ['M8 2.4v7.4', 'M4.9 6.6 8 9.7l3.1-3.1', 'M2.6 10.9v1.6a1.1 1.1 0 0 0 1.1 1.1h8.6a1.1 1.1 0 0 0 1.1-1.1v-1.6'],
+        handler: () => downloadMessageMedia(message)
       });
     }
     if (message.canEdit) {
@@ -695,6 +821,175 @@
       });
     }
     return { regular, management, destructive };
+  }
+
+  function setVoiceButtonGlyph(button, playing) {
+    button.replaceChildren(createSvg(playing
+      ? ['M5.2 3.6v8.8', 'M10.8 3.6v8.8']
+      : ['M5.6 3.4l7 4.6-7 4.6z']));
+  }
+
+  function stopVoicePlayback() {
+    if (!voicePlayback.audio) return;
+    voicePlayback.audio.pause();
+    voicePlayback.audio = null;
+    const root = elements.messageList.querySelector(
+      `[data-message-id="${voicePlayback.messageId}"] .communications-voice`);
+    if (root) {
+      root.classList.remove('is-playing');
+      const button = root.querySelector('.communications-voice-button');
+      if (button) setVoiceButtonGlyph(button, false);
+      const fill = root.querySelector('.communications-voice-track span');
+      if (fill) fill.style.width = '0%';
+    }
+    voicePlayback.messageId = null;
+  }
+
+  function createVoiceControl(message) {
+    const root = node('div', 'communications-voice');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'communications-voice-button';
+    button.setAttribute('aria-label', text('channels.playVoice', '播放语音'));
+    setVoiceButtonGlyph(button, false);
+    const track = node('div', 'communications-voice-track');
+    const fill = document.createElement('span');
+    track.appendChild(fill);
+    const time = node('span', 'communications-voice-time', formatDuration(message.media.durationMs || 0));
+    root.append(button, track, time);
+    button.addEventListener('click', () => toggleVoicePlayback(message, root, button, fill));
+    return root;
+  }
+
+  function toggleVoicePlayback(message, root, button, fill) {
+    if (voicePlayback.messageId === message.id && voicePlayback.audio) {
+      if (voicePlayback.audio.paused) voicePlayback.audio.play().catch(() => {});
+      else voicePlayback.audio.pause();
+      return;
+    }
+    stopVoicePlayback();
+    const audio = new Audio(message.media.url);
+    voicePlayback.audio = audio;
+    voicePlayback.messageId = message.id;
+    audio.addEventListener('timeupdate', () => {
+      const totalMs = Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration * 1000 : (message.media.durationMs || 1);
+      fill.style.width = `${Math.min(100, (audio.currentTime * 1000 / totalMs) * 100).toFixed(1)}%`;
+    });
+    audio.addEventListener('play', () => {
+      root.classList.add('is-playing');
+      setVoiceButtonGlyph(button, true);
+    });
+    audio.addEventListener('pause', () => {
+      root.classList.remove('is-playing');
+      setVoiceButtonGlyph(button, false);
+    });
+    audio.addEventListener('ended', () => {
+      fill.style.width = '0%';
+      stopVoicePlayback();
+    });
+    audio.play().catch(() => {});
+  }
+
+  function mediaFileExtension(mime) {
+    return ({
+      'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg'
+    })[mime] || 'bin';
+  }
+
+  async function downloadMessageMedia(message) {
+    if (!message.media) return;
+    try {
+      const response = await fetch(message.media.url, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `communication-${message.id}.${mediaFileExtension(message.media.mime)}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (error) {
+      elements.composerStatus.textContent = text('channels.downloadFailed', '下载失败：{error}', { error: error.message });
+    }
+  }
+
+  function jumpToQuoted(messageId) {
+    const row = elements.messageList.querySelector(`[data-message-id="${messageId}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.add('is-context-target');
+    window.setTimeout(() => row.classList.remove('is-context-target'), 1200);
+  }
+
+  function renderQuotedBlock(bubble, message) {
+    if (!message.quoted) return;
+    if (message.recalled && !message.developerRecallVisible) return;
+    const block = document.createElement('div');
+    block.className = `communications-quoted${message.quoted.recalled ? ' is-recalled' : ''}`;
+    block.title = text('channels.jumpToQuoted', '定位到原消息');
+    const sender = document.createElement('strong');
+    sender.textContent = message.quoted.unavailable
+      ? text('channels.quotedUnavailable', '原消息不可见')
+      : (message.quoted.senderName || text('channels.unknownUser', '未知用户'));
+    const preview = document.createElement('span');
+    preview.textContent = message.quoted.unavailable
+      ? text('channels.quotedUnavailable', '原消息不可见')
+      : messageQuotedPreview(message.quoted);
+    block.append(sender, preview);
+    block.addEventListener('click', () => jumpToQuoted(message.quoted.id));
+    bubble.appendChild(block);
+  }
+
+  function renderMediaContent(bubble, message) {
+    const media = message.media;
+    if (!media) return false;
+    if (message.kind === 'voice') {
+      bubble.appendChild(createVoiceControl(message));
+      return true;
+    }
+    const frame = document.createElement(message.kind === 'image' ? 'button' : 'div');
+    frame.className = 'communications-media-frame';
+    if (message.kind === 'image') {
+      frame.type = 'button';
+      const image = document.createElement('img');
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.src = media.thumbUrl || media.url;
+      image.alt = text('channels.imageLabel', '图片消息');
+      frame.appendChild(image);
+      frame.addEventListener('click', () => openLightbox(message));
+    } else {
+      const video = document.createElement('video');
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      video.src = media.url;
+      if (media.thumbUrl) video.poster = media.thumbUrl;
+      frame.appendChild(video);
+      if (media.durationMs) {
+        const badge = node('span', 'communications-media-badge is-duration', formatDuration(media.durationMs));
+        frame.appendChild(badge);
+      }
+    }
+    if (media.original) {
+      frame.appendChild(node('span', 'communications-media-badge is-original', text('channels.originalBadge', '原图')));
+    }
+    bubble.appendChild(frame);
+    return true;
+  }
+
+  function openLightbox(message) {
+    if (!message.media?.url) return;
+    state.lightboxMessageId = message.id;
+    elements.lightboxImage.src = message.media.url;
+    elements.lightboxImage.alt = text('channels.imageLabel', '图片消息');
+    elements.lightboxCaption.textContent = `${message.sender?.displayName || ''} · ${formatFullTime(message.createdAt)}`;
+    if (!elements.lightbox.open) elements.lightbox.showModal();
   }
 
   function createMessageRow(message) {
@@ -747,21 +1042,24 @@
       bubble.appendChild(recall);
     }
     if (!message.recalled || message.developerRecallVisible) {
-      const content = document.createElement('span');
-      content.className = 'communications-message-content';
-      const mentionPattern = /(^|\s)(@[^\s@，。！？；：、]+)/g;
-      String(message.content || '').split(mentionPattern).forEach(part => {
-        if (!part) return;
-        if (part.startsWith('@') && part.length > 1) {
-          const mention = document.createElement('span');
-          mention.className = 'communications-mention';
-          mention.textContent = part;
-          content.appendChild(mention);
-        } else {
-          content.appendChild(document.createTextNode(part));
-        }
-      });
-      bubble.appendChild(content);
+      renderQuotedBlock(bubble, message);
+      if (!renderMediaContent(bubble, message)) {
+        const content = document.createElement('span');
+        content.className = 'communications-message-content';
+        const mentionPattern = /(^|\s)(@[^\s@，。！？；：、]+)/g;
+        String(message.content || '').split(mentionPattern).forEach(part => {
+          if (!part) return;
+          if (part.startsWith('@') && part.length > 1) {
+            const mention = document.createElement('span');
+            mention.className = 'communications-mention';
+            mention.textContent = part;
+            content.appendChild(mention);
+          } else {
+            content.appendChild(document.createTextNode(part));
+          }
+        });
+        bubble.appendChild(content);
+      }
     }
     body.append(meta, bubble);
 
@@ -819,6 +1117,9 @@
     }
     body.appendChild(actions);
     row.appendChild(body);
+    attachLongPress(row, point => {
+      openContextMenu(message, row, point, { trigger: row, keyboard: false });
+    });
     return row;
   }
 
@@ -841,6 +1142,39 @@
     state.contextMenuKeyboardOpened = false;
     state.channelMenuTargetId = null;
     if (restoreFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
+  }
+
+  function canExportChannelHistory() {
+    return state.activeIdentityKey === 'developer' || state.activeIdentityKey === 'administrator';
+  }
+
+  async function exportChannelHistory(channel, mode = 'raw') {
+    closeContextMenu();
+    elements.composerStatus.textContent = text('channels.exportStarted', '正在生成导出文件…');
+    const endpoint = mode === 'digest' ? 'export-text' : 'export';
+    try {
+      const response = await fetch(
+        `/api/communications/channels/${encodeURIComponent(channel.id)}/${endpoint}`, { credentials: 'same-origin' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || String(response.status));
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      anchor.download = mode === 'digest'
+        ? `聊天记录-${channel.name.replace(/[\\/:*?"<>|\s]+/g, '-')}-${stamp}.txt`
+        : `原始记录-${channel.name.replace(/[\\/:*?"<>|\s]+/g, '-')}-${stamp}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      elements.composerStatus.textContent = '';
+    } catch (error) {
+      elements.composerStatus.textContent = text('channels.exportFailed', '导出失败：{error}', { error: error.message });
+    }
   }
 
   function openChannelMenu(channel, row, point) {
@@ -867,12 +1201,25 @@
       label: text('channels.settingsTitle', '频道设置'),
       handler: () => openChannelSettings()
     };
-    elements.contextMenu.append(
+    const items = [
       actionButton(togglePin, { contextMenu: true }),
       actionButton(toggleMute, { contextMenu: true }),
       actionButton(markRead, { contextMenu: true }),
       actionButton(settings, { contextMenu: true })
-    );
+    ];
+    if (canExportChannelHistory()) {
+      items.push(actionButton({
+        key: 'export-digest',
+        label: text('channels.exportHistory', '导出聊天记录'),
+        handler: () => exportChannelHistory(channel, 'digest')
+      }, { contextMenu: true }));
+      items.push(actionButton({
+        key: 'export-raw',
+        label: text('channels.exportRaw', '导出原始记录'),
+        handler: () => exportChannelHistory(channel, 'raw')
+      }, { contextMenu: true }));
+    }
+    elements.contextMenu.append(...items);
     elements.contextMenu.hidden = false;
     positionContextMenu(point.x, point.y);
     requestAnimationFrame(() => contextMenuItems()[0]?.focus({ preventScroll: true }));
@@ -1060,12 +1407,16 @@
   async function selectChannel(channelId) {
     if (!channelId || (state.loading && channelId === state.selectedChannelId)) return;
     closeContextMenu();
+    setMobileView('conversation');
     state.selectedChannelId = channelId;
     state.messages = [];
     state.hasMore = false;
     state.hasNewer = false;
     state.firstUnreadMessageId = null;
     cancelEditing();
+    cancelQuoting();
+    clearPendingFiles();
+    stopVoicePlayback();
     state.loading = true;
     elements.messageList.replaceChildren();
     renderChannels();
@@ -1092,6 +1443,7 @@
   function applyBootstrap(payload, options = {}) {
     state.currentUser = payload.currentUser;
     state.activeIdentityLabel = payload.activeIdentityLabel;
+    state.activeIdentityKey = payload.activeIdentityKey || '';
     state.messageLimit = Number(payload.messageLimit) || 500;
     state.channels = payload.channels || [];
     state.contacts = payload.contacts || [];
@@ -1245,6 +1597,19 @@
     }
   }
 
+  function appendSentMessage(message, channelId) {
+    if (channelId !== state.selectedChannelId || state.messages.some(item => item.id === message.id)) return;
+    state.messages.push(message);
+    const channel = state.channels.find(item => item.id === channelId);
+    if (channel) {
+      channel.lastMessage = message;
+      channel.unreadCount = 0;
+      channel.updatedAt = message.createdAt;
+    }
+    renderChannels();
+    renderMessages();
+  }
+
   async function sendCurrentMessage() {
     const content = elements.input.value.trim();
     if (!content || !state.selectedChannelId || state.sending) return;
@@ -1259,20 +1624,15 @@
         : `/api/communications/channels/${encodeURIComponent(channelId)}/messages`, {
         method: editingMessage ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        body: JSON.stringify(editingMessage
+          ? { content }
+          : { content, quotedMessageId: state.quotedMessageId || undefined })
       });
       if (editingMessage) {
         replaceMessage(payload.message);
-      } else if (channelId === state.selectedChannelId && !state.messages.some(message => message.id === payload.message.id)) {
-        state.messages.push(payload.message);
-        const channel = state.channels.find(item => item.id === channelId);
-        if (channel) {
-          channel.lastMessage = payload.message;
-          channel.unreadCount = 0;
-          channel.updatedAt = payload.message.createdAt;
-        }
-        renderChannels();
-        renderMessages();
+      } else {
+        appendSentMessage(payload.message, channelId);
+        cancelQuoting();
       }
       cancelEditing();
       elements.input.focus();
@@ -1284,6 +1644,382 @@
     } finally {
       state.sending = false;
       updateComposer();
+    }
+  }
+
+  // ===== 媒体消息：待发预览条、图片压缩、视频封面帧、二进制上传 =====
+  const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+  const VIDEO_MIMES = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+  const MEDIA_SIZE_LIMITS = { image: 20 * 1024 * 1024, video: 20 * 1024 * 1024 };
+
+  function formatBytesLimit(bytes) {
+    return bytes >= 1024 * 1024 ? `${Math.round(bytes / (1024 * 1024))}MB` : `${Math.round(bytes / 1024)}KB`;
+  }
+
+  function loadImageElement(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('image decode failed'));
+      image.src = dataUrl;
+    });
+  }
+
+  function dataUrlBytes(dataUrl) {
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+    return Math.max(0, Math.floor(base64.length * 0.75) - padding);
+  }
+
+  async function compressImage(dataUrl, maxEdge, quality) {
+    const image = await loadImageElement(dataUrl);
+    const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight, 1));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('canvas unavailable');
+    context.drawImage(image, 0, 0, width, height);
+    const encoded = canvas.toDataURL('image/webp', quality);
+    return {
+      dataUrl: encoded,
+      width,
+      height,
+      bytes: dataUrlBytes(encoded),
+      mime: encoded.startsWith('data:image/webp') ? 'image/webp' : 'image/png'
+    };
+  }
+
+  function captureVideoPoster(file) {
+    return new Promise(resolve => {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      let settled = false;
+      const done = result => {
+        if (settled) return;
+        settled = true;
+        video.removeAttribute('src');
+        try { video.load(); } catch {}
+        resolve(result);
+      };
+      const failTimer = window.setTimeout(() => done(null), 5000);
+      video.addEventListener('loadeddata', () => {
+        try {
+          video.currentTime = Math.min(0.2, (video.duration || 1) / 10);
+        } catch {
+          window.clearTimeout(failTimer);
+          done(null);
+        }
+      });
+      video.addEventListener('seeked', () => {
+        window.clearTimeout(failTimer);
+        try {
+          const canvas = document.createElement('canvas');
+          const scale = Math.min(1, 640 / Math.max(video.videoWidth || 640, 1));
+          canvas.width = Math.max(1, Math.round((video.videoWidth || 640) * scale));
+          canvas.height = Math.max(1, Math.round((video.videoHeight || 360) * scale));
+          canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/webp', 0.7);
+          done(dataUrl.startsWith('data:image/webp')
+            ? { dataUrl, width: canvas.width, height: canvas.height }
+            : null);
+        } catch {
+          done(null);
+        }
+      });
+      video.addEventListener('error', () => {
+        window.clearTimeout(failTimer);
+        done(null);
+      });
+      video.src = URL.createObjectURL(file);
+    });
+  }
+
+  function renderPreviewBar() {
+    elements.previewList.replaceChildren();
+    for (const file of state.pendingFiles) {
+      const item = document.createElement('span');
+      item.className = 'communications-preview-item';
+      if (file.kind === 'image' && file.previewUrl) {
+        const image = document.createElement('img');
+        image.src = file.previewUrl;
+        image.alt = '';
+        item.appendChild(image);
+      } else {
+        item.innerHTML = file.kind === 'video'
+          ? '<svg viewBox="0 0 24 24" data-icon="video" aria-hidden="true"></svg>'
+          : '<svg viewBox="0 0 24 24" data-icon="mic" aria-hidden="true"></svg>';
+      }
+      item.appendChild(node('span', '', file.label));
+      elements.previewList.appendChild(item);
+    }
+    elements.previewOriginal.parentElement.hidden = !state.pendingFiles.some(file => file.kind === 'image');
+    elements.composerPreview.hidden = !state.pendingFiles.length;
+    elements.previewSend.disabled = state.sendingMedia;
+  }
+
+  function clearPendingFiles() {
+    state.pendingFiles = [];
+    renderPreviewBar();
+  }
+
+  function setPendingFiles(files) {
+    const accepted = [];
+    for (const file of files) {
+      const mime = String(file.type || '').toLowerCase();
+      const kind = IMAGE_MIMES.has(mime) ? 'image' : VIDEO_MIMES.has(mime) ? 'video' : null;
+      if (!kind) {
+        elements.composerStatus.textContent = text('channels.fileUnsupported', '{name} 不是支持的图片或视频格式', { name: file.name });
+        continue;
+      }
+      if (file.size > MEDIA_SIZE_LIMITS[kind]) {
+        elements.composerStatus.textContent = text('channels.fileTooLarge', '{name} 超过 {limit}，已跳过', {
+          name: file.name, limit: formatBytesLimit(MEDIA_SIZE_LIMITS[kind])
+        });
+        continue;
+      }
+      accepted.push({ file, kind, label: file.name, previewUrl: null, sourceDataUrl: null });
+    }
+    if (accepted.length) {
+      state.pendingFiles = state.pendingFiles.concat(accepted);
+      renderPreviewBar();
+      elements.composerStatus.textContent = '';
+      for (const entry of state.pendingFiles) {
+        if (entry.kind !== 'image' || entry.previewUrl) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          entry.previewUrl = String(reader.result);
+          renderPreviewBar();
+        };
+        reader.readAsDataURL(entry.file);
+      }
+    }
+  }
+
+  function buildMediaQuery(params) {
+    const query = new URLSearchParams({ kind: params.kind });
+    if (params.thumb) {
+      query.set('thumbBytes', String(params.thumb.bytes));
+      query.set('thumbMime', params.thumb.mime);
+      if (params.thumb.width) {
+        query.set('thumbWidth', String(params.thumb.width));
+        query.set('thumbHeight', String(params.thumb.height));
+      }
+    }
+    if (params.durationMs) query.set('durationMs', String(params.durationMs));
+    if (params.width) {
+      query.set('width', String(params.width));
+      query.set('height', String(params.height));
+    }
+    if (params.original) query.set('original', '1');
+    if (state.quotedMessageId) query.set('quotedMessageId', String(state.quotedMessageId));
+    return query.toString();
+  }
+
+  function concatBuffers(parts) {
+    const total = parts.reduce((sum, part) => sum + part.length, 0);
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const part of parts) {
+      merged.set(new Uint8Array(part), offset);
+      offset += part.length;
+    }
+    return merged;
+  }
+
+  async function postMediaMessage(entry, options = {}) {
+    const channelId = state.selectedChannelId;
+    if (!channelId) throw new Error(text('channels.selectChannel', '选择频道'));
+    const mainBuffer = new Uint8Array(await entry.file.arrayBuffer());
+    const parts = [];
+    let params = { kind: entry.kind };
+    if (options.thumb) {
+      parts.push(new Uint8Array(await (await fetch(options.thumb.dataUrl)).arrayBuffer()));
+      params = {
+        ...params,
+        thumb: { bytes: options.thumb.bytes, mime: options.thumb.mime, width: options.thumb.width, height: options.thumb.height }
+      };
+    }
+    parts.push(mainBuffer);
+    params = {
+      ...params,
+      width: options.width,
+      height: options.height,
+      durationMs: options.durationMs,
+      original: options.original
+    };
+    const response = await fetch(
+      `/api/communications/channels/${encodeURIComponent(channelId)}/media?${buildMediaQuery(params)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': entry.file.type },
+        body: concatBuffers(parts),
+        credentials: 'same-origin'
+      });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || text('channels.sendFailed', '发送失败：{error}', { error: response.status }));
+    appendSentMessage(payload.message, channelId);
+    cancelQuoting();
+  }
+
+  async function sendPendingFiles() {
+    if (state.sendingMedia || !state.pendingFiles.length || !state.selectedChannelId) return;
+    state.sendingMedia = true;
+    elements.previewSend.disabled = true;
+    const isOriginal = elements.previewOriginal.checked;
+    try {
+      for (const entry of state.pendingFiles) {
+        if (entry.kind === 'image') {
+          // previewUrl 即同一文件的 dataURL（预览时已读取），直接复用
+          entry.sourceDataUrl = entry.previewUrl;
+          const thumb = await compressImage(entry.sourceDataUrl, 640, 0.8);
+          if (thumb.bytes > 2 * 1024 * 1024) throw new Error(text('channels.fileTooLarge', '{name} 超过 {limit}，已跳过', { name: entry.file.name, limit: '2MB' }));
+          let options;
+          if (isOriginal) {
+            options = { thumb };
+          } else {
+            const main = await compressImage(entry.sourceDataUrl, 1600, 0.85);
+            if (main.bytes > 4 * 1024 * 1024) throw new Error(text('channels.fileTooLarge', '{name} 超过 {limit}，已跳过', { name: entry.file.name, limit: '4MB' }));
+            options = { thumb, width: main.width, height: main.height };
+            // 压缩档：主图字节来自压缩后的 WebP，替换待发文件
+            const compressedBlob = await (await fetch(main.dataUrl)).blob();
+            entry.file = new File([compressedBlob], `image-${Date.now()}.webp`, { type: main.mime });
+          }
+          await postMediaMessage(entry, options);
+        } else {
+          const poster = await captureVideoPoster(entry.file);
+          const duration = await new Promise(resolve => {
+            const probe = document.createElement('video');
+            probe.preload = 'metadata';
+            probe.addEventListener('loadedmetadata', () => {
+              resolve(Number.isFinite(probe.duration) ? Math.round(probe.duration * 1000) : null);
+              probe.removeAttribute('src');
+            });
+            probe.addEventListener('error', () => resolve(null));
+            probe.src = URL.createObjectURL(entry.file);
+            window.setTimeout(() => resolve(null), 4000);
+          });
+          const options = {};
+          if (poster) {
+            options.thumb = {
+              dataUrl: poster.dataUrl,
+              bytes: dataUrlBytes(poster.dataUrl),
+              mime: 'image/webp',
+              width: poster.width,
+              height: poster.height
+            };
+          }
+          if (duration && duration > 0) options.durationMs = Math.min(duration, 600000);
+          await postMediaMessage(entry, options);
+        }
+      }
+      clearPendingFiles();
+      elements.composerStatus.textContent = '';
+    } catch (error) {
+      elements.composerStatus.textContent = text('channels.sendFailedMedia', '媒体发送失败：{error}', { error: error.message });
+    } finally {
+      state.sendingMedia = false;
+      renderPreviewBar();
+    }
+  }
+
+  // ===== 语音：按住说话（触屏）/ 点击开始-结束（桌面），上滑取消 =====
+  function updateRecorderUi() {
+    if (!voiceRecording.active) return;
+    const elapsed = Date.now() - voiceRecording.startedAt;
+    elements.recorderTime.textContent = formatDuration(elapsed);
+    elements.recorderHint.textContent = voiceRecording.cancelZone
+      ? text('channels.releaseToCancel', '松开取消发送')
+      : (voiceRecording.desktop
+        ? text('channels.recordTapToStop', '点击结束并发送')
+        : text('channels.slideToCancel', '松开前上滑取消'));
+    elements.recorder.classList.toggle('is-cancel', voiceRecording.cancelZone);
+  }
+
+  async function startRecording(event) {
+    if (voiceRecording.active || !state.selectedChannelId) return;
+    if (!window.isSecureContext) {
+      elements.composerStatus.textContent = text('channels.recordInsecure', '当前环境不支持录音（需要 HTTPS 或本机访问）');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      elements.composerStatus.textContent = text('channels.recordFailed', '无法访问麦克风，请检查系统权限');
+      return;
+    }
+    cancelEditing();
+    cancelQuoting();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      elements.composerStatus.textContent = text('channels.recordFailed', '无法访问麦克风，请检查系统权限');
+      return;
+    }
+    const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+    const mimeType = candidates.find(type => MediaRecorder.isTypeSupported?.(type));
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    voiceRecording.active = true;
+    voiceRecording.stream = stream;
+    voiceRecording.recorder = recorder;
+    voiceRecording.chunks = [];
+    voiceRecording.startedAt = Date.now();
+    voiceRecording.cancelZone = false;
+    voiceRecording.desktop = event?.pointerType === 'mouse';
+    voiceRecording.pointerId = event?.pointerId ?? null;
+    recorder.ondataavailable = progressEvent => {
+      if (progressEvent.data?.size) voiceRecording.chunks.push(progressEvent.data);
+    };
+    recorder.start(250);
+    elements.recorder.hidden = false;
+    elements.recorder.classList.remove('is-cancel');
+    updateRecorderUi();
+    voiceRecording.timer = window.setInterval(updateRecorderUi, 200);
+    // 60 秒自动结束并发送
+    voiceRecording.autoStop = window.setTimeout(() => stopRecording(true), 60_000);
+  }
+
+  async function stopRecording(send) {
+    if (!voiceRecording.active) return;
+    const elapsed = Date.now() - voiceRecording.startedAt;
+    const { recorder, stream, chunks, cancelZone } = voiceRecording;
+    window.clearInterval(voiceRecording.timer);
+    window.clearTimeout(voiceRecording.autoStop);
+    voiceRecording.active = false;
+    elements.recorder.hidden = true;
+    const cleanup = () => {
+      stream.getTracks().forEach(track => track.stop());
+      voiceRecording.stream = null;
+      voiceRecording.recorder = null;
+      voiceRecording.chunks = [];
+    };
+    if (!send || cancelZone || elapsed < 1000 || !chunks.length) {
+      try { recorder.stop(); } catch {}
+      cleanup();
+      if (send && !cancelZone && elapsed < 1000) {
+        elements.composerStatus.textContent = text('channels.recordTooShort', '录音时间太短，已取消');
+      }
+      return;
+    }
+    const finished = new Promise(resolve => {
+      recorder.onstop = resolve;
+      try { recorder.stop(); } catch { resolve(); }
+    });
+    await finished;
+    const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+    cleanup();
+    const mime = String(blob.type || 'audio/webm').split(';')[0].toLowerCase();
+    const file = new File([blob], `voice-${Date.now()}.${mime === 'audio/mp4' ? 'm4a' : 'webm'}`, { type: mime });
+    elements.composerStatus.textContent = '';
+    try {
+      await postMediaMessage(
+        { file, kind: 'voice', label: file.name },
+        { durationMs: Math.min(Math.max(Math.round(elapsed), 1), 60000) }
+      );
+    } catch (error) {
+      elements.composerStatus.textContent = text('channels.sendFailedMedia', '媒体发送失败：{error}', { error: error.message });
     }
   }
 
@@ -1477,7 +2213,7 @@
       cancelEditing();
       return;
     }
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !coarsePointer.matches) {
       event.preventDefault();
       sendCurrentMessage();
     }
@@ -1488,6 +2224,8 @@
   });
   elements.messageScroll.addEventListener('contextmenu', event => {
     event.preventDefault();
+    // 触屏长按已由自定义计时器打开菜单，短窗内吞掉原生 contextmenu（Android 双触发）
+    if (longPressJustFired(700)) return;
     const target = event.target instanceof Element ? event.target : null;
     const row = target?.closest('.communications-message-row[data-message-id]');
     if (!row || !elements.messageScroll.contains(row)) {
@@ -1532,10 +2270,108 @@
   elements.contextMenu.addEventListener('contextmenu', event => event.preventDefault());
   elements.paste.addEventListener('click', pasteFromClipboard);
   elements.editCancel.addEventListener('click', () => cancelEditing());
+  elements.quoteCancel.addEventListener('click', () => cancelQuoting());
+  // 移动端返回：会话视图 → 频道列表视图
+  elements.back.addEventListener('click', () => {
+    setMobileView('list');
+  });
+  // 媒体选择与待发预览条
+  elements.media.addEventListener('click', () => elements.mediaInput.click());
+  elements.mediaInput.addEventListener('change', () => {
+    const files = [...(elements.mediaInput.files || [])];
+    elements.mediaInput.value = '';
+    if (files.length) setPendingFiles(files);
+  });
+  elements.previewCancel.addEventListener('click', clearPendingFiles);
+  elements.previewSend.addEventListener('click', sendPendingFiles);
+  elements.previewOriginal.addEventListener('change', renderPreviewBar);
+  // 麦克风：触屏按住说话（松手发送、上滑取消），桌面点击开始/再点结束
+  elements.voice.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'mouse') return;
+    event.preventDefault();
+    elements.voice.setPointerCapture?.(event.pointerId);
+    startRecording(event);
+  });
+  elements.voice.addEventListener('pointermove', event => {
+    if (!voiceRecording.active || voiceRecording.desktop) return;
+    const rect = elements.voice.getBoundingClientRect();
+    voiceRecording.cancelZone = event.clientY < rect.top - 60;
+    updateRecorderUi();
+  });
+  elements.voice.addEventListener('pointerup', event => {
+    if (voiceRecording.desktop || voiceRecording.pointerId !== event.pointerId) return;
+    const discard = voiceRecording.cancelZone;
+    voiceRecording.cancelZone = false;
+    stopRecording(!discard);
+  });
+  elements.voice.addEventListener('pointercancel', () => {
+    if (voiceRecording.desktop) return;
+    voiceRecording.cancelZone = false;
+    stopRecording(false);
+  });
+  elements.voice.addEventListener('click', event => {
+    event.preventDefault();
+    if (!voiceRecording.active) startRecording(event);
+    else stopRecording(true);
+  });
+  // Lightbox：关闭与下载原图
+  elements.lightboxClose.addEventListener('click', () => elements.lightbox.close());
+  elements.lightbox.addEventListener('click', event => {
+    if (event.target === elements.lightbox) elements.lightbox.close();
+  });
+  elements.lightbox.addEventListener('close', () => {
+    elements.lightboxImage.removeAttribute('src');
+    state.lightboxMessageId = null;
+  });
+  elements.lightboxDownload.addEventListener('click', () => {
+    const message = state.messages.find(item => item.id === state.lightboxMessageId);
+    if (message) downloadMessageMedia(message);
+  });
+  // 移动端视口适配：顶栏实际高度（可能换行、含安全区）无法用固定魔法数表达，
+  // 移动端激活时始终按「视觉视口底部 − 页面顶部实测位置」精确钳制页面高度，
+  // 输入栏因此永远留在屏内；键盘弹出时 visualViewport 收缩，同一逻辑自动跟随
+  // （Android Chrome 有 interactive-widget=resizes-content，此处同时兜 iOS Safari）。
+  if (window.visualViewport) {
+    let lastClampedHeight = 0;
+    const syncViewport = () => {
+      const viewport = window.visualViewport;
+      if (!isMobileLayout() || !state.active || document.hidden) {
+        if (lastClampedHeight) {
+          lastClampedHeight = 0;
+          elements.page.style.height = '';
+        }
+        return;
+      }
+      const pageTop = elements.page.getBoundingClientRect().top;
+      const viewportBottom = viewport.offsetTop + viewport.height;
+      const available = Math.floor(viewportBottom - pageTop - 4);
+      if (available >= 320 && Math.abs(available - lastClampedHeight) > 1) {
+        const shrinking = available < lastClampedHeight;
+        lastClampedHeight = available;
+        elements.page.style.height = `${available}px`;
+        // 高度收缩（键盘弹出、转屏）时保持贴底；放宽时不动，避免打断回看历史
+        if (shrinking) {
+          const distanceToBottom = elements.messageScroll.scrollHeight
+            - elements.messageScroll.scrollTop - elements.messageScroll.clientHeight;
+          if (distanceToBottom < 240) elements.messageScroll.scrollTop = elements.messageScroll.scrollHeight;
+        }
+      }
+    };
+    window.visualViewport.addEventListener('resize', syncViewport);
+    window.visualViewport.addEventListener('scroll', syncViewport);
+    window.addEventListener('orientationchange', syncViewport);
+    window.addEventListener('resize', syncViewport);
+    // 从后台切回前台（后台页面 rAF 与视口事件被冻结，回前台必须重钳一次）
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') syncViewport();
+    });
+    elements.syncViewport = syncViewport;
+  }
   elements.channelList.addEventListener('contextmenu', event => {
     const row = event.target instanceof Element ? event.target.closest('.communications-channel-row') : null;
     if (!row) return;
     event.preventDefault();
+    if (longPressJustFired(700)) return;
     const channel = state.channels.find(item => item.id === row.dataset.channelId);
     if (!channel) return;
     openChannelMenu(channel, row, { x: event.clientX, y: event.clientY });
@@ -1606,12 +2442,31 @@
       ? { force: true, anchorUnread: true, scrollBottom: false }
       : { anchorUnread: true, scrollBottom: false };
     loadBootstrap(bootstrapOptions).then(() => {
-      if (state.active) startEvents();
+      if (state.active) {
+        startEvents();
+        elements.syncViewport?.();
+      }
+    });
+  });
+
+  window.addEventListener('stella:open-channel', event => {
+    const channelId = event.detail?.channelId;
+    if (!channelId) return;
+    state.active = true;
+    setMobileView('conversation');
+    loadBootstrap({ force: true, channelId, anchorUnread: true, scrollBottom: false }).then(() => {
+      if (state.active) {
+        startEvents();
+        elements.syncViewport?.();
+      }
     });
   });
 
   window.addEventListener('stella:identity-change', () => {
     closeContextMenu();
+    cancelQuoting();
+    clearPendingFiles();
+    stopVoicePlayback();
     state.initialized = false;
     state.selectedChannelId = null;
     state.messages = [];
@@ -1621,18 +2476,10 @@
     });
   });
 
-  window.addEventListener('stella:open-channel', event => {
-    const channelId = event.detail?.channelId;
-    if (!channelId) return;
-    state.active = true;
-    loadBootstrap({ force: true, channelId, anchorUnread: true, scrollBottom: false }).then(() => {
-      if (state.active) startEvents();
-    });
-  });
-
   const initialButton = document.querySelector('[data-page="channels"].active');
   state.active = Boolean(initialButton);
   loadBootstrap({ anchorUnread: state.active, scrollBottom: !state.active }).then(() => {
     startEvents();
+    elements.syncViewport?.();
   });
 })();

@@ -87,10 +87,6 @@
       status: document.getElementById('characterEditorStatus')
     }
   };
-  const relevantReasons = new Set([
-    'slot-updated', 'slot-cleared', 'result-updated', 'revision-restored',
-    'replay-created', 'session-reset', 'forfeit-declared', 'forfeit-revoked'
-  ]);
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   const AUTO_SCROLL_SPEED = 48;
   const AUTO_SCROLL_IDLE_MS = 4000;
@@ -98,7 +94,6 @@
   const roleOrderSignatures = { escape: '', hunter: '' };
   let initialized = false;
   let active = !document.getElementById('characterStatsPage').hidden;
-  let events = null;
   let refreshTimer = 0;
   let selectedSkillId = null;
   let activeDivision = 'all';
@@ -738,7 +733,6 @@
         body: JSON.stringify(payload)
       });
       const message = editingCharacter ? t('characterStats.updateSuccess') : t('characterStats.createSuccess');
-      window.StellaDataCache?.invalidate('/api/bp/bootstrap');
       await load(true);
       populateEditor(managedCharacters.find(character => character.id === result.character.id) || null);
       elements.editor.status.textContent = message;
@@ -1195,28 +1189,10 @@
     }, 220);
   }
 
-  function connectEvents() {
-    events?.close();
-    events = new EventSource('/api/bp/events');
-    let everErrored = false;
-    events.onerror = () => { everErrored = true; };
-    events.addEventListener('session', event => {
-      const payload = JSON.parse(event.data);
-      if (relevantReasons.has(payload.reason)) scheduleRefresh();
-    });
-    // After a reconnect, force a refresh to catch stat changes missed offline.
-    events.onopen = () => {
-      if (!everErrored) return;
-      everErrored = false;
-      scheduleRefresh();
-    };
-  }
-
   function activate() {
     active = true;
     document.body.classList.add('character-stats-mode');
     load(initialized);
-    connectEvents();
     startAutoScroll(900);
   }
 
@@ -1226,8 +1202,6 @@
     stopAutoScroll();
     clearTimeout(refreshTimer);
     refreshTimer = 0;
-    events?.close();
-    events = null;
   }
 
   window.addEventListener('stella:page-change', event => {

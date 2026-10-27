@@ -3,7 +3,7 @@
  * into any other. Hydration also covers nodes injected later via a
  * MutationObserver, so classic scripts can just emit the stub markup. */
 import { createMorph } from '../vendor/morphicons/dom.js?v=1';
-import ICON_NODES from './icon-data.js?v=1';
+import ICON_NODES from './icon-data.js?v=2';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const handles = new WeakMap();

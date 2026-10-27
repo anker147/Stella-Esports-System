@@ -88,7 +88,7 @@ test('schema v20 migrates administrator identity and retires removed identities 
     assert.equal(result.status, 0, result.stderr || result.stdout);
 
     migratedDb = new DatabaseSync(dbPath);
-    assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 35);
+    assert.equal(migratedDb.prepare('PRAGMA user_version').get().user_version, 37);
     assert.equal(migratedDb.prepare(`SELECT COUNT(*) AS n FROM sqlite_master
       WHERE type = 'table' AND name = 'character_portraits'`).get().n, 1);
     assert.equal(migratedDb.prepare(`SELECT COUNT(*) AS n FROM sqlite_master

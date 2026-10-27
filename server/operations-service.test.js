@@ -297,10 +297,8 @@ test('HUD center exclusively owns the Web HUB card after migration', () => {
   const hud = html.match(/<section class="page-view" id="hudCenterPage"[\s\S]*?<\/section>/)?.[0] || '';
   const countdown = html.match(/<section class="page-view" id="countdownPage"[\s\S]*?<\/section>/)?.[0] || '';
 
-  assert.match(hud, /data-hub-card="bp"/);
   assert.match(hud, /data-hub-card="countdown"/);
   assert.match(hud, /id="hudHubDialog"/);
-  assert.match(hud, /data-hub-switch="bp"/);
   assert.doesNotMatch(hud, /data-operations-root="hud"/);
   assert.doesNotMatch(countdown, /id="hubUrl"|id="copyHub"/);
   assert.doesNotMatch(script, /hudCenter:\s*'hud'|renderHud\s*\(/);
@@ -319,17 +317,14 @@ test('countdown center uses the landscape split and portrait stack layout', () =
   assert.match(html, /id="hours"[^>]*min="0"[^>]*step="1"/);
   assert.match(html, /id="minutes"[^>]*max="59"/);
   assert.match(html, /countdown-primary-column[\s\S]*countdown-input-row[\s\S]*countdown-target-card[\s\S]*countdown-duration-card[\s\S]*countdown-controls-card/);
-  assert.match(html, /countdown-secondary-column[\s\S]*bp-timer-settings-card[\s\S]*log-card/);
+  assert.match(html, /countdown-secondary-column[\s\S]*log-card/);
   assert.match(css, /\.content-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 3\.8fr\) minmax\(0, 6\.2fr\)/);
   assert.match(css, /\.countdown-input-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 5\.5fr\) minmax\(0, 4\.5fr\)/);
   assert.match(css, /\.countdown-secondary-column\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 5\.5fr\) minmax\(0, 4\.5fr\)/);
   assert.match(css, /\.countdown-secondary-column \.log-list[\s\S]*?overflow:\s*auto/);
   assert.match(css, /\.countdown-secondary-column \.log-list[\s\S]*?max-height:\s*none/);
-  assert.match(css, /\.countdown-secondary-column \.bp-timer-settings[\s\S]*?overflow-y:\s*auto/);
   assert.match(css, /\.countdown-controls-card \.control-buttons\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3/);
-  assert.match(css, /\.bp-timer-settings\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2/);
   assert.doesNotMatch(css, /orientation: portrait/); // 竖屏媒体查询已移除
-  assert.match(control, /phase\.role === group\.role/);
   assert.doesNotMatch(control, /logList\.children\.length > 10/);
   assert.match(control, /elements\.targetAt\.value = ''/);
   assert.match(control, /formatCountdownLogTimestamp/);
