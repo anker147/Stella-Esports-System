@@ -30,7 +30,7 @@
   min-height: 34px;
   padding: 0 12px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
   color: var(--f2-text-secondary);
   font: inherit;
@@ -50,7 +50,7 @@
   min-width: 18px;
   height: 18px;
   padding-inline: 5px;
-  border-radius: 9px;
+  border-radius: var(--f2-radius-pill);
   background: rgba(50, 49, 48, 0.08);
   color: inherit;
   font-size: 11px;
@@ -107,11 +107,11 @@
   gap: 14px;
   min-width: 0;
   padding: 16px;
-  border: 1px solid rgba(15, 35, 60, 0.09);
-  border-radius: 8px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-md);
   background: #fff;
-  box-shadow: 0 2px 8px rgba(15, 35, 60, 0.045);
-  animation: event-card-enter 300ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  box-shadow: var(--f2-shadow-sm);
+  animation: event-card-enter var(--f2-enter-normal) backwards;
   animation-delay: var(--event-card-delay, 0ms);
 }
 
@@ -199,11 +199,12 @@
   align-items: center;
   min-height: 21px;
   padding-inline: 7px;
-  border-radius: 999px;
+  border-radius: var(--f2-radius-pill);
   background: #edf1f4;
   color: #52606c;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: var(--f2-weight-semi);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -1077,7 +1078,7 @@
 /* 新赛事创建器：亚克力玻璃入口与三步工作流 */
 .event-editor-dialog {
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 24px;
+  border-radius: 22px;
   background: rgba(245, 250, 255, 0.78);
   box-shadow: 0 30px 90px rgba(12, 34, 58, 0.28), inset 0 1px rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(28px) saturate(145%);
@@ -1229,7 +1230,7 @@
 .event-editor-form.is-workflow .event-stepper {
   min-height: 70px;
   padding-right: 92px;
-  border-radius: 23px 23px 0 0;
+  border-radius: 22px 22px 0 0;
 }
 
 .event-editor-form.is-workflow .event-editor-footer {
@@ -1658,7 +1659,7 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 20px;
+  border-radius: 22px;
   background: rgba(245, 250, 255, 0.82);
   backdrop-filter: blur(28px) saturate(145%);
   box-shadow: 0 30px 90px rgba(12, 34, 58, 0.28), inset 0 1px rgba(255, 255, 255, 0.9);

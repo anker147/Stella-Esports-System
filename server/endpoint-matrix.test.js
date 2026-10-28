@@ -115,6 +115,7 @@ const MATRIX = [
   ["communications message media read", "GET", "/api/communications/messages/1/media", null, { anon: [401], operator: [404], dev: [404] }],
   ["communications channel export", "GET", "/api/communications/channels/global/export", null, { anon: [401], operator: [200, 403], dev: [200] }],
   ["communications channel export text", "GET", "/api/communications/channels/global/export-text", null, { anon: [401], operator: [200, 403], dev: [200] }],
+  ["communications channel clear", "POST", "/api/communications/channels/global/clear", null, { anon: [401], operator: [200], dev: [200] }],
   ["friends list", "GET", "/api/friends", null, { anon: [401], operator: [200], dev: [200] }],
   ["users search", "GET", "/api/users/search?q=a", null, { anon: [401], operator: [200], dev: [200] }],
   ["materials list", "GET", "/api/materials?offset=0&limit=20", null, { anon: [401], operator: [200], dev: [200] }],

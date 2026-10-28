@@ -857,10 +857,10 @@ body:not(.auth-developer) [data-developer-page] {
 .accounts-table-wrap {
   overflow: auto;
   border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 14px;
+  border-radius: var(--f2-radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
   backdrop-filter: blur(18px) saturate(1.15);
-  box-shadow: 0 12px 32px rgba(15, 35, 60, 0.09), 0 2px 8px rgba(15, 35, 60, 0.05);
+  box-shadow: var(--f2-shadow-lg);
 }
 
 .accounts-table {
@@ -871,7 +871,7 @@ body:not(.auth-developer) [data-developer-page] {
 .accounts-table th,
 .accounts-table td {
   padding: 13px 12px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.055);
+  border-bottom: 1px solid var(--f2-border-soft);
   text-align: left;
   white-space: nowrap;
 }
@@ -881,7 +881,7 @@ body:not(.auth-developer) [data-developer-page] {
   top: 0;
   z-index: 1;
   background: rgba(248, 249, 251, 0.97);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.055);
+  box-shadow: 0 1px 0 var(--f2-border-soft);
   color: var(--f2-text-secondary);
   font-size: 11px;
   font-weight: var(--f2-weight-semi);
@@ -892,7 +892,7 @@ body:not(.auth-developer) [data-developer-page] {
 }
 
 .accounts-table tbody tr:hover {
-  background: color-mix(in srgb, var(--f2-blue) 4%, transparent);
+  background: rgba(0, 120, 212, 0.035);
 }
 
 .accounts-table .accounts-sort-heading {

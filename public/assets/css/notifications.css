@@ -21,7 +21,7 @@
   color: var(--f2-text-secondary);
   box-shadow: 0 4px 14px rgba(15, 35, 60, 0.06);
   cursor: pointer;
-  transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1), background 160ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: color 160ms var(--f2-ease-out), background 160ms var(--f2-ease-out), box-shadow 160ms var(--f2-ease-out), transform 120ms var(--f2-ease-out);
 }
 
 .header-notification-toggle:hover,
@@ -59,7 +59,7 @@
   height: 19px;
   padding: 0 5px;
   border: 2px solid var(--f2-bg-page);
-  border-radius: 10px;
+  border-radius: var(--f2-radius-pill);
   background: var(--f2-blue);
   color: white;
   font-size: 10px;
@@ -174,7 +174,7 @@
 .notification-filters button {
   min-height: 36px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   background: transparent;
   color: var(--f2-text-secondary);
   font: inherit;

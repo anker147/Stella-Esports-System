@@ -23,9 +23,10 @@
 }
 
 .ds-card {
-  border: 1px solid var(--f2-border);
+  border: 1px solid var(--f2-border-soft);
   border-radius: var(--f2-radius-md);
   background: var(--f2-bg-card);
+  box-shadow: var(--f2-shadow-sm);
   padding: var(--f2-space-4);
   display: flex;
   flex-direction: column;
@@ -194,9 +195,10 @@
 .ds-badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
+  border-radius: var(--f2-radius-pill);
   padding: 2px 10px;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
   border: 1px solid var(--f2-border);
   color: var(--f2-text-secondary);
   background: var(--f2-bg-card);

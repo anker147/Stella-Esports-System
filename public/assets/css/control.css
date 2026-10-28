@@ -129,7 +129,7 @@
   width: 100%;
   height: 34px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: transparent;
   color: var(--f2-red);
   font-size: 12.5px;
@@ -198,7 +198,7 @@
   min-height: 36px;
   padding: 0 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: transparent;
   color: var(--f2-text-secondary);
   font-size: 13px;
@@ -223,7 +223,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: rgba(0, 120, 212, 0.12);
   opacity: 0;
   transform: scaleX(0.6);
@@ -305,7 +305,7 @@
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--f2-radius-pill);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -555,11 +555,11 @@
 }
 
 .page-view.active > * > * {
-  animation: page-layer-in 0.24s var(--nav-ease) backwards;
+  animation: page-layer-in var(--f2-enter-fast) backwards;
 }
 
 .fly-in-item {
-  animation: page-layer-in 0.24s var(--nav-ease) backwards;
+  animation: page-layer-in var(--f2-enter-fast) backwards;
 }
 
 .page-view.active > * > *:nth-child(1) { animation-delay: 0ms; }
@@ -2098,6 +2098,7 @@
   border-radius: var(--f2-radius-xs);
   background: color-mix(in srgb, var(--f2-green) 8%, #fff);
   color: var(--f2-green);
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

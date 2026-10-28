@@ -562,6 +562,7 @@ function canManageChannelSettings(database, session, channel) {
 
 function updateChannelSettings(database = defaultDb, session, channelId, input = {}) {
   const channel = requireChannel(database, session, channelId);
+  assert(channel.kind !== 'private', '私聊频道不支持修改名称与说明');
   assert(canManageChannelSettings(database, session, channel), '只有频道创建者可以修改频道设置');
   const record = input && typeof input === 'object' ? input : {};
   const updates = {};
@@ -591,6 +592,7 @@ function updateChannelSettings(database = defaultDb, session, channelId, input =
 
 function setChannelAvatar(database = defaultDb, session, channelId, dataUrl) {
   const channel = requireChannel(database, session, channelId);
+  assert(channel.kind !== 'private', '私聊频道不支持自定义头像');
   assert(canManageChannelSettings(database, session, channel), '只有频道创建者可以修改频道头像');
   const match = typeof dataUrl === 'string'
     ? dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/) : null;
@@ -605,6 +607,7 @@ function setChannelAvatar(database = defaultDb, session, channelId, dataUrl) {
 
 function clearChannelAvatar(database = defaultDb, session, channelId) {
   const channel = requireChannel(database, session, channelId);
+  assert(channel.kind !== 'private', '私聊频道不支持自定义头像');
   assert(canManageChannelSettings(database, session, channel), '只有频道创建者可以修改频道头像');
   const now = Date.now();
   database.prepare('UPDATE communication_channels SET avatar = NULL, avatar_mime = NULL, avatar_updated_at = ?, updated_at = ? WHERE id = ?')
@@ -760,6 +763,24 @@ function toggleMessagePlusOne(database = defaultDb, session, messageId) {
       (message_id, user_id, created_at) VALUES (?, ?, ?)`).run(row.id, session.userId, Date.now());
   }
   return messageRow(database, row, session);
+}
+
+// 清空聊天记录（仅对自己）：QQ/微信式"清空"——把该频道现有全部消息按用户软删除，
+// 不影响其他成员，清空后收到的新消息照常显示（已读水位保持不动）。
+function clearChannelHistoryForUser(database = defaultDb, session, channelId) {
+  const channel = requireChannel(database, session, channelId);
+  return transaction(database, () => {
+    const rows = database.prepare('SELECT id FROM communication_messages WHERE channel_id = ?')
+      .all(channel.id);
+    const now = Date.now();
+    const insert = database.prepare(`INSERT OR IGNORE INTO communication_message_deletions
+      (message_id, user_id, deleted_at) VALUES (?, ?, ?)`);
+    let cleared = 0;
+    for (const row of rows) {
+      cleared += Number(insert.run(row.id, session.userId, now).changes) || 0;
+    }
+    return { channelId: channel.id, cleared, total: rows.length };
+  });
 }
 
 function setMessageUrgent(database = defaultDb, session, messageId, urgent) {
@@ -1119,6 +1140,7 @@ module.exports = {
   MEDIA_ROOT,
   buildChannelTextDigest,
   canAccessChannel,
+  clearChannelHistoryForUser,
   communicationBootstrap,
   createCustomChannel,
   createPrivateChannel,

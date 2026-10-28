@@ -75,7 +75,7 @@
 
 .permissions-tabs button[aria-selected="true"] {
   color: var(--f2-blue);
-  font-weight: 650;
+  font-weight: var(--f2-weight-semi);
 }
 
 .permissions-tabs button:focus-visible,
@@ -92,10 +92,10 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 16px;
+  border-radius: var(--f2-radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.84));
   backdrop-filter: blur(18px) saturate(1.15);
-  box-shadow: 0 12px 32px rgba(15, 35, 60, 0.09), 0 2px 8px rgba(15, 35, 60, 0.05);
+  box-shadow: var(--f2-shadow-lg);
 }
 
 .permissions-selector {
@@ -239,11 +239,12 @@
   flex: 0 0 auto;
   padding: 5px 12px;
   border: 1px solid color-mix(in srgb, var(--f2-blue) 24%, white);
-  border-radius: 999px;
+  border-radius: var(--f2-radius-pill);
   background: color-mix(in srgb, var(--f2-blue) 5%, white);
   color: var(--f2-blue-active);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--f2-weight-semi);
+  font-variant-numeric: tabular-nums;
 }
 
 .permissions-identity-context {
@@ -477,10 +478,10 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 16px;
+  border-radius: var(--f2-radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.84));
   backdrop-filter: blur(18px) saturate(1.15);
-  box-shadow: 0 12px 32px rgba(15, 35, 60, 0.09), 0 2px 8px rgba(15, 35, 60, 0.05);
+  box-shadow: var(--f2-shadow-lg);
 }
 
 .permissions-reference > header {

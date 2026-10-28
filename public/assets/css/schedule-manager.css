@@ -120,10 +120,10 @@
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  border: 1px solid rgba(15, 35, 60, 0.1);
-  border-radius: 16px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-lg);
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 8px 24px rgba(15, 35, 60, 0.06);
+  box-shadow: var(--f2-shadow-lg);
 }
 
 /* 作者 display 会覆盖 [hidden] 的浏览器默认值，这里显式关闭 */
@@ -250,9 +250,10 @@
 .schedule-status-chip {
   flex: 0 0 auto;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--f2-radius-pill);
   font-size: 10.5px;
-  font-weight: var(--f2-weight-semibold, 600);
+  font-weight: var(--f2-weight-semi);
+  font-variant-numeric: tabular-nums;
   color: #71818f;
   background: rgba(15, 35, 60, 0.07);
 }
@@ -354,7 +355,7 @@
 
 .schedule-stage-rail-count {
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--f2-radius-pill);
   background: rgba(0, 120, 212, 0.1);
   color: var(--f2-blue);
   font-size: 11px;
@@ -367,11 +368,11 @@
   grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  border: 1px solid rgba(15, 35, 60, 0.1);
-  border-radius: 16px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-lg);
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 8px 24px rgba(15, 35, 60, 0.06);
-  animation: schedule-detail-in 240ms var(--nav-ease, cubic-bezier(0.4, 0, 0.2, 1)) backwards;
+  box-shadow: var(--f2-shadow-lg);
+  animation: schedule-detail-in var(--f2-enter-fast) backwards;
 }
 
 @keyframes schedule-detail-in {
@@ -624,8 +625,8 @@
 .schedule-mini-btn {
   min-height: 26px;
   padding: 0 10px;
-  border: 1px solid rgba(15, 35, 60, 0.12);
-  border-radius: 7px;
+  border: 1px solid var(--f2-border);
+  border-radius: var(--f2-radius-sm);
   background: #fff;
   color: var(--f2-text-secondary);
   font-size: 11.5px;
@@ -648,7 +649,7 @@
   padding: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 24px;
+  border-radius: 22px;
   background: rgba(245, 250, 255, 0.78);
   backdrop-filter: blur(28px) saturate(145%);
   box-shadow: 0 30px 90px rgba(12, 34, 58, 0.28), inset 0 1px rgba(255, 255, 255, 0.9);
@@ -657,7 +658,7 @@
 
 .schedule-dialog.schedule-dialog-light {
   width: min(520px, calc(100vw - 24px));
-  border-radius: 20px;
+  border-radius: 22px;
 }
 
 .schedule-dialog::backdrop {

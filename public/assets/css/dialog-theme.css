@@ -53,7 +53,7 @@ dialog.character-detail-dialog[open],
 dialog.profile-dialog[open],
 dialog.account-dialog[open],
 dialog.system-dialog[open] {
-  animation: dialog-theme-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: dialog-theme-enter var(--f2-enter-fast) both;
 }
 
 dialog[open].dialog-closing {

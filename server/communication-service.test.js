@@ -13,6 +13,8 @@ const {
   MEDIA_ROOT,
   MESSAGE_LIMIT,
   buildChannelTextDigest,
+  clearChannelAvatar,
+  clearChannelHistoryForUser,
   communicationBootstrap,
   createCustomChannel,
   createPrivateChannel,
@@ -26,8 +28,10 @@ const {
   recallMessage,
   sendMessage,
   sendMediaMessage,
+  setChannelAvatar,
   setMessageUrgent,
-  toggleMessagePlusOne
+  toggleMessagePlusOne,
+  updateChannelSettings
 } = require('./communication-service');
 const { createMessageNotification } = require('./notification-service');
 
@@ -484,4 +488,40 @@ test('text digest renders header, read positions, edits, plus-ones, quotes and m
   assert.equal(adminDigest.body.includes('编辑记录'), false);
   assert.equal(adminDigest.body.includes('将被撤回的原文'), false);
   assert.match(adminDigest.body, /【已撤回】/);
+});
+
+test('clearing channel history hides existing messages only for the requesting account', () => {
+  const channel = createCustomChannel(db, alice, {
+    name: '清空演练频道',
+    description: '',
+    memberIds: ['bob']
+  });
+  sendMessage(db, alice, channel.id, '将被清空的一条');
+  sendMessage(db, bob, channel.id, '将被清空的另一条');
+  const channelBefore = listMessages(db, alice, channel.id, { limit: 10, markRead: false }).channel;
+  const watermark = db.prepare(`SELECT last_read_message_id FROM communication_channel_members
+    WHERE channel_id = ? AND user_id = 'alice'`).get(channel.id).last_read_message_id;
+
+  const result = clearChannelHistoryForUser(db, alice, channel.id);
+  assert.equal(result.cleared, 2);
+
+  // alice 视角：全部隐藏；新消息照常显示；其他成员不受影响
+  assert.equal(listMessages(db, alice, channel.id, { limit: 10, markRead: false }).messages.length, 0);
+  sendMessage(db, bob, channel.id, '清空之后的新消息');
+  const after = listMessages(db, alice, channel.id, { limit: 10, markRead: false }).messages;
+  assert.deepEqual(after.map(message => message.content), ['清空之后的新消息']);
+  assert.equal(listMessages(db, bob, channel.id, { limit: 10, markRead: false }).messages.length, 3);
+
+  // 已读水位不动（清空不制造未读/已读扰动）
+  const watermarkAfter = db.prepare(`SELECT last_read_message_id FROM communication_channel_members
+    WHERE channel_id = ? AND user_id = 'alice'`).get(channel.id).last_read_message_id;
+  assert.equal(watermarkAfter, watermark);
+  void channelBefore;
+});
+
+test('private channels reject settings edits and avatar changes', () => {
+  const channel = createPrivateChannel(db, alice, 'bob');
+  assert.throws(() => updateChannelSettings(db, alice, channel.id, { name: '改名尝试' }), /私聊频道不支持修改/);
+  assert.throws(() => setChannelAvatar(db, alice, channel.id, 'data:image/png;base64,aGVsbG8='), /私聊频道不支持自定义头像/);
+  assert.throws(() => clearChannelAvatar(db, alice, channel.id), /私聊频道不支持自定义头像/);
 });

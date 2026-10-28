@@ -46,6 +46,7 @@ const {
 const {
   buildChannelTextDigest,
   canAccessChannel,
+  clearChannelHistoryForUser,
   communicationBootstrap,
   createCustomChannel,
   createPrivateChannel,
@@ -2081,6 +2082,7 @@ const ROUTE_PERMISSIONS = {
   'DELETE /api/communications/channels/:id/avatar': 'communication.use',
   'PUT /api/communications/channels/:id/settings': 'communication.use',
   'PUT /api/communications/channels/:id/prefs': 'communication.use',
+  'POST /api/communications/channels/:id/clear': 'communication.use',
   'POST /api/communications/private': 'communication.use',
   'POST /api/communications/channels': 'communication.use',
   'GET /api/admin/notifications': 'notifications.publish',
@@ -3450,6 +3452,16 @@ route('PUT', '/api/communications/channels/:id/prefs', async ({ req, res, reques
   try {
     const body = JSON.parse((await readBody(req, 700 * 1024)) || '{}');
     const result = updateChannelPreferences(db, requestSession, params.id, body);
+    sendJson(res, 200, result);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('POST', '/api/communications/channels/:id/clear', async ({ req, res, requestSession, params }) => {
+  try {
+    const result = clearChannelHistoryForUser(db, requestSession, params.id);
+    recordAuditLog('account', requestSession, '清空频道聊天记录', { channelId: params.id, cleared: result.cleared });
     sendJson(res, 200, result);
   } catch (error) {
     sendJson(res, 400, { error: error.message, code: error.code });

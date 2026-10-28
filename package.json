@@ -1,6 +1,6 @@
 {
   "name": "zfb-web-hub",
-  "version": "3.4.0",
+  "version": "3.6.0",
   "private": true,
   "description": "Local Web HUB for OBS overlays and control panels.",
   "scripts": {

@@ -1,28 +1,28 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <link rel="preload" href="/assets/data/ui-text.json?v=14" as="fetch">
+  <link rel="preload" href="/assets/data/ui-text.json?v=15" as="fetch">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#eef2f8">
   <title>星澜赛事导播系统</title>
   <link rel="icon" href="assets/brand/stella-logo.png" type="image/png">
-  <link rel="stylesheet" href="assets/css/tokens.css?v=2">
-  <link rel="stylesheet" href="assets/css/components.css?v=3">
+  <link rel="stylesheet" href="assets/css/tokens.css?v=3">
+  <link rel="stylesheet" href="assets/css/components.css?v=4">
   <link rel="stylesheet" href="assets/css/tooltip.css?v=2">
-  <link rel="stylesheet" href="assets/css/control.css?v=97">
+  <link rel="stylesheet" href="assets/css/control.css?v=98">
   <link rel="stylesheet" href="assets/css/control-character.css?v=2">
-  <link rel="stylesheet" href="assets/css/control-hud.css?v=2">
-  <link rel="stylesheet" href="assets/css/profile.css?v=10">
-  <link rel="stylesheet" href="assets/css/device-security.css?v=2">
-  <link rel="stylesheet" href="assets/css/permissions-center.css?v=4">
-  <link rel="stylesheet" href="assets/css/communications.css?v=11">
-  <link rel="stylesheet" href="assets/css/operations-center.css?v=14">
-  <link rel="stylesheet" href="assets/css/event-management.css?v=18">
-  <link rel="stylesheet" href="assets/css/schedule-manager.css?v=3">
-  <link rel="stylesheet" href="assets/css/dialog-theme.css?v=5">
-  <link rel="stylesheet" href="assets/css/notifications.css?v=5">
+  <link rel="stylesheet" href="assets/css/control-hud.css?v=3">
+  <link rel="stylesheet" href="assets/css/profile.css?v=11">
+  <link rel="stylesheet" href="assets/css/device-security.css?v=3">
+  <link rel="stylesheet" href="assets/css/permissions-center.css?v=5">
+  <link rel="stylesheet" href="assets/css/communications.css?v=12">
+  <link rel="stylesheet" href="assets/css/operations-center.css?v=15">
+  <link rel="stylesheet" href="assets/css/event-management.css?v=19">
+  <link rel="stylesheet" href="assets/css/schedule-manager.css?v=4">
+  <link rel="stylesheet" href="assets/css/dialog-theme.css?v=7">
+  <link rel="stylesheet" href="assets/css/notifications.css?v=6">
 </head>
 <body>
   <!--
@@ -1095,26 +1095,40 @@
                 <button type="button" class="communications-dialog-close" id="communicationsSettingsClose" data-text-aria="common.close" aria-label="关闭"><svg viewBox="0 0 24 24" class="close-glyph" data-icon="x" aria-hidden="true"></svg></button>
               </header>
               <div class="communications-settings-body">
-                <div class="communications-settings-avatar-row">
+                <div class="communications-settings-info">
                   <span class="communications-settings-avatar" id="communicationsSettingsAvatar">#</span>
-                  <div class="communications-settings-avatar-actions">
+                  <div class="communications-settings-info-copy">
+                    <strong id="communicationsSettingsInfoName">--</strong>
+                    <span id="communicationsSettingsInfoMeta"></span>
+                  </div>
+                  <div class="communications-settings-avatar-actions" id="communicationsSettingsAvatarActions" hidden>
                     <label class="btn btn-secondary communications-avatar-upload"><span data-text="channels.uploadAvatar">上传头像</span><input id="communicationsAvatarInput" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
                     <button class="btn btn-secondary" id="communicationsAvatarRemove" type="button" data-text="channels.removeAvatar">移除头像</button>
                   </div>
                 </div>
-                <label class="form-stack"><span data-text="channels.settingsName">频道名称</span><input id="communicationsSettingsName" class="input" maxlength="30"></label>
-                <label class="form-stack"><span data-text="channels.settingsDescription">频道说明</span><input id="communicationsSettingsDescription" class="input" maxlength="100"></label>
-                <label class="form-stack"><span data-text="channels.settingsAnnouncement">频道公告</span><textarea id="communicationsSettingsAnnouncement" class="input" rows="3" maxlength="500"></textarea></label>
+                <div class="communications-settings-edit" id="communicationsSettingsEdit" hidden>
+                  <label class="form-stack"><span data-text="channels.settingsName">频道名称</span><input id="communicationsSettingsName" class="input" maxlength="30"></label>
+                  <label class="form-stack"><span data-text="channels.settingsDescription">频道说明</span><input id="communicationsSettingsDescription" class="input" maxlength="100"></label>
+                  <label class="form-stack"><span data-text="channels.settingsAnnouncement">频道公告</span><textarea id="communicationsSettingsAnnouncement" class="input" rows="3" maxlength="500"></textarea></label>
+                </div>
                 <div class="communications-settings-toggles">
                   <label class="switch-control"><input id="communicationsSettingsPinned" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"><span></span></span><span data-text="channels.pinLabel">置顶</span></label>
                   <label class="switch-control"><input id="communicationsSettingsMuted" type="checkbox" role="switch"><span class="switch-track" aria-hidden="true"><span></span></span><span data-text="channels.muteLabel">免打扰</span></label>
                 </div>
+                <section class="communications-settings-members" id="communicationsSettingsMembers" hidden>
+                  <h4 data-text="channels.membersTitle">频道成员</h4>
+                  <ul class="communications-settings-member-list" id="communicationsSettingsMemberList"></ul>
+                </section>
+                <section class="communications-settings-danger">
+                  <button type="button" class="communications-settings-clear" id="communicationsSettingsClear" data-text="channels.clearHistory">清空聊天记录</button>
+                  <p data-text="channels.clearHistoryHint">清空后你将不再看到这个频道的现有消息，其他成员不受影响。</p>
+                </section>
               </div>
               <footer class="communications-dialog-actions">
                 <span class="communications-settings-feedback" id="communicationsSettingsFeedback"></span>
                 <span class="communications-foot-space"></span>
                 <button type="button" class="btn btn-secondary" id="communicationsSettingsCancel" data-text="common.cancel">取消</button>
-                <button type="submit" class="btn btn-primary" data-text="common.save">保存</button>
+                <button type="submit" class="btn btn-primary" id="communicationsSettingsSave" data-text="common.save" hidden>保存</button>
               </footer>
             </form>
           </dialog>
@@ -1129,6 +1143,20 @@
         </section>
       </div>
       <div class="communications-context-menu" id="communicationsContextMenu" role="menu" data-text-aria="channels.messageActions" aria-label="消息操作" hidden></div>
+      <div class="communications-urgent-overlay" id="communicationsUrgentOverlay" hidden>
+        <div class="communications-urgent-modal" role="alertdialog" aria-modal="false" aria-labelledby="communicationsUrgentTitle">
+          <header class="communications-urgent-head">
+            <span class="communications-urgent-tag" id="communicationsUrgentTitle" data-text="channels.urgentModalTag">加急消息</span>
+            <button type="button" class="communications-urgent-close" id="communicationsUrgentClose" data-text-aria="common.close" aria-label="关闭"><svg viewBox="0 0 24 24" data-icon="x" aria-hidden="true"></svg></button>
+          </header>
+          <p class="communications-urgent-meta" id="communicationsUrgentMeta"></p>
+          <p class="communications-urgent-preview" id="communicationsUrgentPreview"></p>
+          <footer class="communications-urgent-foot">
+            <time id="communicationsUrgentTime"></time>
+            <button type="button" class="communications-urgent-view" id="communicationsUrgentView" data-text="channels.urgentModalView">查看消息</button>
+          </footer>
+        </div>
+      </div>
     </section>
 
     <section class="page-view" id="accountsPage" data-page-panel="accounts" data-developer-page hidden>
@@ -1649,7 +1677,7 @@
     </form>
   </dialog>
 
-  <script defer src="assets/js/text.js?v=15"></script>
+  <script defer src="assets/js/text.js?v=16"></script>
   <script defer src="assets/js/link-guard.js?v=1"></script>
   <script defer src="assets/js/auth-guard.js?v=1"></script>
   <script defer src="assets/js/system-dialog.js?v=1"></script>
@@ -1660,22 +1688,22 @@
   <script defer src="assets/js/particles.js?v=1"></script>
   <script defer src="assets/js/search.js?v=2"></script>
   <script defer src="assets/js/countdown.js?v=6"></script>
-  <script defer src="assets/js/profile.js?v=17"></script>
-  <script defer src="assets/js/device-security.js?v=2"></script>
+  <script defer src="assets/js/profile.js?v=19"></script>
+  <script defer src="assets/js/device-security.js?v=4"></script>
   <script defer src="assets/js/presence.js?v=2"></script>
-  <script defer src="assets/js/friends.js?v=2"></script>
+  <script defer src="assets/js/friends.js?v=4"></script>
   <script defer src="assets/js/accounts.js?v=10"></script>
   <script defer src="assets/js/system-management.js?v=2"></script>
-  <script defer src="assets/js/permissions-center.js?v=6"></script>
-  <script defer src="assets/js/notifications.js?v=5"></script>
+  <script defer src="assets/js/permissions-center.js?v=8"></script>
+  <script defer src="assets/js/notifications.js?v=7"></script>
   <script defer src="assets/js/notification-management.js?v=4"></script>
   <script defer src="assets/js/hud-center.js?v=5"></script>
   <script defer src="assets/js/control.js?v=43"></script>
   <script defer src="assets/js/operations-center.js?v=21"></script>
-  <script defer src="assets/js/schedule-manager.js?v=7"></script>
+  <script defer src="assets/js/schedule-manager.js?v=9"></script>
   <script defer src="assets/js/dialog-theme.js?v=1"></script>
   <script defer src="assets/js/event-management.js?v=19"></script>
-  <script defer src="assets/js/communications.js?v=20"></script>
+  <script defer src="assets/js/communications.js?v=22"></script>
   <script defer src="assets/js/bracket-control.js?v=4"></script>
   <script defer src="assets/js/obs-connection.js?v=2"
   ></script>

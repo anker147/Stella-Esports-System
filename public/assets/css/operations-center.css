@@ -160,11 +160,11 @@
   align-content: center;
   min-height: 112px;
   padding: 16px 18px;
-  border: 1px solid rgba(15, 35, 60, 0.08);
+  border: 1px solid var(--f2-border-soft);
   border-inline-start: 3px solid rgba(0, 120, 212, 0.48);
-  border-radius: 8px;
+  border-radius: var(--f2-radius-md);
   background: #fff;
-  box-shadow: 0 1px 3px rgba(15, 35, 60, 0.04);
+  box-shadow: var(--f2-shadow-sm);
 }
 
 .operations-metric.is-success {
@@ -203,10 +203,10 @@
   min-width: 0;
   margin-bottom: 16px;
   padding: 20px 24px 24px;
-  border: 1px solid rgba(15, 35, 60, 0.08);
-  border-radius: 16px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-lg);
   background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 8px 24px rgba(15, 35, 60, 0.06);
+  box-shadow: var(--f2-shadow-lg);
 }
 
 .operations-panel-header {
@@ -228,8 +228,8 @@
   display: grid;
   gap: 6px;
   padding: 12px 14px;
-  border: 1px solid rgba(15, 35, 60, 0.1);
-  border-radius: 10px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-md);
   background: rgba(248, 251, 255, 0.88);
   color: var(--f2-text-secondary);
   font-size: 12px;
@@ -404,7 +404,7 @@
 .operations-table code,
 .operations-alert-row code,
 .operations-entity-row code {
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--f2-font-mono);
   font-size: 10.5px;
 }
 
@@ -910,7 +910,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   margin: 0;
   color: var(--f2-text-primary);
   font-size: 19px;
-  font-weight: var(--f2-weight-semibold, 600);
+  font-weight: var(--f2-weight-semi);
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }

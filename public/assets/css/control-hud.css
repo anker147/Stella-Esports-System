@@ -45,7 +45,7 @@
   place-items: center;
   width: 42px;
   height: 42px;
-  border: 1px solid rgba(15, 35, 60, 0.12);
+  border: 1px solid var(--f2-border-soft);
   border-radius: 11px;
   background: rgba(244, 248, 253, 0.9);
   color: var(--f2-blue-active);
@@ -99,8 +99,8 @@
 .hub-soon-tag {
   display: inline-block;
   padding: 2px 8px;
-  border: 1px solid rgba(15, 35, 60, 0.14);
-  border-radius: 999px;
+  border: 1px solid var(--f2-border);
+  border-radius: var(--f2-radius-pill);
   background: rgba(246, 247, 248, 0.9);
   color: var(--f2-text-tertiary);
   font-size: 10.5px;
@@ -111,7 +111,7 @@
   max-height: min(720px, calc(100vh - 32px));
   padding: 0;
   border: 0;
-  border-radius: 18px;
+  border-radius: 22px;
   overflow: hidden;
 }
 
@@ -120,7 +120,7 @@
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(15, 35, 60, 0.08);
+  border-bottom: 1px solid var(--f2-border-soft);
 }
 
 .hud-dialog-head .hub-card-copy h2 {
@@ -133,7 +133,7 @@
   place-items: center;
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(15, 35, 60, 0.12);
+  border: 1px solid var(--f2-border);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.85);
   color: var(--f2-text-secondary);
@@ -153,8 +153,8 @@
   place-items: center;
   min-width: 0;
   min-height: 380px;
-  border: 1px solid rgba(15, 35, 60, 0.1);
-  border-radius: 12px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-md);
   background:
     linear-gradient(45deg, rgba(15, 35, 60, 0.05) 25%, transparent 25%, transparent 75%, rgba(15, 35, 60, 0.05) 75%),
     linear-gradient(45deg, rgba(15, 35, 60, 0.05) 25%, transparent 25%, transparent 75%, rgba(15, 35, 60, 0.05) 75%),

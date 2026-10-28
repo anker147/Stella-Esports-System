@@ -28,6 +28,21 @@
     settingsPinned: document.getElementById('communicationsSettingsPinned'),
     settingsMuted: document.getElementById('communicationsSettingsMuted'),
     settingsFeedback: document.getElementById('communicationsSettingsFeedback'),
+    settingsAvatarActions: document.getElementById('communicationsSettingsAvatarActions'),
+    settingsInfoName: document.getElementById('communicationsSettingsInfoName'),
+    settingsInfoMeta: document.getElementById('communicationsSettingsInfoMeta'),
+    settingsEdit: document.getElementById('communicationsSettingsEdit'),
+    settingsMembers: document.getElementById('communicationsSettingsMembers'),
+    settingsMemberList: document.getElementById('communicationsSettingsMemberList'),
+    settingsClear: document.getElementById('communicationsSettingsClear'),
+    settingsSave: document.getElementById('communicationsSettingsSave'),
+    urgentOverlay: document.getElementById('communicationsUrgentOverlay'),
+    urgentModal: document.querySelector('#communicationsUrgentOverlay .communications-urgent-modal'),
+    urgentMeta: document.getElementById('communicationsUrgentMeta'),
+    urgentPreview: document.getElementById('communicationsUrgentPreview'),
+    urgentTime: document.getElementById('communicationsUrgentTime'),
+    urgentClose: document.getElementById('communicationsUrgentClose'),
+    urgentView: document.getElementById('communicationsUrgentView'),
     avatarInput: document.getElementById('communicationsAvatarInput'),
     avatarRemove: document.getElementById('communicationsAvatarRemove'),
     contextMenu: document.getElementById('communicationsContextMenu'),
@@ -113,6 +128,8 @@
     contextMenuMessageId: null,
     contextMenuTrigger: null,
     contextMenuKeyboardOpened: false,
+    urgentMessage: null,
+    urgentGraceTimer: 0,
     channelMenuTargetId: null,
     channelQuery: ''
   };
@@ -324,6 +341,7 @@
 
   function groupLabel(key) {
     return {
+      pinned: text('channels.groupPinned', '置顶'),
       public: text('channels.groupPublic', '公共频道'),
       private: text('channels.groupPrivate', '私聊'),
       custom: text('channels.groupCustom', '自建频道')
@@ -338,19 +356,25 @@
 
   function renderChannels() {
     elements.channelList.replaceChildren();
-    const groups = [
-      ['public', state.channels.filter(channel => channel.kind === 'global' || channel.kind === 'identity')],
-      ['private', state.channels.filter(channel => channel.kind === 'private')],
-      ['custom', state.channels.filter(channel => channel.kind === 'custom')]
-    ];
     const query = state.channelQuery.trim().toLowerCase();
+    const matches = channel => !query || channel.name.toLowerCase().includes(query);
+    // 置顶对话跨分组浮顶（QQ/微信式）：排在所有分组之前，各分组只收未置顶频道
+    const pinned = state.channels.filter(channel => channel.pinned)
+      .slice()
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+    const groups = [
+      ['pinned', pinned],
+      ['public', state.channels.filter(channel => (channel.kind === 'global' || channel.kind === 'identity') && !channel.pinned)],
+      ['private', state.channels.filter(channel => channel.kind === 'private' && !channel.pinned)],
+      ['custom', state.channels.filter(channel => channel.kind === 'custom' && !channel.pinned)]
+    ];
     for (const [key, channels] of groups) {
       const ordered = channels
-        .filter(channel => !query || channel.name.toLowerCase().includes(query))
+        .filter(matches)
         .slice()
-        .sort((left, right) => (right.pinned ? 1 : 0) - (left.pinned ? 1 : 0) || right.updatedAt - left.updatedAt);
-      if (!ordered.length && query) continue;
-      void channels;
+        .sort((left, right) => right.updatedAt - left.updatedAt);
+      // 置顶组无内容时整组隐藏；搜索时空分组隐藏
+      if (!ordered.length && (query || key === 'pinned')) continue;
       const section = document.createElement('section');
       section.className = 'communications-channel-group';
       const heading = document.createElement('div');
@@ -358,7 +382,7 @@
       const label = document.createElement('span');
       label.textContent = groupLabel(key);
       const count = document.createElement('span');
-      count.textContent = String(channels.length);
+      count.textContent = String(ordered.length);
       heading.append(label, count);
       section.appendChild(heading);
       for (const channel of ordered) {
@@ -463,20 +487,118 @@
     const channel = state.channels.find(item => item.id === state.selectedChannelId);
     if (!channel) return;
     const canManage = canManageSelectedChannel();
-    elements.settingsName.value = channel.name;
-    elements.settingsName.disabled = !canManage;
-    elements.settingsDescription.value = channel.description;
-    elements.settingsDescription.disabled = !canManage;
-    elements.settingsAnnouncement.value = channel.announcement || '';
-    elements.settingsAnnouncement.disabled = !canManage;
+    // QQ/微信式分层：名称/说明/公告编辑与头像上传仅自建频道（群主/开发者）可见；
+    // 私聊与系统频道只保留信息卡、开关、成员与清空记录
+    const canEditFields = channel.kind === 'custom' && canManage;
+    elements.settingsEdit.hidden = !canEditFields;
+    elements.settingsSave.hidden = !canEditFields;
+    if (canEditFields) {
+      elements.settingsName.value = channel.name;
+      elements.settingsDescription.value = channel.description;
+      elements.settingsAnnouncement.value = channel.announcement || '';
+    }
+    const canAvatar = channel.kind === 'custom' && canManage;
+    elements.settingsAvatarActions.hidden = !canAvatar;
+    elements.avatarRemove.disabled = !canAvatar || !channel.avatarUrl;
+    elements.avatarInput.disabled = !canAvatar;
     elements.settingsPinned.checked = Boolean(channel.pinned);
     elements.settingsMuted.checked = Boolean(channel.muted);
-    elements.avatarRemove.disabled = !canManage || !channel.avatarUrl;
-    elements.avatarInput.disabled = !canManage;
+    renderSettingsInfo(channel);
+    renderSettingsMembers(channel);
     setSettingsAvatarPreview(channel);
     setFeedback('');
     elements.settingsFeedback.textContent = '';
     elements.settingsDialog.showModal();
+  }
+
+  function renderSettingsInfo(channel) {
+    elements.settingsInfoName.textContent = channel.name;
+    const meta = [];
+    if (channel.kind === 'custom') {
+      meta.push(text('channels.membersCount', '{count} 名成员', {
+        count: channel.memberCount ?? (channel.members?.length || 0)
+      }));
+    } else {
+      meta.push(kindLabel(channel.kind));
+    }
+    if (channel.developerObserver) meta.push(text('channels.developerView', '开发者视角'));
+    elements.settingsInfoMeta.textContent = meta.join(' · ');
+  }
+
+  function renderSettingsMembers(channel) {
+    const members = channel.members || [];
+    const showMembers = (channel.kind === 'private' || channel.kind === 'custom') && members.length > 0;
+    elements.settingsMembers.hidden = !showMembers;
+    elements.settingsMemberList.replaceChildren();
+    if (!showMembers) return;
+    for (const member of members) {
+      const item = document.createElement('li');
+      item.className = 'communications-settings-member';
+      item.appendChild(avatarElement('communications-settings-member-avatar', member, 'private'));
+      const copy = document.createElement('span');
+      copy.className = 'communications-settings-member-copy';
+      const name = document.createElement('strong');
+      name.textContent = member.displayName || member.account || text('channels.unknownUser', '未知用户');
+      const detail = document.createElement('span');
+      detail.textContent = member.title || `@${member.account || ''}`;
+      copy.append(name, detail);
+      item.appendChild(copy);
+      if (channel.kind === 'custom' && channel.ownerUserId === member.id) {
+        item.appendChild(node('span', 'communications-settings-owner-badge', text('channels.ownerBadge', '群主')));
+      }
+      elements.settingsMemberList.appendChild(item);
+    }
+  }
+
+  async function saveChannelPrefsInstant() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    try {
+      const prefs = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pinned: elements.settingsPinned.checked,
+          muted: elements.settingsMuted.checked
+        })
+      });
+      const current = state.channels.find(item => item.id === channel.id);
+      if (current) {
+        current.pinned = prefs.pinned;
+        current.muted = prefs.muted;
+      }
+      renderChannels();
+      setFeedback('');
+    } catch (error) {
+      elements.settingsPinned.checked = Boolean(channel.pinned);
+      elements.settingsMuted.checked = Boolean(channel.muted);
+      setFeedback(error.message);
+    }
+  }
+
+  async function clearChannelHistoryFromSettings() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    const confirmed = await window.StellaDialog.confirm({
+      title: text('channels.clearHistory', '清空聊天记录'),
+      message: text('channels.clearHistoryConfirm', '清空后你将不再看到这个频道的现有消息，其他成员不受影响，确认清空？'),
+      confirmText: text('channels.clearHistory', '清空聊天记录'),
+      tone: 'danger'
+    });
+    if (!confirmed) return;
+    try {
+      await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      elements.settingsDialog.close('cleared');
+      elements.composerStatus.textContent = text('channels.clearHistoryDone', '聊天记录已清空');
+      // 清空后整包刷新：频道摘要、未读与会话区（服务端已过滤）一并归零
+      await loadBootstrap({ force: true, preserveConversation: true, anchorUnread: false, scrollBottom: true });
+    } catch (error) {
+      setFeedback(error.message);
+    }
   }
 
   function setSettingsFeedback(message) {
@@ -507,33 +629,22 @@
     event.preventDefault();
     const channel = state.channels.find(item => item.id === state.selectedChannelId);
     if (!channel) return;
-    const canManage = canManageSelectedChannel();
+    // 开关已即时保存；此处只处理自建频道的名称/说明/公告编辑
+    if (!(channel.kind === 'custom' && canManageSelectedChannel())) {
+      elements.settingsDialog.close('saved');
+      return;
+    }
     try {
-      if (canManage) {
-        const updated = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: elements.settingsName.value,
-            description: elements.settingsDescription.value,
-            announcement: elements.settingsAnnouncement.value
-          })
-        });
-        updateChannel(updated.channel);
-      }
-      const prefs = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/prefs', {
+      const updated = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pinned: elements.settingsPinned.checked,
-          muted: elements.settingsMuted.checked
+          name: elements.settingsName.value,
+          description: elements.settingsDescription.value,
+          announcement: elements.settingsAnnouncement.value
         })
       });
-      const current = state.channels.find(item => item.id === channel.id);
-      if (current) {
-        current.pinned = prefs.pinned;
-        current.muted = prefs.muted;
-      }
+      updateChannel(updated.channel);
       elements.settingsDialog.close('saved');
       renderChannels();
       renderConversationHeader();
@@ -2043,6 +2154,42 @@
     });
   }
 
+  // ===== 加急非阻塞弹窗：页内直达提醒（点背景关闭，弹出后 0.5s 内吸收背景操作防误触） =====
+  function urgentModalPreview(message) {
+    if (message.recalled) return text('channels.quotedMessageRecalled', '原消息已撤回');
+    if (message.kind && message.kind !== 'text') {
+      const duration = message.kind === 'voice' && message.media?.durationMs
+        ? ` ${formatDuration(message.media.durationMs)}` : '';
+      return `${message.content}${duration}`;
+    }
+    return codePoints(String(message.content || '').replace(/\s+/g, ' ')).slice(0, 120).join('');
+  }
+
+  function showUrgentModal(message) {
+    const channel = state.channels.find(item => item.id === message.channelId);
+    elements.urgentMeta.textContent = text('channels.urgentModalMeta', '{name} 在 {channel} 发出加急', {
+      name: message.sender?.displayName || text('channels.unknownUser', '未知用户'),
+      channel: channel?.name || message.channelId
+    });
+    elements.urgentPreview.textContent = urgentModalPreview(message);
+    elements.urgentTime.dateTime = new Date(Number(message.createdAt)).toISOString();
+    elements.urgentTime.textContent = formatMessageTime(message.createdAt);
+    state.urgentMessage = message;
+    elements.urgentOverlay.hidden = false;
+    elements.urgentOverlay.classList.add('is-blocking');
+    clearTimeout(state.urgentGraceTimer);
+    state.urgentGraceTimer = window.setTimeout(
+      () => elements.urgentOverlay.classList.remove('is-blocking'), 500);
+  }
+
+  function closeUrgentModal() {
+    if (elements.urgentOverlay.hidden) return;
+    elements.urgentOverlay.hidden = true;
+    elements.urgentOverlay.classList.remove('is-blocking');
+    clearTimeout(state.urgentGraceTimer);
+    state.urgentMessage = null;
+  }
+
   function scheduleRealtimeRefresh(event) {
     state.pendingEvents.set(`${event.type}:${event.channelId || ''}:${event.messageId || ''}`, event);
     clearTimeout(state.refreshTimer);
@@ -2052,9 +2199,12 @@
       const nearBottom = elements.messageScroll.scrollHeight - elements.messageScroll.scrollTop - elements.messageScroll.clientHeight < 120;
       await loadBootstrap({ force: true, preserveConversation: true, preservePosition: true, scrollBottom: false });
       if (!state.active) return;
-      const currentEvents = events.filter(item => item.channelId === state.selectedChannelId && item.messageId);
+      // 加急事件无论来自哪个频道都要取回消息内容用于页内弹窗
+      const currentEvents = events.filter(item => item.messageId
+        && (item.channelId === state.selectedChannelId || item.type === 'message-urgent'));
       let changed = false;
       let announcedMessage = null;
+      let urgentModalCandidate = null;
       for (const currentEvent of currentEvents) {
         if (currentEvent.type === 'message-deleted') {
           const next = state.messages.filter(message => message.id !== currentEvent.messageId);
@@ -2064,15 +2214,21 @@
         }
         try {
           const payload = await api(`/api/communications/channels/${encodeURIComponent(currentEvent.channelId)}/messages?before=${Number(currentEvent.messageId) + 1}&limit=1&markRead=0`, { force: true });
-          if (currentEvent.channelId !== state.selectedChannelId) continue;
+          const affectsSelected = currentEvent.channelId === state.selectedChannelId;
+          if (!affectsSelected && currentEvent.type !== 'message-urgent') continue;
           const message = payload.messages.find(item => item.id === currentEvent.messageId);
           if (!message) continue;
-          const index = state.messages.findIndex(item => item.id === message.id);
-          if (index >= 0) state.messages[index] = message;
-          else state.messages.push(message);
-          state.messages.sort((left, right) => left.id - right.id);
-          changed = true;
+          if (affectsSelected) {
+            const index = state.messages.findIndex(item => item.id === message.id);
+            if (index >= 0) state.messages[index] = message;
+            else state.messages.push(message);
+            state.messages.sort((left, right) => left.id - right.id);
+            changed = true;
+          }
           if (currentEvent.type === 'message') announcedMessage = message;
+          if (currentEvent.type === 'message-urgent' && message.urgent && !message.mine) {
+            urgentModalCandidate = message;
+          }
         } catch {}
       }
       if (changed) {
@@ -2080,6 +2236,7 @@
         if (nearBottom) await markCurrentRead();
       }
       if (announcedMessage) announceMessage(announcedMessage);
+      if (urgentModalCandidate) showUrgentModal(urgentModalCandidate);
     }, 80);
   }
 
@@ -2327,6 +2484,25 @@
     const message = state.messages.find(item => item.id === state.lightboxMessageId);
     if (message) downloadMessageMedia(message);
   });
+  // 加急弹窗：背景点击关闭（弹出后 0.5s 内吸收点击防误触），"查看消息"跳转对应频道
+  elements.urgentClose.addEventListener('click', closeUrgentModal);
+  elements.urgentView.addEventListener('click', () => {
+    const message = state.urgentMessage;
+    closeUrgentModal();
+    if (message?.channelId) {
+      setMobileView('conversation');
+      selectChannel(message.channelId);
+    }
+  });
+  elements.urgentOverlay.addEventListener('pointerdown', event => {
+    if (event.target !== elements.urgentOverlay) return;
+    if (elements.urgentOverlay.classList.contains('is-blocking')) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    closeUrgentModal();
+  });
   // 移动端视口适配：顶栏实际高度（可能换行、含安全区）无法用固定魔法数表达，
   // 移动端激活时始终按「视觉视口底部 − 页面顶部实测位置」精确钳制页面高度，
   // 输入栏因此永远留在屏内；键盘弹出时 visualViewport 收缩，同一逻辑自动跟随
@@ -2381,6 +2557,9 @@
     renderChannels();
   });
   elements.settingsOpen.addEventListener('click', () => openChannelSettings());
+  elements.settingsPinned.addEventListener('change', saveChannelPrefsInstant);
+  elements.settingsMuted.addEventListener('change', saveChannelPrefsInstant);
+  elements.settingsClear.addEventListener('click', clearChannelHistoryFromSettings);
   elements.settingsClose.addEventListener('click', () => elements.settingsDialog.close());
   elements.settingsCancel.addEventListener('click', () => elements.settingsDialog.close());
   elements.settingsForm.addEventListener('submit', saveChannelSettings);
@@ -2436,7 +2615,10 @@
 
   window.addEventListener('stella:page-change', event => {
     state.active = event.detail?.page === 'channels';
-    if (!state.active) closeContextMenu();
+    if (!state.active) {
+      closeContextMenu();
+      closeUrgentModal();
+    }
     if (!state.active) return;
     const bootstrapOptions = state.initialized
       ? { force: true, anchorUnread: true, scrollBottom: false }
@@ -2464,6 +2646,7 @@
 
   window.addEventListener('stella:identity-change', () => {
     closeContextMenu();
+    closeUrgentModal();
     cancelQuoting();
     clearPendingFiles();
     stopVoicePlayback();
