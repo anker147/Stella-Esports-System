@@ -63,7 +63,10 @@
 .operations-toolbar select:focus-visible,
 .operations-action:focus-visible,
 .operations-refresh:focus-visible,
-.operations-text-action:focus-visible {
+.operations-text-action:focus-visible,
+.operations-todo-row:focus-visible,
+.personal-activity-tab:focus-visible,
+.personal-activity-detail-close:focus-visible {
   outline: 3px solid rgba(0, 120, 212, 0.16);
   outline-offset: 1px;
   border-color: var(--f2-blue);
@@ -165,6 +168,37 @@
   border-radius: var(--f2-radius-md);
   background: #fff;
   box-shadow: var(--f2-shadow-sm);
+  transition: transform var(--f2-transition-fast), box-shadow var(--f2-transition-fast), border-color var(--f2-transition-fast);
+}
+
+.operations-metric:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 120, 212, 0.28);
+  box-shadow: var(--f2-shadow-md);
+}
+
+.operations-metric-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.operations-metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(0, 120, 212, 0.1);
+  color: var(--f2-blue);
+}
+
+.operations-metric-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .operations-metric.is-success {
