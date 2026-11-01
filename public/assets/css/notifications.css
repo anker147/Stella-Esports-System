@@ -34,7 +34,7 @@
 
 .header-notification-toggle:active,
 .notification-icon-button:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .header-notification-toggle:focus-visible,
@@ -80,9 +80,9 @@
 
 @keyframes notification-bell-alert {
   0%, 2%, 8%, 14%, 20%, 100% { transform: rotate(0); }
-  4%, 12% { transform: rotate(4deg); }
-  6%, 16% { transform: rotate(-4deg); }
-  18% { transform: rotate(2.5deg); }
+  4%, 12% { transform: rotate(8deg); }
+  6%, 16% { transform: rotate(-8deg); }
+  18% { transform: rotate(5deg); }
 }
 
 .notification-panel {
@@ -102,7 +102,7 @@
 }
 
 .notification-panel.is-open {
-  animation: notification-panel-in var(--f2-enter-fast);
+  animation: notification-panel-in 190ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @keyframes notification-panel-in {
@@ -210,7 +210,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 140ms var(--f2-ease-out), transform 120ms var(--f2-ease-out);
+  transition: background 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .notification-item:hover {
@@ -356,7 +356,7 @@
 }
 
 .urgent-notification-banner.is-visible {
-  animation: urgent-banner-in var(--f2-enter-fast);
+  animation: urgent-banner-in 220ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @keyframes urgent-banner-in {

@@ -545,7 +545,7 @@
 @keyframes page-layer-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(14px);
   }
 
   to {
@@ -1859,7 +1859,7 @@
 }
 
 .system-dialog[open] {
-  animation: system-dialog-in 0.24s var(--f2-ease-out) both;
+  animation: system-dialog-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .system-dialog form {

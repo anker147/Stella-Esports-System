@@ -912,7 +912,7 @@ body:not(.auth-developer) [data-developer-page] {
   font: inherit;
   letter-spacing: 0;
   cursor: pointer;
-  transition: color 150ms var(--f2-ease-out), background-color 150ms var(--f2-ease-out), transform 120ms var(--f2-ease-out);
+  transition: color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .accounts-sort-button:hover {
@@ -921,7 +921,7 @@ body:not(.auth-developer) [data-developer-page] {
 }
 
 .accounts-sort-button:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .accounts-sort-button:focus-visible {
@@ -934,7 +934,7 @@ body:not(.auth-developer) [data-developer-page] {
   height: 16px;
   flex: 0 0 12px;
   opacity: 0.42;
-  transition: opacity 150ms var(--f2-ease-out), color 150ms var(--f2-ease-out);
+  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1), color 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .accounts-sort-heading[aria-sort="ascending"] .accounts-sort-icon,

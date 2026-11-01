@@ -63,10 +63,7 @@
 .operations-toolbar select:focus-visible,
 .operations-action:focus-visible,
 .operations-refresh:focus-visible,
-.operations-text-action:focus-visible,
-.operations-todo-row:focus-visible,
-.personal-activity-tab:focus-visible,
-.personal-activity-detail-close:focus-visible {
+.operations-text-action:focus-visible {
   outline: 3px solid rgba(0, 120, 212, 0.16);
   outline-offset: 1px;
   border-color: var(--f2-blue);
@@ -129,7 +126,7 @@
 .operations-refresh:active,
 .operations-action:active,
 .operations-text-action:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .operations-content {
@@ -168,37 +165,6 @@
   border-radius: var(--f2-radius-md);
   background: #fff;
   box-shadow: var(--f2-shadow-sm);
-  transition: transform var(--f2-transition-fast), box-shadow var(--f2-transition-fast), border-color var(--f2-transition-fast);
-}
-
-.operations-metric:hover {
-  transform: translateY(-2px);
-  border-color: rgba(0, 120, 212, 0.28);
-  box-shadow: var(--f2-shadow-md);
-}
-
-.operations-metric-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.operations-metric-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: rgba(0, 120, 212, 0.1);
-  color: var(--f2-blue);
-}
-
-.operations-metric-icon svg {
-  width: 16px;
-  height: 16px;
 }
 
 .operations-metric.is-success {
@@ -759,7 +725,7 @@
 }
 
 dialog.operations-team-dialog[open] .operations-team-shell {
-  animation: dialog-theme-enter 220ms var(--f2-ease-out) both;
+  animation: dialog-theme-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .operations-team-header,
@@ -955,7 +921,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   height: 14px;
   border-radius: 4px;
   background: #e7ebee;
-  animation: operations-loading-pulse 1.6s ease-in-out infinite alternate;
+  animation: operations-loading-pulse 1.2s ease-in-out infinite alternate;
 }
 
 .operations-team-stats.is-loading dd {
@@ -1248,7 +1214,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   height: 18px;
   border-radius: 5px;
   background: #e7ebee;
-  animation: operations-loading-pulse 1.6s ease-in-out infinite alternate;
+  animation: operations-loading-pulse 1.2s ease-in-out infinite alternate;
 }
 
 .operations-team-loading span:nth-child(2) {
@@ -1444,7 +1410,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   height: 52px;
   border-radius: 6px;
   background: #e7ebee;
-  animation: operations-loading-pulse 1.6s ease-in-out infinite alternate;
+  animation: operations-loading-pulse 1.2s ease-in-out infinite alternate;
 }
 
 .operations-loading span:nth-child(1) {
@@ -1456,8 +1422,8 @@ dialog.operations-team-dialog[open] .operations-team-shell {
 }
 
 @keyframes operations-loading-pulse {
-  from { opacity: 0.6; }
-  to { opacity: 0.85; }
+  from { opacity: 0.48; }
+  to { opacity: 0.92; }
 }
 
 .operations-sentinel {
