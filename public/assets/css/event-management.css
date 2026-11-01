@@ -314,14 +314,14 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 31px;
-  padding: 0 8px;
+  min-height: 30px;
+  padding: 0 12px;
   border: 1px solid var(--f2-border);
   border-radius: 6px;
   background: #fff;
   color: var(--f2-text-secondary);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: border-color 130ms var(--nav-ease), background 130ms var(--nav-ease), color 130ms var(--nav-ease), transform 130ms var(--nav-ease);

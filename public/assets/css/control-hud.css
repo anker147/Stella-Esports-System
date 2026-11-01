@@ -103,7 +103,7 @@
   border-radius: var(--f2-radius-pill);
   background: rgba(246, 247, 248, 0.9);
   color: var(--f2-text-tertiary);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .hud-hub-dialog {
@@ -131,8 +131,8 @@
   margin-left: auto;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--f2-border);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.85);

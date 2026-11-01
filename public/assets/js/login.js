@@ -5,6 +5,10 @@
   const errorDialog = document.getElementById('loginErrorDialog');
   const errorMessage = document.getElementById('loginErrorMessage');
   const errorClose = document.getElementById('loginErrorClose');
+  const agreementInput = document.getElementById('loginAgreement');
+  const agreementLink = document.getElementById('loginAgreementLink');
+  const agreementDialog = document.getElementById('loginAgreementDialog');
+  const agreementClose = document.getElementById('loginAgreementClose');
   const forms = {
     user: document.getElementById('loginFormUser'),
     developer: document.getElementById('loginFormDeveloper')
@@ -58,6 +62,38 @@
     tab.addEventListener('click', () => switchTo(tab.dataset.loginTab));
   });
 
+  // 自动登录依赖本机持久化：勾选自动登录时自动带上记住登录；取消记住登录则同步取消自动登录
+  const rememberInput = forms.user.querySelector('input[name="remember"]');
+  const autoLoginInput = forms.user.querySelector('input[name="autoLogin"]');
+  autoLoginInput?.addEventListener('change', () => {
+    if (autoLoginInput.checked) rememberInput.checked = true;
+  });
+  rememberInput?.addEventListener('change', () => {
+    if (!rememberInput.checked) autoLoginInput.checked = false;
+  });
+
+  // 使用协议弹窗：链接展开全文，关闭后焦点归还链接
+  let lastAgreementFocus = null;
+
+  function closeAgreementDialog() {
+    agreementDialog?.close();
+  }
+
+  agreementLink?.addEventListener('click', () => {
+    if (!agreementDialog?.showModal) return;
+    lastAgreementFocus = document.activeElement;
+    agreementDialog.showModal();
+    agreementClose?.focus();
+  });
+
+  agreementClose?.addEventListener('click', closeAgreementDialog);
+  agreementDialog?.addEventListener('click', event => {
+    if (event.target === agreementDialog) closeAgreementDialog();
+  });
+  agreementDialog?.addEventListener('close', () => {
+    if (lastAgreementFocus && document.contains(lastAgreementFocus)) lastAgreementFocus.focus();
+  });
+
   // 回车按表单顺序推进：账号 → 密码 → 登录按钮；按钮上再次回车提交
   Object.values(forms).forEach(form => {
     const steps = [
@@ -74,13 +110,13 @@
     });
   });
 
-  // 焦点不在文本输入框时，回车直接激活当前身份的登录按钮
+  // 焦点不在文本输入框时，回车直接激活当前身份的登录按钮（按钮自身保持原生回车激活）
   document.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || event.isComposing || event.repeat) return;
     const target = event.target;
     const isTextInput = target instanceof HTMLInputElement
       && ['text', 'password', 'email', 'search', 'tel', 'url', 'number'].includes(target.type);
-    if (isTextInput || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
+    if (isTextInput || target instanceof HTMLTextAreaElement || target instanceof HTMLButtonElement || target?.isContentEditable) return;
     const submit = forms[active]?.querySelector('button[type="submit"]');
     if (!submit || target === submit) return;
     event.preventDefault();
@@ -243,6 +279,10 @@
 
   forms.user.addEventListener('submit', async event => {
     event.preventDefault();
+    if (!agreementInput?.checked) {
+      fail(t('login.agreement.required'));
+      return;
+    }
     const submit = forms.user.querySelector('button[type="submit"]');
     submit.disabled = true;
     const account = forms.user.account.value.trim();
@@ -282,6 +322,10 @@
         forms.developer.querySelector('button[type="submit"]').textContent = t('login.submit');
         status.textContent = t('login.setupDone');
         status.className = 'login-status success';
+        return;
+      }
+      if (!agreementInput?.checked) {
+        fail(t('login.agreement.required'));
         return;
       }
       await postLogin({ role: 'developer', account, password, remember: true }).then(data => storeLeaseUser(data.userId));

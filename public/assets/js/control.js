@@ -79,6 +79,34 @@
     setSidebarCollapsed(!isSidebarCollapsed());
   });
 
+  // 移动端抽屉导航（≤760px）：菜单按钮开合，scrim 点击 / Esc 关闭，切页自动收起
+  const menuToggle = document.getElementById('navMenuToggle');
+  const mobileNavQuery = window.matchMedia('(max-width: 760px)');
+
+  function closeMobileNav() {
+    if (!document.body.classList.contains('nav-open')) return;
+    document.body.classList.remove('nav-open');
+    menuToggle?.setAttribute('aria-expanded', 'false');
+  }
+
+  menuToggle?.addEventListener('click', () => {
+    const open = document.body.classList.toggle('nav-open');
+    menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+
+  // scrim 是 body::after（伪元素），点击时事件目标是 body 本身
+  document.addEventListener('click', event => {
+    if (event.target === document.body && document.body.classList.contains('nav-open')) closeMobileNav();
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMobileNav();
+  });
+
+  mobileNavQuery?.addEventListener?.('change', event => {
+    if (!event.matches) closeMobileNav();
+  });
+
   document.querySelector('.sidebar').addEventListener('dblclick', event => {
     if (event.target.closest('.sidebar-collapse')) return;
     if (isSidebarCollapsed()) setSidebarCollapsed(false);
@@ -231,6 +259,7 @@
         cancelable: true,
         detail: { page }
       }))) return;
+      closeMobileNav();
       document.body.classList.toggle('updates-mode', page === 'updates');
       document.querySelectorAll('[data-page]').forEach(item => item.classList.toggle('active', item === button));
       document.querySelectorAll('[data-page-panel]').forEach(panel => {

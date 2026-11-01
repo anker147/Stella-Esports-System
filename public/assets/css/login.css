@@ -482,7 +482,9 @@ body:has(.login-page) :is(button, a, input, select, textarea, [tabindex]):focus-
   .login-page *::before,
   .login-page *::after,
   .login-error-dialog,
-  .login-error-dialog * {
+  .login-error-dialog *,
+  .login-agreement-dialog,
+  .login-agreement-dialog * {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -500,17 +502,81 @@ body:has(.login-page) :is(button, a, input, select, textarea, [tabindex]):focus-
   line-height: 1.5;
 }
 
-.login-remember {
+/* ===== 登录选项（记住登录 / 自动登录）：对齐系统选项行范式（同 permission-check），仅配色随登录卡 ===== */
+.login-option {
   display: flex;
   align-items: center;
   gap: 8px;
   color: rgba(238, 242, 247, 0.66);
   font-size: 12.5px;
   cursor: pointer;
+  transition: color 0.18s linear;
 }
 
-.login-remember input {
-  accent-color: #8fd0ff;
+.login-option:hover {
+  color: rgba(238, 242, 247, 0.85);
+}
+
+/* 自绘勾选框：对勾用 background-size 线性展开（0% → 100%），尺寸对齐 permission-check（16px 级） */
+.login-option input,
+.login-agreement input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.32);
+  border-radius: 4px;
+  background: transparent center / 0% no-repeat url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M3.4 8.6 6.7 11.9 12.6 4.9" fill="none" stroke="%23bfe3ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  cursor: pointer;
+  transition: background-size 0.18s linear, border-color 0.18s linear, background-color 0.18s linear;
+}
+
+.login-option input:hover,
+.login-agreement input:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.login-option input:checked,
+.login-agreement input:checked {
+  border-color: rgba(143, 208, 255, 0.9);
+  background-color: rgba(143, 208, 255, 0.22);
+  background-size: 100% 100%;
+}
+
+/* ===== 使用协议勾选行（用户与管理员登录共用） ===== */
+.login-agreement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 16px 0 0;
+  color: rgba(238, 242, 247, 0.6);
+  font-size: 12px;
+  animation: soft-fade 0.5s var(--nav-ease) 0.54s backwards;
+}
+
+.login-agreement label {
+  cursor: pointer;
+}
+
+.login-agreement-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: #8fd0ff;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(143, 208, 255, 0.45);
+  transition: color 0.18s linear, text-decoration-color 0.18s linear;
+}
+
+.login-agreement-link:hover {
+  color: #b9dfff;
+  text-decoration-color: rgba(185, 223, 255, 0.8);
 }
 
 .login-card .login-submit {
@@ -619,6 +685,58 @@ body:has(.login-page) :is(button, a, input, select, textarea, [tabindex]):focus-
   font-size: 11.5px;
 }
 
+/* 常规状态下提示行无内容（初始化向导才写入文案），不留空隙 */
+.login-hint:empty {
+  display: none;
+}
+
+/* ===== 使用协议弹窗：与错误弹窗同材质，正文滚动区 ===== */
+.login-agreement-dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(27, 31, 38, 0.96);
+  color: #eef2f7;
+  box-shadow: 0 26px 70px rgba(4, 10, 22, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.login-agreement-dialog::backdrop {
+  background: rgba(4, 10, 22, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.login-agreement-dialog[open] {
+  animation: login-error-dialog-in 0.24s var(--nav-ease) both;
+}
+
+.login-agreement-body {
+  display: grid;
+  gap: 12px;
+  padding: 26px;
+}
+
+.login-agreement-body h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.login-agreement-text {
+  display: grid;
+  gap: 10px;
+  max-height: min(46vh, 420px);
+  padding-right: 6px;
+  overflow-y: auto;
+  color: rgba(238, 242, 247, 0.72);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.login-agreement-text p {
+  margin: 0;
+}
+
 /* ===== 移动端：折叠品牌区 ===== */
 @media (max-width: 900px) {
   .login-page {
@@ -656,7 +774,8 @@ body:has(.login-page) :is(button, a, input, select, textarea, [tabindex]):focus-
   .login-field,
   .login-card .login-submit,
   .login-tabs::before,
-  .login-error-dialog[open] {
+  .login-error-dialog[open],
+  .login-agreement-dialog[open] {
     transition: none;
     animation: none;
   }

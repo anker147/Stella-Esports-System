@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <link rel="preload" href="/assets/data/ui-text.json?v=15" as="fetch">
+  <link rel="preload" href="/assets/data/ui-text.json?v=19" as="fetch">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
@@ -9,7 +9,7 @@
   <title data-text="login.title">登录 · 星澜赛事导播系统</title>
   <link rel="stylesheet" href="assets/css/tokens.css?v=3">
   <link rel="stylesheet" href="assets/css/tooltip.css?v=1">
-  <link rel="stylesheet" href="assets/css/login.css?v=16">
+  <link rel="stylesheet" href="assets/css/login.css?v=19">
 </head>
 <body>
   <img class="login-kv" src="assets/brand/kv-board.jpg" alt="" aria-hidden="true">
@@ -59,11 +59,11 @@
               <svg viewBox="0 0 24 24" class="field-ico" data-icon="lock" aria-hidden="true"></svg>
               <input class="input" name="password" type="password" required autocomplete="current-password" data-text-aria="login.passwordAria">
             </label>
-            <label class="login-remember">
+            <label class="login-option">
               <input type="checkbox" name="remember">
               <span data-text="login.remember">记住登录</span>
             </label>
-            <label class="login-remember">
+            <label class="login-option">
               <input type="checkbox" name="autoLogin">
               <span data-text="login.autoLogin">自动登录（7 天内免输入账号密码）</span>
             </label>
@@ -83,8 +83,13 @@
           </form>
         </div>
 
+        <div class="login-agreement">
+          <input type="checkbox" id="loginAgreement">
+          <label for="loginAgreement" data-text="login.agreement.prefix">我同意本系统的</label>
+          <button type="button" class="login-agreement-link" id="loginAgreementLink" data-text="login.agreement.link">使用协议</button>
+        </div>
         <p class="login-status" id="loginStatus"></p>
-        <p class="login-hint" data-text="login.hint">登录即代表同意本机数据仅用于赛事导播。</p>
+        <p class="login-hint" id="loginHint"></p>
       </div>
     </section>
   </main>
@@ -98,12 +103,31 @@
     </div>
   </dialog>
 
+  <dialog class="login-agreement-dialog" id="loginAgreementDialog" aria-labelledby="loginAgreementTitle">
+    <div class="login-agreement-body">
+      <h2 id="loginAgreementTitle" data-text="login.agreement.title">星澜赛事导播系统使用协议</h2>
+      <div class="login-agreement-text">
+        <p data-text="login.agreement.s1">一、协议的接受与范围</p>
+        <p data-text="login.agreement.s2">二、账号的取得与保管</p>
+        <p data-text="login.agreement.s3">三、使用行为规范</p>
+        <p data-text="login.agreement.s4">四、数据存储与隐私保护</p>
+        <p data-text="login.agreement.s5">五、内容与素材的权责</p>
+        <p data-text="login.agreement.s6">六、直播与赛事用途约束</p>
+        <p data-text="login.agreement.s7">七、服务可用性与免责声明</p>
+        <p data-text="login.agreement.s8">八、日志与安全审计</p>
+        <p data-text="login.agreement.s9">九、协议的变更与终止</p>
+        <p data-text="login.agreement.s10">十、其他</p>
+      </div>
+      <button class="login-error-dialog-close" id="loginAgreementClose" type="button" data-text="login.errorClose">知道了</button>
+    </div>
+  </dialog>
+
   <footer class="login-declaration" data-text="login.declaration">本系统仅用于赛事导播，全部数据保存在本机。</footer>
 
-  <script defer src="assets/js/text.js?v=15"></script>
+  <script defer src="assets/js/text.js?v=20"></script>
   <script defer src="assets/js/link-guard.js?v=1"></script>
   <script defer src="assets/js/tooltip.js?v=1"></script>
-  <script defer src="assets/js/login.js?v=14"></script>
+  <script defer src="assets/js/login.js?v=15"></script>
   <script type="module" src="assets/js/icon-kit.js?v=3"></script>
 </body>
 </html>

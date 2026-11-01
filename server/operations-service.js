@@ -678,11 +678,22 @@ function personalSnapshot(database, options = {}) {
     ORDER BY ABS(julianday(COALESCE(m.date, e.date)) - julianday(?)), m.sort_order LIMIT 4`).all(today);
   const recentActions = userId ? database.prepare(`SELECT timestamp_ms, action, success, actor_identity_key
     FROM account_operation_logs WHERE actor_user_id = ? ORDER BY timestamp_ms DESC LIMIT 6`).all(userId) : [];
+  const activitySince = Date.now() - 182 * 86400000;
   const activity = userId ? database.prepare(`SELECT date(timestamp_ms / 1000, 'unixepoch', 'localtime') AS day,
       COUNT(*) AS total
     FROM account_operation_logs
     WHERE actor_user_id = ? AND timestamp_ms >= ?
-    GROUP BY day ORDER BY day`).all(userId, Date.now() - 182 * 86400000) : [];
+    GROUP BY day ORDER BY day`).all(userId, activitySince) : [];
+  const activityBp = userId ? database.prepare(`SELECT date(timestamp_ms / 1000, 'unixepoch', 'localtime') AS day,
+      COUNT(*) AS total
+    FROM bp_session_history
+    WHERE actor_user_id = ? AND timestamp_ms >= ?
+    GROUP BY day ORDER BY day`).all(userId, activitySince) : [];
+  const activityLogins = userId ? database.prepare(`SELECT date(logged_in_at / 1000, 'unixepoch', 'localtime') AS day,
+      COUNT(*) AS total
+    FROM user_login_history
+    WHERE user_id = ? AND logged_in_at >= ?
+    GROUP BY day ORDER BY day`).all(userId, activitySince) : [];
   return {
     user: user ? { id: user.id, account: user.username, displayName: user.display_name || user.username } : null,
     today,
@@ -696,12 +707,66 @@ function personalSnapshot(database, options = {}) {
       identityKey: row.actor_identity_key || 'unknown'
     })),
     activity: activity.map(row => ({ day: row.day, count: Number(row.total) })),
+    activityBp: activityBp.map(row => ({ day: row.day, count: Number(row.total) })),
+    activityLogins: activityLogins.map(row => ({ day: row.day, count: Number(row.total) })),
     todos: [
       { id: 'bp-room', page: 'schedule', title: 'A/B 房控制', description: '赛程管理的比赛编辑弹窗内设置 BP 房间' },
       { id: 'commentator', page: 'schedule', title: '解说组图与兑换码', description: '赛程管理的比赛编辑弹窗底部选择并同步 OBS' },
       { id: 'obs-websocket', page: 'hudCenter', title: 'OBS WebSocket 连接', description: '已迁移至 HUD 中心页面' }
     ]
   };
+}
+
+const ACTIVITY_DAY_TYPES = new Set(['all', 'bp', 'logins']);
+
+function personalActivityDay(database, options = {}) {
+  const date = options.date || '';
+  const type = ACTIVITY_DAY_TYPES.has(options.type) ? options.type : 'all';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const error = new Error('活跃日期格式无效');
+    error.code = 'ACTIVITY_DAY_DATE_INVALID';
+    throw error;
+  }
+  const userId = options.userId;
+  if (!userId) return { date, type, total: 0, items: [] };
+  let total = 0;
+  let items = [];
+  if (type === 'bp') {
+    total = Number(database.prepare(`SELECT COUNT(*) AS total FROM bp_session_history
+      WHERE actor_user_id = ? AND date(timestamp_ms / 1000, 'unixepoch', 'localtime') = ?`).get(userId, date).total);
+    items = database.prepare(`SELECT timestamp_ms, action
+      FROM bp_session_history
+      WHERE actor_user_id = ? AND date(timestamp_ms / 1000, 'unixepoch', 'localtime') = ?
+      ORDER BY timestamp_ms DESC LIMIT 50`).all(userId, date)
+      .map(row => ({ timestamp: row.timestamp_ms, action: row.action }));
+  } else if (type === 'logins') {
+    total = Number(database.prepare(`SELECT COUNT(*) AS total FROM user_login_history
+      WHERE user_id = ? AND date(logged_in_at / 1000, 'unixepoch', 'localtime') = ?`).get(userId, date).total);
+    items = database.prepare(`SELECT logged_in_at, ip_address, region, device_name
+      FROM user_login_history
+      WHERE user_id = ? AND date(logged_in_at / 1000, 'unixepoch', 'localtime') = ?
+      ORDER BY logged_in_at DESC LIMIT 50`).all(userId, date)
+      .map(row => ({
+        timestamp: row.logged_in_at,
+        device: row.device_name,
+        region: row.region,
+        ip: row.ip_address
+      }));
+  } else {
+    total = Number(database.prepare(`SELECT COUNT(*) AS total FROM account_operation_logs
+      WHERE actor_user_id = ? AND date(timestamp_ms / 1000, 'unixepoch', 'localtime') = ?`).get(userId, date).total);
+    items = database.prepare(`SELECT timestamp_ms, action, success, actor_identity_key
+      FROM account_operation_logs
+      WHERE actor_user_id = ? AND date(timestamp_ms / 1000, 'unixepoch', 'localtime') = ?
+      ORDER BY timestamp_ms DESC LIMIT 50`).all(userId, date)
+      .map(row => ({
+        timestamp: row.timestamp_ms,
+        action: row.action,
+        success: Boolean(row.success),
+        identityKey: row.actor_identity_key || 'unknown'
+      }));
+  }
+  return { date, type, total, items };
 }
 
 function operationsView(database = defaultDb, view, options = {}) {
@@ -731,6 +796,7 @@ module.exports = {
   MANAGEMENT_VIEWS,
   PUBLIC_VIEWS,
   operationsView,
+  personalActivityDay,
   listEvents,
   listSchedule,
   listTeams,

@@ -197,7 +197,7 @@
   align-items: center;
   border-radius: var(--f2-radius-pill);
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   border: 1px solid var(--f2-border);
   color: var(--f2-text-secondary);

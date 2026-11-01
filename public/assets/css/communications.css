@@ -1876,11 +1876,11 @@
 
 .communications-dialog-close {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   place-items: center;
-  border: 1px solid rgba(15, 35, 60, 0.12);
+  border: 1px solid var(--f2-border);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.7);
   color: var(--f2-text-secondary);

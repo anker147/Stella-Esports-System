@@ -8,7 +8,7 @@ const { execFile } = require('node:child_process');
 const { migrateLegacyData, readAppSetting, writeAppSetting } = require('./db-migrate');
 migrateLegacyData();
 const { db, withTransaction } = require('./db');
-const { MANAGEMENT_VIEWS, operationsView, teamDetail } = require('./operations-service');
+const { MANAGEMENT_VIEWS, operationsView, personalActivityDay, teamDetail } = require('./operations-service');
 const deviceSecurity = require('./device-security-service');
 const {
   applyEventAction,
@@ -2046,6 +2046,7 @@ const ROUTE_PERMISSIONS = {
   'GET /api/hubs/obs/status': 'countdown.operate',
   'GET /api/logs': ({ url }) => url.searchParams.get('category') === 'account' ? 'logs.account.view' : 'logs.event.view',
   'GET /api/operations/teams/:id/detail': 'operations.view',
+  'GET /api/operations/activity-day': null,
   'GET /api/operations/:view': ({ params }) => params.view === 'terminal' ? 'system.status.view'
     : MANAGEMENT_VIEWS.has(params.view) ? 'system.manage'
     : params.view === 'resources' ? 'materials.view'
@@ -2970,6 +2971,25 @@ route('GET', '/api/operations/:view', ({ res, requestSession, url, params }) => 
     }));
   } catch (error) {
     sendJson(res, error.code === 'OPERATIONS_VIEW_NOT_FOUND' ? 404 : 400, {
+      error: error.message,
+      code: error.code || undefined
+    });
+  }
+});
+
+route('GET', '/api/operations/activity-day', ({ res, requestSession, url }) => {
+  try {
+    sendJson(res, 200, {
+      view: 'personalActivityDay',
+      generatedAt: Date.now(),
+      data: personalActivityDay(db, {
+        userId: requestSession.userId,
+        date: url.searchParams.get('date') || '',
+        type: url.searchParams.get('type') || 'all'
+      })
+    });
+  } catch (error) {
+    sendJson(res, 400, {
       error: error.message,
       code: error.code || undefined
     });

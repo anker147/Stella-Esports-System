@@ -750,7 +750,7 @@ body:not(.auth-developer) [data-developer-page] {
   border-radius: 999px;
   background: rgba(16, 124, 65, 0.1);
   color: var(--f2-green);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: var(--f2-weight-semi);
 }
 

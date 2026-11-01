@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <link rel="preload" href="/assets/data/ui-text.json?v=15" as="fetch">
+  <link rel="preload" href="/assets/data/ui-text.json?v=19" as="fetch">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="color-scheme" content="light">
@@ -11,18 +11,18 @@
   <link rel="stylesheet" href="assets/css/tokens.css?v=3">
   <link rel="stylesheet" href="assets/css/components.css?v=4">
   <link rel="stylesheet" href="assets/css/tooltip.css?v=2">
-  <link rel="stylesheet" href="assets/css/control.css?v=98">
+  <link rel="stylesheet" href="assets/css/control.css?v=99">
   <link rel="stylesheet" href="assets/css/control-character.css?v=2">
-  <link rel="stylesheet" href="assets/css/control-hud.css?v=3">
-  <link rel="stylesheet" href="assets/css/profile.css?v=11">
-  <link rel="stylesheet" href="assets/css/device-security.css?v=3">
-  <link rel="stylesheet" href="assets/css/permissions-center.css?v=5">
-  <link rel="stylesheet" href="assets/css/communications.css?v=12">
-  <link rel="stylesheet" href="assets/css/operations-center.css?v=15">
-  <link rel="stylesheet" href="assets/css/event-management.css?v=19">
-  <link rel="stylesheet" href="assets/css/schedule-manager.css?v=4">
+  <link rel="stylesheet" href="assets/css/control-hud.css?v=4">
+  <link rel="stylesheet" href="assets/css/profile.css?v=12">
+  <link rel="stylesheet" href="assets/css/device-security.css?v=4">
+  <link rel="stylesheet" href="assets/css/permissions-center.css?v=6">
+  <link rel="stylesheet" href="assets/css/communications.css?v=13">
+  <link rel="stylesheet" href="assets/css/operations-center.css?v=16">
+  <link rel="stylesheet" href="assets/css/event-management.css?v=20">
+  <link rel="stylesheet" href="assets/css/schedule-manager.css?v=5">
   <link rel="stylesheet" href="assets/css/dialog-theme.css?v=7">
-  <link rel="stylesheet" href="assets/css/notifications.css?v=6">
+  <link rel="stylesheet" href="assets/css/notifications.css?v=7">
 </head>
 <body>
   <!--
@@ -41,7 +41,7 @@
         <div class="sidebar-subtitle"><span data-text="app.subtitle">OBS WebSocket 控制台</span> <span class="sidebar-version" id="systemVersion">v--</span></div>
       </div>
     </div>
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" id="sidebarNav">
       <button class="nav-btn nav-leaf" type="button" data-page="updates">
         <svg class="nav-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h5.5L13 5.5V14H4z"/><path d="M9.5 2v3.5H13"/><path d="M6.2 8.5h3.6M6.2 11h3.6"/></svg>
         <span class="nav-label" data-text="nav.item.updates">更新日志</span>
@@ -174,6 +174,9 @@
 
   <main class="app-main">
     <header class="app-header">
+      <button class="nav-menu-toggle" id="navMenuToggle" type="button" data-text-aria="nav.menuToggle" aria-label="打开导航菜单" aria-expanded="false" aria-controls="sidebarNav">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
+      </button>
       <div>
         <h1 id="pageTitle" data-text="page.personalCenter.title">个人中心</h1>
         <p id="pageDescription" data-text="page.personalCenter.desc">今日赛事值守与工作安排。</p>
@@ -1677,7 +1680,7 @@
     </form>
   </dialog>
 
-  <script defer src="assets/js/text.js?v=16"></script>
+  <script defer src="assets/js/text.js?v=20"></script>
   <script defer src="assets/js/link-guard.js?v=1"></script>
   <script defer src="assets/js/auth-guard.js?v=1"></script>
   <script defer src="assets/js/system-dialog.js?v=1"></script>
@@ -1698,7 +1701,7 @@
   <script defer src="assets/js/notifications.js?v=7"></script>
   <script defer src="assets/js/notification-management.js?v=4"></script>
   <script defer src="assets/js/hud-center.js?v=5"></script>
-  <script defer src="assets/js/control.js?v=43"></script>
+  <script defer src="assets/js/control.js?v=44"></script>
   <script defer src="assets/js/operations-center.js?v=21"></script>
   <script defer src="assets/js/schedule-manager.js?v=9"></script>
   <script defer src="assets/js/dialog-theme.js?v=1"></script>
