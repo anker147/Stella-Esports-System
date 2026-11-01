@@ -1558,7 +1558,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--f2-red);
-  animation: communications-recorder-pulse 1s ease-in-out infinite;
+  animation: communications-recorder-pulse 1.4s ease-in-out infinite;
 }
 
 .communications-urgent-close {
@@ -2265,7 +2265,7 @@
   height: 9px;
   border-radius: 50%;
   background: var(--f2-red);
-  animation: communications-recorder-pulse 1s ease-in-out infinite;
+  animation: communications-recorder-pulse 1.4s ease-in-out infinite;
 }
 
 .communications-recorder.is-cancel {
@@ -2294,7 +2294,7 @@
 
 @keyframes communications-recorder-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+  50% { opacity: 0.45; }
 }
 
 /* 触屏：操作区常显（不依赖 hover），长按菜单让路系统手势 */

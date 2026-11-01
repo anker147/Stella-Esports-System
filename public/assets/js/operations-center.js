@@ -267,37 +267,336 @@
     return wrap;
   }
 
-  function buildActivityHeatmap(activity) {
-    const wrap = element('div', 'personal-activity');
-    const grid = element('div', 'personal-activity-grid');
-    const byDay = new Map(activity.map(item => [item.day, item.count]));
+  // ----- personal activity card (heatmap + stats + dimension tabs + day detail) -----
+
+  const ACTIVITY_WEEKS = 26;
+  const ACTIVITY_DAYS = ACTIVITY_WEEKS * 7;
+
+  function activityDimensions() {
+    return [
+      { key: 'all', label: text('ops.activityDimAll', '全部操作'), field: 'all', unit: text('ops.activityUnitOps', '次操作') },
+      { key: 'bp', label: text('ops.activityDimBp', 'BP 操作'), field: 'bp', unit: text('ops.activityUnitBp', '次 BP 操作') },
+      { key: 'logins', label: text('ops.activityDimLogins', '登录'), field: 'logins', unit: text('ops.activityUnitLogins', '次登录') }
+    ];
+  }
+
+  function activityDayKey(date) {
     const pad = value => String(value).padStart(2, '0');
-    const keyOf = date => date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
-    const start = new Date(Date.now() - 25 * 7 * 86400000);
-    start.setDate(start.getDate() - (start.getDay() + 6) % 7);
-    const dayCount = 26 * 7;
-    let max = 1;
-    for (let i = 0; i < dayCount; i += 1) {
-      const date = new Date(start.getTime() + i * 86400000);
-      max = Math.max(max, byDay.get(keyOf(date)) || 0);
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+  }
+
+  function activityMonthDay(key) {
+    const date = new Date(`${key}T00:00:00`);
+    if (!Number.isFinite(date.getTime())) return key;
+    return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(date);
+  }
+
+  function activityWeekday(key) {
+    const date = new Date(`${key}T00:00:00`);
+    if (!Number.isFinite(date.getTime())) return '';
+    return new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(date);
+  }
+
+  function activityClock(timestamp) {
+    const date = new Date(Number(timestamp));
+    if (!Number.isFinite(date.getTime())) return '--:--';
+    return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+  }
+
+  function activitySeries(data, field) {
+    const series = Array.isArray(data?.[field]) ? data[field] : [];
+    return series.map(item => ({ day: String(item.day), count: Number(item.count) || 0 }));
+  }
+
+  function activitySummary(series) {
+    const byDay = new Map(series.map(item => [item.day, item.count]));
+    const total = series.reduce((sum, item) => sum + item.count, 0);
+    let best = { day: '', count: 0 };
+    for (const item of series) {
+      if (item.count > best.count) best = { day: item.day, count: item.count };
     }
-    for (let i = 0; i < dayCount; i += 1) {
-      const date = new Date(start.getTime() + i * 86400000);
-      const key = keyOf(date);
-      const count = byDay.get(key) || 0;
-      const ratio = count / max;
-      const level = count === 0 ? 0 : ratio <= 0.25 ? 1 : ratio <= 0.5 ? 2 : ratio <= 0.75 ? 3 : 4;
-      const cell = element('span', 'personal-activity-cell l' + level);
-      cell.title = text('ops.heatTooltip', '{date} · {count} 次操作', { date: key, count: count });
-      grid.append(cell);
+    // Streak walks back from today; an empty today keeps yesterday's streak alive.
+    const cursor = new Date();
+    if (!byDay.get(activityDayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+    let streak = 0;
+    while (byDay.get(activityDayKey(cursor))) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
     }
-    wrap.append(grid);
+    return { byDay, total, streak, average: total / ACTIVITY_DAYS, best };
+  }
+
+  function buildActivityCard(data) {
+    const dimensions = activityDimensions();
+    const state = { dimension: dimensions[0], selected: '' };
+    const wrap = element('div', 'personal-activity');
+
+    // Dimension tabs, mounted into the panel header by the caller.
+    const tabs = element('div', 'personal-activity-tabs');
+    tabs.setAttribute('role', 'group');
+    tabs.setAttribute('aria-label', text('ops.activityTabsAria', '活跃数据维度'));
+    const tabButtons = new Map();
+    for (const dimension of dimensions) {
+      const tab = button(dimension.label, () => selectDimension(dimension), 'personal-activity-tab');
+      tab.dataset.dimension = dimension.key;
+      tab.setAttribute('aria-pressed', dimension === state.dimension ? 'true' : 'false');
+      tabButtons.set(dimension.key, tab);
+      tabs.append(tab);
+    }
+
+    // Stats strip, refreshed on every dimension switch.
+    const stats = element('div', 'personal-activity-stats');
+    const statNodes = {};
+    for (const [key, label] of [
+      ['total', text('ops.activityStatTotal', '期间总数')],
+      ['streak', text('ops.activityStatStreak', '连续活跃')],
+      ['average', text('ops.activityStatAverage', '日均')],
+      ['best', text('ops.activityStatBest', '单日最高')]
+    ]) {
+      const card = element('article', 'personal-activity-stat');
+      card.append(element('span', 'personal-activity-stat-label', label));
+      const value = element('strong', 'personal-activity-stat-value');
+      const detail = element('small', 'personal-activity-stat-detail');
+      statNodes[key] = { value, detail };
+      card.append(value, detail);
+      stats.append(card);
+    }
+
+    // Single sparse grid: row 1 holds month labels, rows 2-8 hold days,
+    // column 1 holds weekday labels, so months scroll together with cells.
+    const grid = element('div', 'personal-activity-grid');
+    grid.setAttribute('role', 'group');
+    grid.setAttribute('aria-label', text('ops.heatGridAria', '近 26 周活跃热力图'));
+
+    // Shared floating tooltip, positioned against the card wrapper.
+    const tip = element('div', 'personal-activity-tip');
+    tip.setAttribute('aria-hidden', 'true');
+    const tipTitle = element('strong', 'personal-activity-tip-title');
+    const tipMeta = element('span', 'personal-activity-tip-meta');
+    tip.append(tipTitle, tipMeta);
+
+    // Day detail drawer, populated on demand via /api/operations/activity-day.
+    const detail = element('div', 'personal-activity-detail');
+    detail.hidden = true;
+    const detailHead = element('div', 'personal-activity-detail-head');
+    const detailCopy = element('div', 'personal-activity-detail-copy');
+    const detailTitle = element('strong', 'personal-activity-detail-title');
+    const detailMeta = element('span', 'personal-activity-detail-meta');
+    detailCopy.append(detailTitle, detailMeta);
+    const detailClose = button('×', () => selectDay(''), 'personal-activity-detail-close');
+    detailClose.setAttribute('aria-label', text('ops.activityDetailClose', '关闭明细'));
+    const detailBody = element('div', 'personal-activity-detail-body');
+    detailHead.append(detailCopy, detailClose);
+    detail.append(detailHead, detailBody);
+
     const legend = element('div', 'personal-activity-legend');
     legend.append(element('span', '', text('ops.heatLess', '少')));
     for (let level = 0; level <= 4; level += 1) legend.append(element('span', 'personal-activity-cell l' + level));
     legend.append(element('span', '', text('ops.heatMore', '多')));
-    wrap.append(legend);
-    return wrap;
+
+    wrap.append(stats, grid, tip, detail, legend);
+
+    let swapTimer = 0;
+
+    function renderGrid(summary) {
+      grid.replaceChildren();
+      const today = activityDayKey(new Date());
+      const start = new Date(Date.now() - (ACTIVITY_WEEKS - 1) * 7 * 86400000);
+      start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+      const dates = [];
+      for (let i = 0; i < ACTIVITY_DAYS; i += 1) {
+        dates.push(activityDayKey(new Date(start.getTime() + i * 86400000)));
+      }
+      let max = 1;
+      for (const key of dates) max = Math.max(max, summary.byDay.get(key) || 0);
+
+      // Weekday labels into the leading column (rows are Monday-first).
+      const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' });
+      [0, 2, 4, 6].forEach(rowIndex => {
+        const label = element('span', 'personal-activity-weekday', weekdayFormatter.format(new Date(start.getTime() + rowIndex * 86400000)));
+        label.style.gridColumn = '1';
+        label.style.gridRow = String(rowIndex + 2);
+        grid.append(label);
+      });
+
+      // Month labels along the top row, spanning their week columns.
+      const monthFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'short' });
+      let cursor = 0;
+      while (cursor < dates.length) {
+        const month = dates[cursor].slice(0, 7);
+        let span = 1;
+        while (cursor + span < dates.length && dates[cursor + span].slice(0, 7) === month) span += 1;
+        const label = element('span', 'personal-activity-month', monthFormatter.format(new Date(`${dates[cursor]}T00:00:00`)));
+        label.style.gridColumn = `${cursor + 2} / span ${span}`;
+        label.style.gridRow = '1';
+        grid.append(label);
+        cursor += span;
+      }
+
+      // Day cells with a column wave-in on first paint only.
+      dates.forEach((key, index) => {
+        const weekIndex = Math.floor(index / 7);
+        const rowIndex = index % 7;
+        const count = summary.byDay.get(key) || 0;
+        const ratio = count / max;
+        const level = count === 0 ? 0 : ratio <= 0.25 ? 1 : ratio <= 0.5 ? 2 : ratio <= 0.75 ? 3 : 4;
+        const cell = element('button', 'personal-activity-cell l' + level);
+        cell.type = 'button';
+        cell.tabIndex = -1;
+        cell.dataset.date = key;
+        cell.dataset.count = String(count);
+        cell.setAttribute('aria-label', text('ops.heatCellAria', '{date}，{count} {unit}', {
+          date: activityMonthDay(key), count: count, unit: state.dimension.unit
+        }));
+        if (key === today) cell.classList.add('is-today');
+        if (key === state.selected) cell.classList.add('is-selected');
+        if (!prefersReducedMotion() && !grid.dataset.painted) {
+          cell.classList.add('is-wave');
+          cell.style.animationDelay = `${Math.min(weekIndex * 9, 520)}ms`;
+        }
+        cell.style.gridColumn = String(weekIndex + 2);
+        cell.style.gridRow = String(rowIndex + 2);
+        grid.append(cell);
+      });
+      grid.dataset.painted = 'true';
+    }
+
+    function renderStats(summary) {
+      const entries = {
+        total: { value: formatNumber(summary.total), detail: text('ops.activityStatTotalDetail', '近 182 天') },
+        streak: { value: text('ops.activityStreakValue', '{count} 天', { count: formatNumber(summary.streak) }), detail: text('ops.activityStatStreakDetail', '连续有记录') },
+        average: { value: summary.average.toFixed(1), detail: text('ops.activityStatAverageDetail', '次 / 天') },
+        best: { value: formatNumber(summary.best.count), detail: summary.best.day ? activityMonthDay(summary.best.day) : text('ops.none', '暂无') }
+      };
+      for (const [key, entry] of Object.entries(entries)) {
+        statNodes[key].value.textContent = entry.value;
+        statNodes[key].detail.textContent = entry.detail;
+      }
+    }
+
+    function hideTip() {
+      tip.classList.remove('is-visible');
+    }
+
+    function showTip(cell) {
+      const count = Number(cell.dataset.count);
+      const date = cell.dataset.date || '';
+      tipTitle.textContent = `${activityMonthDay(date)} ${activityWeekday(date)}`;
+      tipMeta.textContent = text('ops.heatTooltip', '{date} · {count} 次操作', { date: '', count: formatNumber(count) })
+        .replace(/^\s*·\s*/, '').trim();
+      if (!tipMeta.textContent) tipMeta.textContent = `${formatNumber(count)} ${state.dimension.unit}`;
+      if (date === activityDayKey(new Date())) tipTitle.textContent += ` · ${text('ops.activityTipToday', '今天')}`;
+      const wrapRect = wrap.getBoundingClientRect();
+      const cellRect = cell.getBoundingClientRect();
+      const left = Math.max(10, Math.min(wrapRect.width - 10, cellRect.left - wrapRect.left + cellRect.width / 2));
+      tip.style.left = `${Math.round(left)}px`;
+      tip.style.top = `${Math.round(cellRect.top - wrapRect.top)}px`;
+      tip.classList.add('is-visible');
+    }
+
+    function renderDetailItems(payload) {
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      detailTitle.textContent = `${activityMonthDay(payload.date)} ${activityWeekday(payload.date)}`.trim();
+      detailMeta.textContent = payload.total > items.length
+        ? text('ops.activityDetailCountMore', '共 {count} 条记录，显示最近 {shown} 条', { count: formatNumber(payload.total), shown: formatNumber(items.length) })
+        : text('ops.activityDetailCount', '共 {count} 条记录', { count: formatNumber(payload.total) });
+      detailBody.replaceChildren();
+      if (!items.length) {
+        detailBody.append(emptyState(text('ops.activityDetailEmpty', '当天没有记录'), text('ops.activityDetailEmptyDesc', '这一天的审计与操作记录为空。')));
+        return;
+      }
+      const list = element('ul', 'personal-activity-detail-list');
+      for (const item of items) {
+        const row = element('li', 'personal-activity-detail-row');
+        row.append(element('time', '', activityClock(item.timestamp)));
+        if (payload.type === 'logins') {
+          const copy = element('div', 'personal-activity-detail-copy');
+          copy.append(element('strong', '', item.device || text('ops.activityDetailUnknownDevice', '未知设备')));
+          copy.append(element('span', '', [item.region, item.ip].filter(Boolean).join(' · ')));
+          row.append(copy);
+        } else {
+          const copy = element('div', 'personal-activity-detail-copy');
+          copy.append(element('strong', '', item.action || text('ops.none', '暂无')));
+          if (payload.type === 'all') {
+            copy.append(element('span', '', IDENTITY_LABELS[item.identityKey] || item.identityKey || ''));
+          }
+          row.append(copy);
+          if (payload.type === 'all') {
+            row.append(statusChip(item.success ? text('ops.success', '成功') : text('ops.failure', '失败'), item.success ? 'success' : 'danger'));
+          }
+        }
+        list.append(row);
+      }
+      detailBody.append(list);
+    }
+
+    async function loadDetail(key, dimension) {
+      const skeleton = loadingState();
+      skeleton.classList.add('personal-activity-detail-loading');
+      detailBody.replaceChildren(skeleton);
+      try {
+        const payload = await api(`/api/operations/activity-day?date=${encodeURIComponent(key)}&type=${encodeURIComponent(dimension.key)}`);
+        if (state.selected !== key || state.dimension !== dimension) return;
+        renderDetailItems(payload.data || {});
+      } catch (error) {
+        if (state.selected !== key || state.dimension !== dimension) return;
+        detailBody.replaceChildren();
+        const failed = emptyState(text('ops.activityDetailFailed', '明细读取失败'), error.message);
+        failed.append(button(text('ops.activityDetailRetry', '重试'), () => loadDetail(key, dimension)));
+        detailBody.append(failed);
+      }
+    }
+
+    function selectDay(key) {
+      state.selected = key;
+      grid.querySelectorAll('.personal-activity-cell.is-selected').forEach(cell => cell.classList.remove('is-selected'));
+      hideTip();
+      if (!key) {
+        detail.hidden = true;
+        detailBody.replaceChildren();
+        return;
+      }
+      grid.querySelectorAll(`.personal-activity-cell[data-date="${CSS.escape(key)}"]`).forEach(cell => cell.classList.add('is-selected'));
+      detailTitle.textContent = `${activityMonthDay(key)} ${activityWeekday(key)}`.trim();
+      detailMeta.textContent = text('ops.activityDetailLoading', '正在读取…');
+      detail.hidden = false;
+      loadDetail(key, state.dimension);
+    }
+
+    function selectDimension(dimension) {
+      if (state.dimension === dimension) return;
+      state.dimension = dimension;
+      tabButtons.forEach((tab, key) => tab.setAttribute('aria-pressed', key === dimension.key ? 'true' : 'false'));
+      selectDay('');
+      renderStats(activitySummary(activitySeries(data, dimension.field)));
+      renderGrid(activitySummary(activitySeries(data, dimension.field)));
+      if (!prefersReducedMotion()) {
+        grid.classList.remove('is-swap');
+        void grid.offsetWidth;
+        grid.classList.add('is-swap');
+        window.clearTimeout(swapTimer);
+        swapTimer = window.setTimeout(() => grid.classList.remove('is-swap'), 260);
+      }
+    }
+
+    // Delegated hover + click for the 182 cells.
+    grid.addEventListener('mouseover', event => {
+      const cell = event.target.closest('.personal-activity-cell');
+      if (cell && grid.contains(cell)) showTip(cell);
+      else hideTip();
+    });
+    grid.addEventListener('mouseleave', hideTip);
+    grid.addEventListener('scroll', hideTip, { passive: true });
+    grid.addEventListener('click', event => {
+      const cell = event.target.closest('.personal-activity-cell');
+      if (!cell) return;
+      selectDay(state.selected === cell.dataset.date ? '' : cell.dataset.date);
+    });
+
+    renderStats(activitySummary(activitySeries(data, state.dimension.field)));
+    renderGrid(activitySummary(activitySeries(data, state.dimension.field)));
+
+    return { root: wrap, headerExtra: tabs };
   }
 
   function renderPersonal(data) {

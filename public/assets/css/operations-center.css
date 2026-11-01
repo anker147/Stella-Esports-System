@@ -921,7 +921,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   height: 14px;
   border-radius: 4px;
   background: #e7ebee;
-  animation: operations-loading-pulse 1.2s ease-in-out infinite alternate;
+  animation: operations-loading-pulse 1.6s ease-in-out infinite alternate;
 }
 
 .operations-team-stats.is-loading dd {
@@ -1214,7 +1214,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   height: 18px;
   border-radius: 5px;
   background: #e7ebee;
-  animation: operations-loading-pulse 1.2s ease-in-out infinite alternate;
+  animation: operations-loading-pulse 1.6s ease-in-out infinite alternate;
 }
 
 .operations-team-loading span:nth-child(2) {
@@ -1410,7 +1410,7 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   height: 52px;
   border-radius: 6px;
   background: #e7ebee;
-  animation: operations-loading-pulse 1.2s ease-in-out infinite alternate;
+  animation: operations-loading-pulse 1.6s ease-in-out infinite alternate;
 }
 
 .operations-loading span:nth-child(1) {
@@ -1422,8 +1422,8 @@ dialog.operations-team-dialog[open] .operations-team-shell {
 }
 
 @keyframes operations-loading-pulse {
-  from { opacity: 0.48; }
-  to { opacity: 0.92; }
+  from { opacity: 0.6; }
+  to { opacity: 0.85; }
 }
 
 .operations-sentinel {

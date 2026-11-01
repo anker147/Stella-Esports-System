@@ -80,9 +80,9 @@
 
 @keyframes notification-bell-alert {
   0%, 2%, 8%, 14%, 20%, 100% { transform: rotate(0); }
-  4%, 12% { transform: rotate(8deg); }
-  6%, 16% { transform: rotate(-8deg); }
-  18% { transform: rotate(5deg); }
+  4%, 12% { transform: rotate(4deg); }
+  6%, 16% { transform: rotate(-4deg); }
+  18% { transform: rotate(2.5deg); }
 }
 
 .notification-panel {

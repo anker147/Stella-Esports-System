@@ -311,9 +311,9 @@
 .ds-loading-bar {
   height: 56px;
   border-radius: var(--f2-radius-sm);
-  background: linear-gradient(90deg, var(--f2-bg-subtle) 25%, var(--f2-bg-hover) 50%, var(--f2-bg-subtle) 75%);
+  background: linear-gradient(90deg, var(--f2-bg-subtle) 25%, rgba(0, 0, 0, 0.028) 50%, var(--f2-bg-subtle) 75%);
   background-size: 200% 100%;
-  animation: ds-shimmer 1.2s ease-in-out infinite;
+  animation: ds-shimmer 1.8s ease-in-out infinite;
 }
 
 @keyframes ds-shimmer {
