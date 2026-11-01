@@ -343,7 +343,7 @@
 }
 
 .event-card-action:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .event-card-action.is-primary {
@@ -494,14 +494,14 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 150ms var(--nav-ease), background 150ms var(--nav-ease), box-shadow 150ms var(--nav-ease), transform 150ms var(--nav-ease);
+  transition: border-color 200ms var(--f2-ease-out), background 200ms var(--f2-ease-out), box-shadow 200ms var(--f2-ease-out), transform 200ms var(--f2-ease-out);
 }
 
 .event-method-card:hover {
   border-color: rgba(0, 120, 212, 0.28);
   background: rgba(0, 120, 212, 0.025);
   box-shadow: 0 5px 18px rgba(15, 35, 60, 0.07);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .event-method-card > svg:first-child {

@@ -145,13 +145,50 @@
     return element('span', `operations-chip is-${mode}`, label);
   }
 
+  function prefersReducedMotion() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function animateCount(node, target) {
+    if (!Number.isFinite(target)) return;
+    if (prefersReducedMotion() || typeof window.requestAnimationFrame !== 'function') return;
+    const duration = 520;
+    const start = performance.now();
+    const step = now => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      node.textContent = formatNumber(Math.round(target * eased));
+      if (progress < 1) window.requestAnimationFrame(step);
+      else node.textContent = formatNumber(target);
+    };
+    node.textContent = formatNumber(0);
+    window.requestAnimationFrame(step);
+  }
+
+  function metricIcon(name) {
+    const paths = {
+      clock: '<circle cx="12" cy="12" r="8.25"/><path d="M12 7.5V12l3 1.8"/>',
+      calendar: '<rect x="3.75" y="5.25" width="16.5" height="15" rx="2.5"/><path d="M3.75 9.75h16.5M8 3v4M16 3v4"/>',
+      pulse: '<path d="M3 12.5h4.2L9.8 6l4.4 12 2.6-5.5H21"/>'
+    };
+    const icon = element('span', 'operations-metric-icon');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
+    return icon;
+  }
+
   function metrics(items) {
     const grid = element('section', 'operations-metrics');
     grid.setAttribute('aria-label', text('ops.metricsAria', '关键指标'));
     for (const item of items) {
       const card = element('article', `operations-metric ${item.mode ? `is-${item.mode}` : ''}`.trim());
-      card.append(element('span', 'operations-metric-label', item.label));
-      card.append(element('strong', 'operations-metric-value', item.value));
+      const head = element('div', 'operations-metric-head');
+      if (item.icon) head.append(metricIcon(item.icon));
+      head.append(element('span', 'operations-metric-label', item.label));
+      card.append(head);
+      const value = element('strong', 'operations-metric-value', item.value);
+      if (Number.isFinite(item.count)) animateCount(value, item.count);
+      card.append(value);
       if (item.detail) card.append(element('small', 'operations-metric-detail', item.detail));
       grid.append(card);
     }

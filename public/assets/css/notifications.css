@@ -34,7 +34,7 @@
 
 .header-notification-toggle:active,
 .notification-icon-button:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .header-notification-toggle:focus-visible,

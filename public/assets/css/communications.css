@@ -561,7 +561,7 @@
 
 .communications-message-action:active,
 .communications-message-menu > summary:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .communications-message-action svg,
