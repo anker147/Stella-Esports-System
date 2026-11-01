@@ -481,16 +481,15 @@
     function showTip(cell) {
       const count = Number(cell.dataset.count);
       const date = cell.dataset.date || '';
-      tipTitle.textContent = `${activityMonthDay(date)} ${activityWeekday(date)}`;
-      tipMeta.textContent = text('ops.heatTooltip', '{date} · {count} 次操作', { date: '', count: formatNumber(count) })
-        .replace(/^\s*·\s*/, '').trim();
-      if (!tipMeta.textContent) tipMeta.textContent = `${formatNumber(count)} ${state.dimension.unit}`;
+      tipTitle.textContent = `${activityMonthDay(date)} ${activityWeekday(date)}`.trim();
+      tipMeta.textContent = `${formatNumber(count)} ${state.dimension.unit}`;
       if (date === activityDayKey(new Date())) tipTitle.textContent += ` · ${text('ops.activityTipToday', '今天')}`;
       const wrapRect = wrap.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       const left = Math.max(10, Math.min(wrapRect.width - 10, cellRect.left - wrapRect.left + cellRect.width / 2));
       tip.style.left = `${Math.round(left)}px`;
       tip.style.top = `${Math.round(cellRect.top - wrapRect.top)}px`;
+      tip.classList.toggle('is-below', cellRect.top - wrapRect.top < 84);
       tip.classList.add('is-visible');
     }
 
@@ -611,9 +610,9 @@
     heading.append(copy, statusChip(data.scheduleMode === 'today' ? text('ops.scheduleTodayLabel', '今日赛程') : text('ops.scheduleRecentLabel', '最近赛程'), data.scheduleMode === 'today' ? 'live' : 'neutral'));
     fragment.append(heading);
     fragment.append(metrics([
-      { label: text('ops.metricDuty', '今日值守'), value: formatDuration(data.duty.seconds), detail: text('ops.loginSessions', '{count} 个登录会话', { count: data.duty.sessions }) },
-      { label: data.scheduleMode === 'today' ? text('ops.metricTodayMatches', '今日比赛') : text('ops.metricRefMatches', '参考赛程'), value: formatNumber(data.matches.length), detail: text('ops.linkedDb', '已关联赛事数据库') },
-      { label: text('ops.metricRecentActions', '最近操作'), value: formatNumber(data.recentActions.length), detail: text('ops.auditNote', '当前账号审计记录') }
+      { label: text('ops.metricDuty', '今日值守'), value: formatDuration(data.duty.seconds), detail: text('ops.loginSessions', '{count} 个登录会话', { count: data.duty.sessions }), icon: 'clock' },
+      { label: data.scheduleMode === 'today' ? text('ops.metricTodayMatches', '今日比赛') : text('ops.metricRefMatches', '参考赛程'), value: formatNumber(data.matches.length), detail: text('ops.linkedDb', '已关联赛事数据库'), icon: 'calendar', count: data.matches.length },
+      { label: text('ops.metricRecentActions', '最近操作'), value: formatNumber(data.recentActions.length), detail: text('ops.auditNote', '当前账号审计记录'), icon: 'pulse', count: data.recentActions.length }
     ]));
 
     const schedulePanel = panel(data.scheduleMode === 'today' ? text('ops.scheduleTodayLabel', '今日赛程') : text('ops.scheduleRecentLabel', '最近赛程'), text('ops.schedulePanelDesc', '时间、对阵和端别来自赛事数据库。'));
@@ -652,9 +651,19 @@
     }
     fragment.append(todoPanel.section);
 
-    const activityPanel = panel(text('ops.activityTitle', '个人活跃'), text('ops.activityDesc', '近 26 周的操作频率，数据来自账号审计记录。'));
-    if (!data.activity?.length) activityPanel.section.append(emptyState(text('ops.activityEmpty', '暂无活跃数据'), text('ops.activityEmptyDesc', '开始使用赛事工具后会生成活跃记录。')));
-    else activityPanel.section.append(buildActivityHeatmap(data.activity));
+    const activityPanel = panel(text('ops.activityTitle', '个人活跃'), text('ops.activityDesc', '近 26 周活跃热力图，可切换全部操作、BP 操作与登录维度，点击日期查看当天明细。'));
+    const activityData = {
+      all: activitySeries(data, 'activity'),
+      bp: activitySeries(data, 'activityBp'),
+      logins: activitySeries(data, 'activityLogins')
+    };
+    if (!activityData.all.length && !activityData.bp.length && !activityData.logins.length) {
+      activityPanel.section.append(emptyState(text('ops.activityEmpty', '暂无活跃数据'), text('ops.activityEmptyDesc', '开始使用赛事工具后会生成活跃记录。')));
+    } else {
+      const activityCard = buildActivityCard(activityData);
+      activityPanel.header.append(activityCard.headerExtra);
+      activityPanel.section.append(activityCard.root);
+    }
     fragment.append(activityPanel.section);
 
     const actionPanel = panel(text('ops.recentActionsTitle', '账号近期操作'), text('ops.recentActionsDesc', '用于交接班时快速确认当前账号最近执行的动作。'));
@@ -1373,7 +1382,10 @@
       state.hasMore = Boolean(incoming.hasMore);
       state.initialized = true;
       content.replaceChildren(render(view, state.data));
-    if (!append && window.PageFX) PageFX.stagger(content.querySelectorAll('tbody tr, .operations-team-card'), { step: 18, cap: 16 });
+      if (!append && window.PageFX) {
+        if (view === 'personal') PageFX.stagger(content.children, { step: 60, cap: 8 });
+        else PageFX.stagger(content.querySelectorAll('tbody tr, .operations-team-card'), { step: 18, cap: 16 });
+      }
       updateCount(state);
       bindSentinel(state);
     } catch (error) {
