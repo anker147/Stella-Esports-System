@@ -102,7 +102,7 @@
 }
 
 .notification-panel.is-open {
-  animation: notification-panel-in 190ms var(--f2-ease-out);
+  animation: notification-panel-in var(--f2-enter-fast);
 }
 
 @keyframes notification-panel-in {
@@ -356,7 +356,7 @@
 }
 
 .urgent-notification-banner.is-visible {
-  animation: urgent-banner-in 220ms var(--f2-ease-out);
+  animation: urgent-banner-in var(--f2-enter-fast);
 }
 
 @keyframes urgent-banner-in {

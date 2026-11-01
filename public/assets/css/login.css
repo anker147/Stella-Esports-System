@@ -388,15 +388,15 @@ body {
   gap: 14px;
   visibility: hidden;
   opacity: 0;
-  transform: translateX(20px);
+  transform: translateX(16px);
   pointer-events: none;
-  transition: opacity 0.28s var(--nav-ease), transform 0.28s var(--nav-ease), visibility 0s linear 0.28s;
+  transition: opacity var(--f2-enter-normal), transform var(--f2-enter-normal), visibility 0s linear 0.3s;
 }
 
 /* 各表单固定滑出方向：开发者从右侧出入，用户从左侧出入；
    仅作用于非活动表单，活动表单永远归位（:not 优先级隔离） */
 #loginFormUser:not(.is-active) {
-  transform: translateX(-20px);
+  transform: translateX(-16px);
 }
 
 .login-form.is-active {
@@ -404,7 +404,7 @@ body {
   opacity: 1;
   transform: none;
   pointer-events: auto;
-  transition: opacity 0.28s var(--nav-ease), transform 0.28s var(--nav-ease), visibility 0s;
+  transition: opacity var(--f2-enter-normal), transform var(--f2-enter-normal), visibility 0s;
 }
 
 /* 输入框卡片微交互 */

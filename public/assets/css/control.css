@@ -545,7 +545,7 @@
 @keyframes page-layer-in {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(10px);
   }
 
   to {

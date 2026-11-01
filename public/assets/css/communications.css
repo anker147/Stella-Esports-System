@@ -1840,7 +1840,7 @@
 }
 
 .communications-dialog[open] {
-  animation: communications-dialog-enter 220ms var(--f2-ease-out) both;
+  animation: communications-dialog-enter var(--f2-enter-fast) both;
 }
 
 .communications-dialog.dialog-closing {
@@ -1851,7 +1851,7 @@
 @keyframes communications-dialog-enter {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.985);
+    transform: translateY(8px) scale(0.99);
   }
 }
 
