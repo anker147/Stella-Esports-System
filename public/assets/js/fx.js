@@ -4,7 +4,7 @@
   }
 
   window.PageFX = {
-    stagger(nodes, { base = 0, step = 40, cap = 14 } = {}) {
+    stagger(nodes, { base = 0, step = 28, cap = 12 } = {}) {
       if (prefersReducedMotion()) return;
       Array.from(nodes).forEach((node, index) => {
         node.classList.add('fly-in-item');
