@@ -66,6 +66,57 @@ function safeEqualHex(left, right) {
   }
 }
 
+// GPU 渲染器字符串归一化：剥 ANGLE 包装、优先取含显卡型号关键词的分段（其次厂商名分段）、
+// 去掉图形后端后缀与 PCIe 尾巴。目标：同一块显卡在 Chrome / Edge / Firefox 下得到同一串。
+function normalizeGpuRenderer(raw) {
+  let value = String(raw || '').trim();
+  if (!value) return '';
+  value = value.replace(/^ANGLE\s*\((.*)\)$/i, '$1');
+  const segments = value.split(',').map(segment => segment.trim());
+  const picked = segments.find(segment =>
+    /geforce|radeon|\barc\b|iris|uhd|hd graphics|adreno|mali|apple gpu|quadro/i.test(segment))
+    || segments.find(segment => /nvidia|amd|intel/i.test(segment))
+    || value;
+  return picked
+    .replace(/\s*(?:Direct3D\d*|D3D\d+|OpenGL|Metal|Vulkan|WebGL)\b.*$/i, '')
+    .replace(/\/.*$/, '')
+    .trim()
+    .slice(0, 80);
+}
+
+// 终端特征快照校验：只保留机器级字段（不含浏览器品牌与版本——版本 4 周一漂移，仅作档案外显）。
+// 字段全部缺失视为无效（旧客户端未上报），返回 null。
+function normalizeTraits(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const text = (value, max) => String(value ?? '').trim().slice(0, max);
+  const traits = {
+    platform: text(raw.platform, 40),
+    gpu: normalizeGpuRenderer(raw.gpu),
+    cores: Math.max(0, Math.min(4096, Math.floor(Number(raw.cores)) || 0)),
+    memory: Math.max(0, Math.min(256, Math.floor(Number(raw.memory)) || 0)),
+    language: text(raw.language, 35),
+    timezone: text(raw.timezone, 64),
+    brand: text(raw.brand, 40),
+    hostname: text(raw.hostname, 64)
+  };
+  if (!traits.platform && !traits.gpu) return null;
+  return traits;
+}
+
+// 机器指纹 v2：只哈希机器级特征。deviceId（终端密钥）与 hostname（解析可能失败）不参与哈希，
+// 由 upsertDevice 的分级匹配单独处理。服务端重算是权威值，防客户端哈希漂移。
+function computeMachineFingerprint(traits) {
+  const source = ['v2', traits.platform, traits.gpu, traits.cores, traits.memory,
+    traits.language, traits.timezone].join('|');
+  return crypto.createHash('sha256').update(source).digest('hex');
+}
+
+function hashDeviceKey(deviceId) {
+  const value = String(deviceId || '').trim().slice(0, 128);
+  if (!value) return null;
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
 // 纯数字 4-12 位；图案为 3×3 网格（0-8）去重路径 4-9 节点；混合为任意可见字符 6-64 位
 function normalizeSecret(type, secret) {
   const value = String(secret ?? '').trim();
@@ -170,49 +221,130 @@ function parseUserAgent(userAgent) {
     deviceOs = 'Linux';
   }
   let browser = '';
-  if (/edg(?:e|a|ios)?\//.test(lower)) browser = 'Edge';
-  else if (/opr\/|opera/.test(lower)) browser = 'Opera';
-  else if (/firefox|fxios/.test(lower)) browser = 'Firefox';
-  else if (/chrome|crios/.test(lower)) browser = 'Chrome';
-  else if (/safari/.test(lower)) browser = 'Safari';
-  return { deviceType, deviceOs, deviceModel, browser };
+  let browserVersion = '';
+  const versionOf = pattern => (value.match(pattern) || [])[1] || '';
+  if (/edg(?:e|a|ios)?\//.test(lower)) {
+    browser = 'Edge';
+    browserVersion = versionOf(/edg(?:e|a|ios)?\/(\d+)/i);
+  } else if (/opr\/|opera/.test(lower)) {
+    browser = 'Opera';
+    browserVersion = versionOf(/(?:opr|opera)\/(\d+)/i);
+  } else if (/firefox|fxios/.test(lower)) {
+    browser = 'Firefox';
+    browserVersion = versionOf(/(?:firefox|fxios)\/(\d+)/i);
+  } else if (/chrome|crios/.test(lower)) {
+    browser = 'Chrome';
+    browserVersion = versionOf(/(?:chrome|crios)\/(\d+)/i);
+  } else if (/safari/.test(lower)) {
+    browser = 'Safari';
+    browserVersion = versionOf(/version\/(\d+)/i);
+  }
+  return { deviceType, deviceOs, deviceModel, browser, browserVersion };
 }
 
-// 每次成功登录（含自动登录/租约登录）调用：登记或刷新设备行
+// 每次成功登录（含自动登录/租约登录）调用：登记或刷新设备行。
+// 身份链六级匹配（互为备份，可靠性递减）：
+//   1. 终端密钥（客户端 deviceId 哈希锚定在行上）——抗升级/换屏/换网络，仅清浏览器数据失效
+//   2. 电脑名（服务端解析）——密钥丢失后重新认回；此路径轮换密钥（重装/换浏览器档案后重新锚定）
+//   3. 精确指纹（v2 机器特征）+ hostname 兼容检查——指纹同但电脑名不同视为另一台机器
+//   4. 特征模糊匹配（platform+gpu+cores+memory，不含语言/时区——跨网/旅行不分裂）
+//   5. 旧版行收编（无 traits 的历史行按系统匹配）
+//   6. 新建（锚定客户端密钥）
 function upsertDevice(database, userId, context) {
-  const fingerprint = String(context.deviceFingerprint || '').trim();
+  const traits = normalizeTraits(context.deviceTraits);
+  const fingerprint = traits ? computeMachineFingerprint(traits) : String(context.deviceFingerprint || '').trim();
   if (!fingerprint) return null;
   const now = Date.now();
   const parsed = parseUserAgent(context.userAgent);
-  const existing = database.prepare('SELECT * FROM user_devices WHERE user_id = ? AND device_fingerprint = ?')
-    .get(userId, fingerprint);
+  const hostname = String(context.hostname || '').trim().slice(0, 64);
+  const hostnameKey = hostname.toLowerCase();
+  const deviceKeyHash = hashDeviceKey(context.deviceId);
+
+  const byKey = deviceKeyHash
+    ? database.prepare('SELECT * FROM user_devices WHERE user_id = ? AND device_key_hash = ?')
+      .get(userId, deviceKeyHash)
+    : null;
+  const byHostname = !byKey && hostname
+    ? database.prepare('SELECT * FROM user_devices WHERE user_id = ? AND LOWER(hostname) = ? ORDER BY last_login_at DESC')
+      .get(userId, hostnameKey)
+    : null;
+  let byFingerprint = null;
+  if (!byKey && !byHostname && fingerprint) {
+    const candidates = database.prepare(`SELECT * FROM user_devices
+      WHERE user_id = ? AND device_fingerprint = ? ORDER BY last_login_at DESC`).all(userId, fingerprint);
+    // 指纹相同但电脑名不同 = 配置相同的另一台机器，不吞并；无电脑名或相同才认
+    byFingerprint = candidates.find(row => !row.hostname || !hostnameKey
+      || row.hostname.toLowerCase() === hostnameKey) || null;
+  }
+  let byTraits = null;
+  if (!byKey && !byHostname && !byFingerprint && traits) {
+    const traitRows = database.prepare(`SELECT * FROM user_devices
+      WHERE user_id = ? AND traits_json != '' ORDER BY last_login_at DESC`).all(userId);
+    byTraits = traitRows.find(row => {
+      if (row.hostname && hostnameKey && row.hostname.toLowerCase() !== hostnameKey) return false;
+      try {
+        const stored = JSON.parse(row.traits_json);
+        return stored.platform === traits.platform && stored.cores === traits.cores
+          && stored.memory === traits.memory
+          // GPU 一方为空视为采集漂移（WebGL 首次失败/恢复），允许收编
+          && (stored.gpu === traits.gpu || !stored.gpu || !traits.gpu);
+      } catch {
+        return false;
+      }
+    }) || null;
+  }
+  let byLegacy = null;
+  if (!byKey && !byHostname && !byFingerprint && !byTraits && parsed.deviceOs) {
+    // 空系统名（UA 缺失的请求）不参与收编，避免把无特征的杂行互相吞并
+    byLegacy = database.prepare(`SELECT * FROM user_devices
+      WHERE user_id = ? AND traits_json = '' AND device_os = ? ORDER BY last_login_at DESC`)
+      .get(userId, parsed.deviceOs) || null;
+  }
+
+  const existing = byKey || byHostname || byFingerprint || byTraits || byLegacy;
+  const nameSource = hostname || context.deviceName || (existing ? existing.device_name : '') || '';
   const merged = {
-    deviceName: String(context.deviceName || existing?.device_name || '').slice(0, 80),
+    deviceName: String(nameSource).slice(0, 80),
+    hostname,
     deviceType: parsed.deviceType,
     deviceOs: parsed.deviceOs,
     deviceModel: String(context.deviceModel || parsed.deviceModel || existing?.device_model || '').slice(0, 40),
     browser: parsed.browser,
+    browserVersion: parsed.browserVersion,
     userAgent: String(context.userAgent || '').slice(0, 500),
     networkEnv: String(context.networkEnv || existing?.network_env || '').slice(0, 24),
     lastIp: String(context.ipAddress || existing?.last_ip || '').slice(0, 64),
-    lastRegion: String(context.region || existing?.last_region || '').slice(0, 120)
+    lastRegion: String(context.region || existing?.last_region || '').slice(0, 120),
+    traitsJson: traits ? JSON.stringify(traits) : (existing?.traits_json || '')
   };
+  // 密钥规则：行无密钥时锚定客户端密钥；hostname 认回路径可轮换（重装/换浏览器档案后重新锚定）；
+  // 其余路径不轮换（避免同机双浏览器密钥互相踩踏）。
+  let nextKeyHash = existing?.device_key_hash || null;
+  if (deviceKeyHash) {
+    if (!nextKeyHash) nextKeyHash = deviceKeyHash;
+    else if (byHostname && nextKeyHash !== deviceKeyHash) nextKeyHash = deviceKeyHash;
+  }
   if (existing) {
     database.prepare(`UPDATE user_devices SET
-      device_name = ?, device_type = ?, device_os = ?, device_model = ?, browser = ?,
-      user_agent = ?, network_env = ?, last_ip = ?, last_region = ?, last_login_at = ?, updated_at = ?
+      device_fingerprint = ?, device_name = ?, hostname = ?, device_type = ?, device_os = ?,
+      device_model = ?, browser = ?, user_agent = ?, network_env = ?, last_ip = ?, last_region = ?,
+      traits_json = ?, device_key_hash = ?, last_login_at = ?, updated_at = ?
       WHERE id = ?`)
-      .run(merged.deviceName, merged.deviceType, merged.deviceOs, merged.deviceModel, merged.browser,
-        merged.userAgent, merged.networkEnv, merged.lastIp, merged.lastRegion, now, now, existing.id);
+      .run(fingerprint, merged.deviceName, merged.hostname || (existing.hostname || ''),
+        merged.deviceType, merged.deviceOs, merged.deviceModel, merged.browser,
+        merged.userAgent, merged.networkEnv, merged.lastIp, merged.lastRegion,
+        merged.traitsJson, nextKeyHash, now, now, existing.id);
     return database.prepare('SELECT * FROM user_devices WHERE id = ?').get(existing.id);
   }
   const id = crypto.randomUUID();
   database.prepare(`INSERT INTO user_devices
-    (id, user_id, device_fingerprint, device_name, device_type, device_os, device_model, browser,
-     user_agent, network_env, last_ip, last_region, last_login_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, userId, fingerprint, merged.deviceName, merged.deviceType, merged.deviceOs, merged.deviceModel,
-      merged.browser, merged.userAgent, merged.networkEnv, merged.lastIp, merged.lastRegion, now, now, now);
+    (id, user_id, device_fingerprint, device_name, hostname, device_type, device_os, device_model, browser,
+     user_agent, network_env, last_ip, last_region, traits_json, device_key_hash,
+     last_login_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, userId, fingerprint, merged.deviceName, merged.hostname, merged.deviceType, merged.deviceOs,
+      merged.deviceModel, merged.browser, merged.userAgent, merged.networkEnv, merged.lastIp,
+      merged.lastRegion, merged.traitsJson, nextKeyHash, now, now, now);
   return database.prepare('SELECT * FROM user_devices WHERE id = ?').get(id);
 }
 
@@ -290,28 +422,36 @@ function leaseActive(device, now = Date.now()) {
   return Boolean(device?.lease_until && device.lease_until > now);
 }
 
-// 租约登录：客户端上报（userId + 指纹）对，命中有效租约才放行
-function findLeaseDevice(database, userId, fingerprint) {
+// 租约登录：客户端上报（userId + 指纹）对，命中有效租约才放行。
+// 同配置机器指纹可能相同：电脑名能对上的候选行优先，消歧租约归属。
+function findLeaseDevice(database, userId, fingerprint, hostname = '') {
   if (!userId || !fingerprint) return null;
-  const device = database.prepare(`SELECT d.*, u.username, u.status AS user_status, u.expires_at AS user_expires_at, u.role AS user_role
+  const candidates = database.prepare(`SELECT d.*, u.username, u.status AS user_status, u.expires_at AS user_expires_at, u.role AS user_role
     FROM user_devices d JOIN users u ON u.id = d.user_id
-    WHERE d.user_id = ? AND d.device_fingerprint = ?`).get(userId, fingerprint);
+    WHERE d.user_id = ? AND d.device_fingerprint = ?`).all(userId, fingerprint);
+  if (!candidates.length) return null;
+  const hostnameKey = String(hostname || '').trim().toLowerCase();
+  const device = (hostnameKey && candidates.find(row => row.hostname
+    && row.hostname.toLowerCase() === hostnameKey)) || candidates[0];
   if (!device || !leaseActive(device)) return null;
   if (device.user_status !== 'active') return null;
   if (device.user_expires_at && device.user_expires_at <= Date.now()) return null;
   return device;
 }
 
-// 设备行转外显视图；includeSensitive 仅开发者视角为 true
+// 设备行转外显视图；includeSensitive 仅开发者视角为 true。
+// 浏览器大版本不入库（版本自漂移只作档案），从 UA 现算。
 function deviceView(row, { includeSensitive = false, currentFingerprint = '' } = {}) {
   if (!row) return null;
+  const parsedView = parseUserAgent(row.user_agent);
   const view = {
     id: row.id,
     deviceName: row.device_name,
     deviceType: row.device_type,
     deviceOs: row.device_os,
     deviceModel: row.device_model,
-    browser: row.browser,
+    browser: row.browser || parsedView.browser,
+    browserVersion: parsedView.browserVersion,
     lastLoginAt: row.last_login_at ? new Date(row.last_login_at).toISOString() : null,
     autoLoginEnabled: Boolean(row.auto_login_enabled),
     autoLoginExpiresAt: row.auto_login_expires_at ? new Date(row.auto_login_expires_at).toISOString() : null,
@@ -324,6 +464,11 @@ function deviceView(row, { includeSensitive = false, currentFingerprint = '' } =
     view.lastIp = row.last_ip;
     view.lastRegion = row.last_region;
     view.networkEnv = row.network_env;
+    view.hostname = row.hostname || '';
+    const traits = (() => {
+      try { return JSON.parse(row.traits_json || '{}'); } catch { return {}; }
+    })();
+    view.gpu = traits.gpu || '';
   }
   return view;
 }
@@ -360,6 +505,10 @@ module.exports = {
   decryptSecret,
   normalizeSecret,
   normalizeWindowMinutes,
+  normalizeGpuRenderer,
+  normalizeTraits,
+  computeMachineFingerprint,
+  hashDeviceKey,
   getCredential,
   grantSetupWindow,
   setupWindowActive,

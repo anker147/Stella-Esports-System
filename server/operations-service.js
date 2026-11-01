@@ -796,6 +796,7 @@ module.exports = {
   MANAGEMENT_VIEWS,
   PUBLIC_VIEWS,
   operationsView,
+  personalSnapshot,
   personalActivityDay,
   listEvents,
   listSchedule,

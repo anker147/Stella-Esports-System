@@ -63,7 +63,10 @@
 .operations-toolbar select:focus-visible,
 .operations-action:focus-visible,
 .operations-refresh:focus-visible,
-.operations-text-action:focus-visible {
+.operations-text-action:focus-visible,
+.operations-todo-row:focus-visible,
+.personal-activity-tab:focus-visible,
+.personal-activity-detail-close:focus-visible {
   outline: 3px solid rgba(0, 120, 212, 0.16);
   outline-offset: 1px;
   border-color: var(--f2-blue);
@@ -165,6 +168,37 @@
   border-radius: var(--f2-radius-md);
   background: #fff;
   box-shadow: var(--f2-shadow-sm);
+  transition: transform var(--f2-transition-fast), box-shadow var(--f2-transition-fast), border-color var(--f2-transition-fast);
+}
+
+.operations-metric:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 120, 212, 0.28);
+  box-shadow: var(--f2-shadow-md);
+}
+
+.operations-metric-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.operations-metric-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(0, 120, 212, 0.1);
+  color: var(--f2-blue);
+}
+
+.operations-metric-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .operations-metric.is-success {
@@ -1385,6 +1419,9 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   gap: 6px;
   min-height: 160px;
   padding: 24px;
+  border: 1px dashed rgba(15, 35, 60, 0.1);
+  border-radius: var(--f2-radius-md);
+  background: rgba(15, 35, 60, 0.02);
   color: var(--f2-text-tertiary);
   text-align: center;
 }
@@ -1607,6 +1644,10 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   transform: translateY(-1px);
 }
 
+.operations-todo-row:active {
+  transform: translateY(0) scale(0.995);
+}
+
 .operations-todo-row > div {
   display: grid;
   gap: 2px;
@@ -1623,31 +1664,344 @@ dialog.operations-team-dialog[open] .operations-team-shell {
 }
 
 .personal-activity {
+  position: relative;
   display: grid;
+  gap: 12px;
+}
+
+/* Dimension segmented control */
+.personal-activity-tabs {
+  display: inline-flex;
+  gap: 2px;
+  width: max-content;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(15, 35, 60, 0.05);
+}
+
+.personal-activity-tab {
+  min-height: 26px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--f2-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color var(--f2-transition-fast), color var(--f2-transition-fast), box-shadow var(--f2-transition-fast);
+}
+
+.personal-activity-tab:hover {
+  color: var(--f2-blue);
+}
+
+.personal-activity-tab[aria-pressed="true"] {
+  background: #fff;
+  color: var(--f2-blue);
+  font-weight: 600;
+  box-shadow: var(--f2-shadow-sm);
+}
+
+/* Side-by-side layout: 4/6 zones. The heatmap keeps its natural size inside
+   the left zone (never stretched to fill it); on narrow windows the left
+   zone floors at the heatmap width instead of squeezing the cells. */
+.personal-activity-layout {
+  display: grid;
+  grid-template-columns: minmax(max-content, 4fr) minmax(0, 6fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.personal-activity-chart-col {
+  display: grid;
+  gap: 10px;
+  align-content: space-between;
+  min-width: 0;
+}
+
+/* Stats cards sit in a 2x2 block beside the heatmap */
+.personal-activity-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 10px;
 }
 
+.personal-activity-stat {
+  display: grid;
+  gap: 3px;
+  padding: 10px 14px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-md);
+  background: rgba(15, 35, 60, 0.03);
+}
+
+.personal-activity-stat-label {
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.personal-activity-stat-value {
+  color: var(--f2-text-primary);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.personal-activity-stat-detail {
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+}
+
+/* Heatmap: one sparse grid (months row + weekday column + day cells),
+   so month labels scroll together with the cells. */
 .personal-activity-grid {
   display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(7, 11px);
-  grid-auto-columns: 11px;
+  grid-template-columns: 24px repeat(26, 12px);
+  grid-template-rows: 15px repeat(7, 12px);
   gap: 3px;
   padding-bottom: 4px;
   overflow-x: auto;
 }
 
+.personal-activity-month {
+  align-self: end;
+  color: var(--f2-text-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.personal-activity-weekday {
+  align-self: center;
+  justify-self: end;
+  padding-right: 7px;
+  color: var(--f2-text-tertiary);
+  font-size: 10px;
+}
+
 .personal-activity-cell {
-  width: 11px;
-  height: 11px;
-  border-radius: 3px;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 3.5px;
   background: rgba(15, 35, 60, 0.07);
+  font: inherit;
+  appearance: none;
+  cursor: pointer;
+  transition: transform var(--f2-transition-fast), box-shadow var(--f2-transition-fast);
+}
+
+.personal-activity-cell:hover {
+  transform: scale(1.18);
+  box-shadow: 0 0 0 1px rgba(0, 120, 212, 0.5);
 }
 
 .personal-activity-cell.l1 { background: rgba(0, 120, 212, 0.25); }
 .personal-activity-cell.l2 { background: rgba(0, 120, 212, 0.45); }
 .personal-activity-cell.l3 { background: rgba(0, 120, 212, 0.7); }
 .personal-activity-cell.l4 { background: var(--f2-blue); }
+
+.personal-activity-cell.is-today {
+  box-shadow: 0 0 0 1.5px rgba(0, 120, 212, 0.55), 0 0 0 3.5px rgba(0, 120, 212, 0.14);
+}
+
+.personal-activity-cell.is-selected {
+  box-shadow: 0 0 0 2px var(--f2-blue), 0 0 0 4px rgba(0, 120, 212, 0.16);
+}
+
+.personal-activity-cell.is-wave {
+  animation: personal-activity-wave 340ms var(--f2-ease-out) backwards;
+}
+
+.personal-activity-grid.is-swap {
+  animation: personal-activity-fade 220ms var(--nav-ease);
+}
+
+@keyframes personal-activity-wave {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes personal-activity-fade {
+  from {
+    opacity: 0.3;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Floating tooltip anchored to the hovered cell */
+.personal-activity-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 24;
+  display: grid;
+  gap: 1px;
+  padding: 7px 11px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-md);
+  background: #fff;
+  box-shadow: var(--f2-shadow-lg);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, calc(-100% - 9px)) scale(0.96);
+  transition: opacity 120ms var(--nav-ease), transform 120ms var(--nav-ease);
+}
+
+.personal-activity-tip.is-visible {
+  opacity: 1;
+  transform: translate(-50%, calc(-100% - 9px)) scale(1);
+}
+
+.personal-activity-tip.is-below {
+  transform: translate(-50%, 26px) scale(1);
+}
+
+.personal-activity-tip-title {
+  color: var(--f2-text-primary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.personal-activity-tip-meta {
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Day detail drawer */
+.personal-activity-detail {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 14px;
+  border: 1px solid var(--f2-border-soft);
+  border-radius: var(--f2-radius-md);
+  background: rgba(15, 35, 60, 0.03);
+  animation: personal-activity-fade 200ms var(--nav-ease);
+}
+
+.personal-activity-detail[hidden] {
+  display: none;
+}
+
+.personal-activity-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.personal-activity-detail-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.personal-activity-detail-title {
+  color: var(--f2-text-primary);
+  font-size: 13px;
+}
+
+.personal-activity-detail-meta {
+  color: var(--f2-text-tertiary);
+  font-size: 11.5px;
+}
+
+.personal-activity-detail-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--f2-text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--f2-transition-fast), color var(--f2-transition-fast);
+}
+
+.personal-activity-detail-close:hover {
+  background: rgba(0, 120, 212, 0.08);
+  color: var(--f2-blue);
+}
+
+.personal-activity-detail-body {
+  min-width: 0;
+}
+
+.personal-activity-detail-loading {
+  padding: 6px 0;
+}
+
+.personal-activity-detail-list {
+  display: grid;
+  gap: 2px;
+  max-height: 248px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.personal-activity-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  transition: background-color var(--f2-transition-fast);
+}
+
+.personal-activity-detail-row:hover {
+  background: rgba(0, 120, 212, 0.05);
+}
+
+.personal-activity-detail-row time {
+  flex: none;
+  min-width: 44px;
+  color: var(--f2-text-tertiary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.personal-activity-detail-row > div {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+.personal-activity-detail-row strong {
+  color: var(--f2-text-primary);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.personal-activity-detail-row span {
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.personal-activity-detail-row > .operations-chip {
+  margin-left: auto;
+}
 
 .personal-activity-legend {
   display: flex;
@@ -1656,6 +2010,94 @@ dialog.operations-team-dialog[open] .operations-team-shell {
   gap: 5px;
   color: var(--f2-text-tertiary);
   font-size: 11px;
+}
+
+.personal-activity-legend .personal-activity-cell {
+  cursor: default;
+  pointer-events: none;
+}
+
+@media (max-width: 1040px) {
+  .personal-activity-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .personal-activity-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-rows: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Mobile: release the fixed-height inner scroll so the page flows with the document. */
+  .operations-page {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .operations-content {
+    overflow: visible;
+  }
+
+  .personal-activity-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Compact heat grid: 16 + 26*10 + 26*2 = 328px, fits a 390px viewport. */
+  .personal-activity-grid {
+    grid-template-columns: 16px repeat(26, 10px);
+    grid-template-rows: 15px repeat(7, 10px);
+    gap: 2px;
+  }
+
+  .personal-activity-cell {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+  }
+
+  .personal-activity-weekday {
+    padding-right: 4px;
+  }
+}
+
+@media (max-width: 400px) {
+  /* Narrow phones: 14 + 26*8 + 26*1 = 248px, fits a 320px viewport. */
+  .personal-activity-grid {
+    grid-template-columns: 14px repeat(26, 8px);
+    grid-template-rows: 15px repeat(7, 8px);
+    gap: 1px;
+  }
+
+  .personal-activity-cell {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+
+  .personal-activity-weekday {
+    padding-right: 3px;
+    font-size: 9px;
+  }
+
+  .personal-activity-month {
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .personal-activity-cell,
+  .personal-activity-cell.is-wave,
+  .personal-activity-grid.is-swap,
+  .personal-activity-detail {
+    animation: none;
+    transition: none;
+  }
+
+  .personal-activity-tip {
+    transition: none;
+  }
 }
 
 

@@ -31,6 +31,37 @@ test('device-security.js 保持零汉字、暴露 open/close 并接入页面切�
   assert.match(moduleSource, /scope: 'pages'/);
   assert.match(moduleSource, /scope: 'devices'/);
   assert.match(moduleSource, /stella\.autoLogin\.token/);
+  assert.match(moduleSource, /browserVersion/, 'browser row shows brand + major version');
+  // metaRow 的控件位必须传 Node：不允许把 text() 的字符串直接塞给 appendChild
+  assert.doesNotMatch(moduleSource, /metaRow\([^)]*\),\s*text\(/,
+    'metaRow control slot must receive a Node, not a text() string');
+  // 租约验证弹窗必须带忘记密码找回流程（账号密码挑战 → 重新设置）
+  assert.match(moduleSource, /showResetMode/);
+  assert.match(moduleSource, /challenge-account/, 'forgot flow proves the account password');
+});
+
+test('设备身份 v3：机器级指纹与终端密钥契约', () => {
+  // 前端：指纹只哈希机器特征（v2 标记），deviceId 独立作为终端密钥发送，不掺屏幕/UA 全文
+  assert.match(loginJs, /deviceTraits/);
+  assert.match(loginJs, /v2\|\$\{traits\}/);
+  assert.match(loginJs, /WEBGL_debug_renderer_info/);
+  assert.doesNotMatch(loginJs, /screen\.width/, 'screen metrics must not join the fingerprint');
+  // 服务端：兜底哈希不再掺 IP；hostname/traits 进设备上下文；存在电脑名解析模块
+  assert.match(serverSource, /deviceTraits/);
+  assert.doesNotMatch(serverSource, /userAgent\}\|\$\{location\.ipAddress\}/,
+    'fallback hash must not include the IP address');
+  assert.match(serverSource, /resolveClientHostname/);
+  assert.match(serverSource, /require\('\.\/lan-hostname'\)/);
+  // 服务层：六级匹配与密钥锚定
+  const serviceSource = read('server', 'device-security-service.js');
+  assert.match(serviceSource, /computeMachineFingerprint/);
+  assert.match(serviceSource, /device_key_hash/);
+  assert.match(serviceSource, /normalizeGpuRenderer/);
+  // v38 迁移：三列 + 索引降级
+  const dbSource = read('server', 'db.js');
+  assert.match(dbSource, /migrateDeviceIdentityV38/);
+  assert.match(dbSource, /ADD COLUMN device_key_hash TEXT/);
+  assert.match(dbSource, /DROP INDEX IF EXISTS idx_user_devices_user_fp/);
 });
 
 test('敏感页清单前后端一致', () => {

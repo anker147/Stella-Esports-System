@@ -617,9 +617,17 @@
       0 2px 8px rgba(0, 120, 212, 0.16);
   }
 
+  /* Block flow + auto height: undo the ≤900 fixed height and the base
+     overflow clip, or everything below 652px is unreachable on phones. */
   .permissions-workspace {
     display: block;
+    height: auto;
     min-height: 0;
+    overflow: visible;
+  }
+
+  .permissions-reference {
+    height: auto;
   }
 
   .permissions-selector {

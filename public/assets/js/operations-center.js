@@ -394,7 +394,12 @@
     for (let level = 0; level <= 4; level += 1) legend.append(element('span', 'personal-activity-cell l' + level));
     legend.append(element('span', '', text('ops.heatMore', '多')));
 
-    wrap.append(stats, grid, tip, detail, legend);
+    // Side-by-side layout: heatmap + legend on the left, stat cards on the right.
+    const layout = element('div', 'personal-activity-layout');
+    const chartCol = element('div', 'personal-activity-chart-col');
+    chartCol.append(grid, legend);
+    layout.append(chartCol, stats);
+    wrap.append(layout, tip, detail);
 
     let swapTimer = 0;
 
@@ -411,26 +416,28 @@
       for (const key of dates) max = Math.max(max, summary.byDay.get(key) || 0);
 
       // Weekday labels into the leading column (rows are Monday-first).
-      const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', { weekday: 'short' });
-      [0, 2, 4, 6].forEach(rowIndex => {
+      // Narrow form renders one CJK glyph per row, so all seven rows get a label.
+      const weekdayFormatter = new Intl.DateTimeFormat('zh-CN', { weekday: 'narrow' });
+      [0, 1, 2, 3, 4, 5, 6].forEach(rowIndex => {
         const label = element('span', 'personal-activity-weekday', weekdayFormatter.format(new Date(start.getTime() + rowIndex * 86400000)));
         label.style.gridColumn = '1';
         label.style.gridRow = String(rowIndex + 2);
         grid.append(label);
       });
 
-      // Month labels along the top row, spanning their week columns.
+      // Month labels along the top row, grouped by week column (not by day),
+      // so spans stay within the 26 grid columns.
       const monthFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'short' });
-      let cursor = 0;
-      while (cursor < dates.length) {
-        const month = dates[cursor].slice(0, 7);
+      let weekCursor = 0;
+      while (weekCursor < ACTIVITY_WEEKS) {
+        const month = dates[weekCursor * 7].slice(0, 7);
         let span = 1;
-        while (cursor + span < dates.length && dates[cursor + span].slice(0, 7) === month) span += 1;
-        const label = element('span', 'personal-activity-month', monthFormatter.format(new Date(`${dates[cursor]}T00:00:00`)));
-        label.style.gridColumn = `${cursor + 2} / span ${span}`;
+        while (weekCursor + span < ACTIVITY_WEEKS && dates[(weekCursor + span) * 7].slice(0, 7) === month) span += 1;
+        const label = element('span', 'personal-activity-month', monthFormatter.format(new Date(`${dates[weekCursor * 7]}T00:00:00`)));
+        label.style.gridColumn = `${weekCursor + 2} / span ${span}`;
         label.style.gridRow = '1';
         grid.append(label);
-        cursor += span;
+        weekCursor += span;
       }
 
       // Day cells with a column wave-in on first paint only.

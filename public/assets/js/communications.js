@@ -36,6 +36,28 @@
     settingsMemberList: document.getElementById('communicationsSettingsMemberList'),
     settingsClear: document.getElementById('communicationsSettingsClear'),
     settingsSave: document.getElementById('communicationsSettingsSave'),
+    settingsAvatarBtn: document.getElementById('communicationsSettingsAvatarBtn'),
+    settingsNameRow: document.getElementById('communicationsSettingsNameRow'),
+    settingsIdRow: document.getElementById('communicationsSettingsIdRow'),
+    settingsInfoId: document.getElementById('communicationsSettingsInfoId'),
+    settingsMembersCount: document.getElementById('communicationsSettingsMembersCount'),
+    settingsAnnouncementSection: document.getElementById('communicationsSettingsAnnouncementSection'),
+    settingsAnnouncementSave: document.getElementById('communicationsSettingsAnnouncementSave'),
+    settingsSearchInput: document.getElementById('communicationsSettingsSearchInput'),
+    settingsSearchBtn: document.getElementById('communicationsSettingsSearchBtn'),
+    settingsSearchResults: document.getElementById('communicationsSettingsSearchResults'),
+    settingsFavorite: document.getElementById('communicationsSettingsFavorite'),
+    settingsFavoriteItem: document.getElementById('communicationsSettingsFavoriteItem'),
+    settingsNickname: document.getElementById('communicationsSettingsNickname'),
+    settingsNicknameInput: document.getElementById('communicationsSettingsNicknameInput'),
+    settingsBackgroundSwatches: document.getElementById('communicationsBackgroundSwatches'),
+    settingsBackgroundInput: document.getElementById('communicationsBackgroundInput'),
+    settingsBackgroundReset: document.getElementById('communicationsBackgroundReset'),
+    settingsLeave: document.getElementById('communicationsSettingsLeave'),
+    emojiButton: document.getElementById('communicationsEmoji'),
+    emojiPanel: document.getElementById('communicationsEmojiPanel'),
+    emojiTabs: document.getElementById('communicationsEmojiTabs'),
+    emojiGrid: document.getElementById('communicationsEmojiGrid'),
     urgentOverlay: document.getElementById('communicationsUrgentOverlay'),
     urgentModal: document.querySelector('#communicationsUrgentOverlay .communications-urgent-modal'),
     urgentMeta: document.getElementById('communicationsUrgentMeta'),
@@ -487,25 +509,49 @@
     const channel = state.channels.find(item => item.id === state.selectedChannelId);
     if (!channel) return;
     const canManage = canManageSelectedChannel();
-    // QQ/微信式分层：名称/说明/公告编辑与头像上传仅自建频道（群主/开发者）可见；
-    // 私聊与系统频道只保留信息卡、开关、成员与清空记录
-    const canEditFields = channel.kind === 'custom' && canManage;
+    // QQ 手机版式分区：信息卡（头像/名称/ID）→ 编辑表单 → 成员网格 → 公告 → 查找记录
+    // → 开关（置顶/特别关心/免打扰）→ 群昵称 → 聊天背景 → 危险区（清空/退出）
+    const isCustom = channel.kind === 'custom';
+    const canEditFields = isCustom && canManage;
     elements.settingsEdit.hidden = !canEditFields;
     elements.settingsSave.hidden = !canEditFields;
     if (canEditFields) {
       elements.settingsName.value = channel.name;
       elements.settingsDescription.value = channel.description;
-      elements.settingsAnnouncement.value = channel.announcement || '';
     }
-    const canAvatar = channel.kind === 'custom' && canManage;
-    elements.settingsAvatarActions.hidden = !canAvatar;
+    // 名称行点击才展开编辑（QQ 式「点击相应区域可以进行编辑」）
+    elements.settingsNameRow.disabled = !canEditFields;
+    const canAvatar = canEditFields;
+    elements.settingsAvatarActions.hidden = true;
+    elements.settingsAvatarBtn.disabled = !canAvatar;
+    elements.settingsAvatarBtn.title = canAvatar
+      ? text('channels.avatarEditHint', '点击更换头像') : '';
     elements.avatarRemove.disabled = !canAvatar || !channel.avatarUrl;
     elements.avatarInput.disabled = !canAvatar;
+    // 公告：所有频道可读，仅自建管理身份可编辑
+    const announcementEditable = canEditFields;
+    elements.settingsAnnouncementSection.hidden = false;
+    elements.settingsAnnouncement.value = channel.announcement || '';
+    elements.settingsAnnouncement.disabled = !announcementEditable;
+    elements.settingsAnnouncementSave.hidden = !announcementEditable;
+    // 开关：置顶/免打扰恒显，特别关心仅私聊
     elements.settingsPinned.checked = Boolean(channel.pinned);
     elements.settingsMuted.checked = Boolean(channel.muted);
+    elements.settingsFavorite.checked = Boolean(channel.favorite);
+    elements.settingsFavoriteItem.hidden = channel.kind !== 'private';
+    // 群昵称仅自建频道普通成员可设（开发者视角无成员行）
+    const showNickname = isCustom && !channel.developerObserver;
+    elements.settingsNickname.hidden = !showNickname;
+    if (showNickname) {
+      elements.settingsNicknameInput.value = channel.myNickname || '';
+    }
+    // 退出频道：自建频道的普通成员
+    elements.settingsLeave.hidden = !(isCustom && !channel.mine && !channel.developerObserver);
     renderSettingsInfo(channel);
     renderSettingsMembers(channel);
     setSettingsAvatarPreview(channel);
+    renderBackgroundSwatches(channel);
+    resetSettingsSearch();
     setFeedback('');
     elements.settingsFeedback.textContent = '';
     elements.settingsDialog.showModal();
@@ -513,6 +559,7 @@
 
   function renderSettingsInfo(channel) {
     elements.settingsInfoName.textContent = channel.name;
+    elements.settingsInfoId.textContent = channel.id;
     const meta = [];
     if (channel.kind === 'custom') {
       meta.push(text('channels.membersCount', '{count} 名成员', {
@@ -523,26 +570,31 @@
     }
     if (channel.developerObserver) meta.push(text('channels.developerView', '开发者视角'));
     elements.settingsInfoMeta.textContent = meta.join(' · ');
+    // 非自建频道没有「编辑」入口，铅笔行退化为纯展示
+    elements.settingsNameRow.classList.toggle('is-static', !(channel.kind === 'custom' && canManageSelectedChannel()));
   }
 
+  // QQ 式成员网格：头像在上、昵称在下，群主戴徽标
   function renderSettingsMembers(channel) {
     const members = channel.members || [];
     const showMembers = (channel.kind === 'private' || channel.kind === 'custom') && members.length > 0;
     elements.settingsMembers.hidden = !showMembers;
     elements.settingsMemberList.replaceChildren();
     if (!showMembers) return;
+    elements.settingsMembersCount.textContent = text('channels.membersCount', '{count} 名成员', {
+      count: channel.memberCount ?? members.length
+    });
     for (const member of members) {
       const item = document.createElement('li');
       item.className = 'communications-settings-member';
-      item.appendChild(avatarElement('communications-settings-member-avatar', member, 'private'));
-      const copy = document.createElement('span');
-      copy.className = 'communications-settings-member-copy';
-      const name = document.createElement('strong');
+      const cell = document.createElement('div');
+      cell.className = 'communications-settings-member-cell';
+      cell.appendChild(avatarElement('communications-settings-member-avatar', member, 'private'));
+      const name = document.createElement('span');
+      name.className = 'communications-settings-member-name';
       name.textContent = member.displayName || member.account || text('channels.unknownUser', '未知用户');
-      const detail = document.createElement('span');
-      detail.textContent = member.title || `@${member.account || ''}`;
-      copy.append(name, detail);
-      item.appendChild(copy);
+      cell.appendChild(name);
+      item.appendChild(cell);
       if (channel.kind === 'custom' && channel.ownerUserId === member.id) {
         item.appendChild(node('span', 'communications-settings-owner-badge', text('channels.ownerBadge', '群主')));
       }
@@ -559,19 +611,22 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pinned: elements.settingsPinned.checked,
-          muted: elements.settingsMuted.checked
+          muted: elements.settingsMuted.checked,
+          favorite: elements.settingsFavorite.checked
         })
       });
       const current = state.channels.find(item => item.id === channel.id);
       if (current) {
         current.pinned = prefs.pinned;
         current.muted = prefs.muted;
+        current.favorite = prefs.favorite;
       }
       renderChannels();
       setFeedback('');
     } catch (error) {
       elements.settingsPinned.checked = Boolean(channel.pinned);
       elements.settingsMuted.checked = Boolean(channel.muted);
+      elements.settingsFavorite.checked = Boolean(channel.favorite);
       setFeedback(error.message);
     }
   }
@@ -629,7 +684,7 @@
     event.preventDefault();
     const channel = state.channels.find(item => item.id === state.selectedChannelId);
     if (!channel) return;
-    // 开关已即时保存；此处只处理自建频道的名称/说明/公告编辑
+    // 开关已即时保存；此处只处理自建频道的名称/说明编辑（公告独立保存）
     if (!(channel.kind === 'custom' && canManageSelectedChannel())) {
       elements.settingsDialog.close('saved');
       return;
@@ -640,8 +695,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: elements.settingsName.value,
-          description: elements.settingsDescription.value,
-          announcement: elements.settingsAnnouncement.value
+          description: elements.settingsDescription.value
         })
       });
       updateChannel(updated.channel);
@@ -651,6 +705,338 @@
     } catch (error) {
       setFeedback(error.message);
     }
+  }
+
+  async function saveChannelAnnouncement() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel || !(channel.kind === 'custom' && canManageSelectedChannel())) return;
+    try {
+      const updated = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: channel.name,
+          description: channel.description,
+          announcement: elements.settingsAnnouncement.value
+        })
+      });
+      updateChannel(updated.channel);
+      renderChannels();
+      renderConversationHeader();
+      setFeedback(text('channels.announcementSaved', '公告已保存'));
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  }
+
+  async function saveMyNickname() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel || channel.kind !== 'custom') return;
+    const value = elements.settingsNicknameInput.value.trim();
+    if ((channel.myNickname || '') === value) return;
+    try {
+      const updated = await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/nickname', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname: value })
+      });
+      updateChannel(updated.channel);
+      renderChannels();
+      renderSettingsInfo(updated.channel);
+      renderSettingsMembers(updated.channel);
+      setFeedback(text('channels.nicknameSaved', '群昵称已更新'));
+    } catch (error) {
+      elements.settingsNicknameInput.value = channel.myNickname || '';
+      setFeedback(error.message);
+    }
+  }
+
+  async function leaveChannelFromSettings() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    const confirmed = await window.StellaDialog.confirm({
+      title: text('channels.leaveChannel', '退出频道'),
+      message: text('channels.leaveChannelConfirm', '退出后将不再接收该频道的消息，如需再次加入请联系频道内成员，确认退出？'),
+      confirmText: text('channels.leaveChannel', '退出频道'),
+      tone: 'danger'
+    });
+    if (!confirmed) return;
+    try {
+      await api('/api/communications/channels/' + encodeURIComponent(channel.id) + '/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      elements.settingsDialog.close('left');
+      elements.composerStatus.textContent = text('channels.leftChannel', '已退出频道');
+      await loadBootstrap({ force: true, preserveConversation: false, anchorUnread: false, scrollBottom: true });
+    } catch (error) {
+      setFeedback(error.message);
+    }
+  }
+
+  async function searchChannelHistory() {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    const query = elements.settingsSearchInput.value.trim();
+    if (!query) return;
+    elements.settingsSearchBtn.disabled = true;
+    try {
+      const payload = await api(`/api/communications/channels/${encodeURIComponent(channel.id)}/search?q=${encodeURIComponent(query)}`, { force: true });
+      renderSearchResults(payload.messages || [], query);
+    } catch (error) {
+      elements.settingsSearchResults.hidden = false;
+      elements.settingsSearchResults.replaceChildren(node('li', 'communications-search-empty', error.message));
+    } finally {
+      elements.settingsSearchBtn.disabled = false;
+    }
+  }
+
+  function renderSearchResults(messages, query) {
+    elements.settingsSearchResults.hidden = false;
+    const rows = [];
+    if (!messages.length) {
+      rows.push(node('li', 'communications-search-empty', text('channels.searchEmpty', '没有找到包含「{query}」的消息', { query })));
+    }
+    for (const message of messages) {
+      const item = document.createElement('li');
+      item.className = 'communications-search-result';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.addEventListener('click', () => jumpToSearchedMessage(message));
+      const head = document.createElement('span');
+      head.className = 'communications-search-result-head';
+      head.textContent = `${message.senderName || text('channels.unknownUser', '未知用户')} · ${formatMessageTime(message.createdAt)}`;
+      const preview = document.createElement('span');
+      preview.className = 'communications-search-result-preview';
+      preview.textContent = messagePreviewForSearch(message, query);
+      button.append(head, preview);
+      if (message.recalled) item.classList.add('is-recalled');
+      item.appendChild(button);
+      rows.push(item);
+    }
+    elements.settingsSearchResults.replaceChildren(...rows);
+  }
+
+  function messagePreviewForSearch(message, query) {
+    let body = message.content || '';
+    if (message.kind === 'voice') body = message.media?.durationMs
+      ? text('channels.voiceWithLength', '[语音 {duration}]', { duration: formatDuration(message.media.durationMs) })
+      : text('channels.voiceTag', '[语音]');
+    if (message.kind === 'image') body = text('channels.imageTag', '[图片]');
+    if (message.kind === 'video') body = text('channels.videoTag', '[视频]');
+    const clipped = body.length > 80 ? `${body.slice(0, 80)}…` : body;
+    return query ? clipped.replaceAll(query, `「${query}」`) : clipped;
+  }
+
+  // 搜索结果点击：目标不在当前时间线时用 around 窗口整体换页（不推进已读），再滚动高亮
+  async function jumpToSearchedMessage(message) {
+    elements.settingsDialog.close('jump');
+    if (state.selectedChannelId !== message.channelId) {
+      await selectChannel(message.channelId);
+    }
+    if (state.selectedChannelId !== message.channelId) return;
+    const existing = elements.messageList.querySelector(`[data-message-id="${message.id}"]`);
+    if (!existing) {
+      try {
+        const payload = await api(`/api/communications/channels/${encodeURIComponent(message.channelId)}/messages?around=${message.id}&limit=30&markRead=0`, { force: true });
+        applyConversation(payload, { scrollBottom: false });
+      } catch (error) {
+        elements.composerStatus.textContent = error.message;
+        return;
+      }
+    }
+    jumpToQuoted(message.id);
+  }
+
+  function resetSettingsSearch() {
+    if (elements.settingsSearchInput) elements.settingsSearchInput.value = '';
+    if (elements.settingsSearchResults) {
+      elements.settingsSearchResults.hidden = true;
+      elements.settingsSearchResults.replaceChildren();
+    }
+  }
+
+  // ===== 表情栏（QQ 式分类面板，点击插入输入框光标处） =====
+  const EMOJI_GROUPS = [
+    { id: 'smileys', labelKey: 'channels.emojiGroupSmileys', label: '笑脸', emojis: ('😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😙 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 😐 😑 😶 😏 😒 🙄 😬 😌 😔 😪 😴 😷').split(' ') },
+    { id: 'hands', labelKey: 'channels.emojiGroupHands', label: '手势', emojis: ('👍 👎 👌 ✌️ 🤞 🤟 🤘 👏 🙌 👐 🤝 🙏 💪 ✍️ 👋 🤙 👊 ✊ 🤛 🤜 ☝️ 👆 👇 👉 👈 ✋ 🖐️ 🖖 🫡 🫰').split(' ') },
+    { id: 'hearts', labelKey: 'channels.emojiGroupHearts', label: '爱心', emojis: ('❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️ 💌 💋 👩‍❤️‍👨 🌹').split(' ') },
+    { id: 'animals', labelKey: 'channels.emojiGroupAnimals', label: '动物', emojis: ('🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🦆 🦅 🦉 🐺 🐴 🦄 🐝 🦋 🐢').split(' ') },
+    { id: 'food', labelKey: 'channels.emojiGroupFood', label: '食物', emojis: ('🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🍆 🥔 🥕 🌽 🌶️ 🍞 🧀 🍗 🍔 🍟 🍕 🌭').split(' ') },
+    { id: 'activity', labelKey: 'channels.emojiGroupActivity', label: '活动', emojis: ('⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥅 🎯 🎮 🎲 🎯 🎤 🎧 🎬 🎮 🏆 🥇 🥈 🥉 🎖️ 🏅 🎫 🎪').split(' ') },
+    { id: 'objects', labelKey: 'channels.emojiGroupObjects', label: '物品', emojis: ('⌚ 📱 💻 ⌨️ 🖥️ 🖨️ 💾 💿 📷 📹 🎥 📞 ☎️ 📺 📻 ⏰ ⏳ 🔋 💡 🔦 📔 📚 📖 🔖 🧧 💰 💳 ✏️ 📌 📎').split(' ') },
+    { id: 'symbols', labelKey: 'channels.emojiGroupSymbols', label: '符号', emojis: ('✅ ❌ ❓ ❗ ⭐ 🌟 ✨ ⚡ 🔥 💥 💯 ✳️ ❇️ ⚠️ 🚫 ⛔ 💤 🌀 🎵 🎶 ➕ ➖ ➗ ❕ ‼️ ⁉️ 🔔 🔕').split(' ') }
+  ];
+  let emojiActiveGroup = 0;
+  let emojiPanelBuilt = false;
+
+  function buildEmojiPanel() {
+    if (emojiPanelBuilt) return;
+    emojiPanelBuilt = true;
+    const tabs = EMOJI_GROUPS.map((group, index) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'communications-emoji-tab';
+      tab.textContent = group.emojis[0];
+      tab.setAttribute('role', 'tab');
+      tab.title = text(group.labelKey, group.label);
+      tab.setAttribute('aria-label', text(group.labelKey, group.label));
+      tab.addEventListener('click', () => showEmojiGroup(index));
+      return tab;
+    });
+    elements.emojiTabs.replaceChildren(...tabs);
+    showEmojiGroup(emojiActiveGroup);
+  }
+
+  function showEmojiGroup(index) {
+    emojiActiveGroup = index;
+    [...elements.emojiTabs.children].forEach((tab, tabIndex) => {
+      tab.classList.toggle('is-active', tabIndex === index);
+      tab.setAttribute('aria-selected', tabIndex === index ? 'true' : 'false');
+    });
+    const group = EMOJI_GROUPS[index];
+    const buttons = group.emojis.map(emoji => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'communications-emoji-item';
+      button.textContent = emoji;
+      button.title = emoji;
+      button.addEventListener('click', () => {
+        insertComposerText(emoji);
+        if (window.matchMedia('(pointer: coarse)').matches) return;
+        elements.input.focus();
+      });
+      return button;
+    });
+    elements.emojiGrid.replaceChildren(...buttons);
+  }
+
+  function toggleEmojiPanel(force) {
+    const show = typeof force === 'boolean' ? force : elements.emojiPanel.hidden;
+    if (show) buildEmojiPanel();
+    elements.emojiPanel.hidden = !show;
+    elements.emojiButton.classList.toggle('is-active', show);
+    elements.emojiButton.setAttribute('aria-expanded', show ? 'true' : 'false');
+    if (show) elements.input.focus();
+  }
+
+  function closeEmojiPanel() {
+    if (elements.emojiPanel.hidden) return;
+    elements.emojiPanel.hidden = true;
+    elements.emojiButton.classList.remove('is-active');
+    elements.emojiButton.setAttribute('aria-expanded', 'false');
+  }
+
+  // ===== 聊天背景（设备本地：预设渐变 + 自定义压缩图，存 localStorage） =====
+  const BACKGROUND_STORAGE_PREFIX = 'stella.comm.bg.';
+  const BACKGROUND_PRESETS = [
+    { id: 'default', labelKey: 'channels.backgroundDefault', label: '默认', css: '' },
+    { id: 'dawn', labelKey: 'channels.backgroundDawn', label: '晨曦', css: 'linear-gradient(160deg, #2b2440 0%, #4a3157 48%, #7d4a5b 100%)' },
+    { id: 'ocean', labelKey: 'channels.backgroundOcean', label: '深海', css: 'linear-gradient(160deg, #0f2033 0%, #14324a 52%, #1d4f63 100%)' },
+    { id: 'forest', labelKey: 'channels.backgroundForest', label: '松林', css: 'linear-gradient(160deg, #14231c 0%, #1d3a2a 52%, #2c5540 100%)' },
+    { id: 'dusk', labelKey: 'channels.backgroundDusk', label: '暮色', css: 'linear-gradient(160deg, #241d2e 0%, #3a2d47 50%, #584a6b 100%)' },
+    { id: 'ember', labelKey: 'channels.backgroundEmber', label: '余烬', css: 'linear-gradient(160deg, #2e1d1a 0%, #46261d 50%, #5e3a24 100%)' }
+  ];
+
+  function backgroundStorageKey(channelId) {
+    return BACKGROUND_STORAGE_PREFIX + channelId;
+  }
+
+  function readStoredBackground(channelId) {
+    try {
+      const raw = window.localStorage.getItem(backgroundStorageKey(channelId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed?.type === 'preset' && BACKGROUND_PRESETS.some(preset => preset.id === parsed.id)) return parsed;
+      if (parsed?.type === 'image' && typeof parsed.dataUrl === 'string') return parsed;
+    } catch (error) {
+      return null;
+    }
+    return null;
+  }
+
+  function storeBackground(channelId, value) {
+    try {
+      if (value) window.localStorage.setItem(backgroundStorageKey(channelId), JSON.stringify(value));
+      else window.localStorage.removeItem(backgroundStorageKey(channelId));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // 应用当前频道背景到消息滚动区（selectChannel 与打开设置时都会调用）
+  function applyChannelBackground(channelId) {
+    const scroll = elements.messageScroll;
+    if (!scroll) return;
+    scroll.classList.remove('has-custom-background');
+    scroll.style.backgroundImage = '';
+    if (!channelId) return;
+    const stored = readStoredBackground(channelId);
+    if (!stored) return;
+    if (stored.type === 'preset') {
+      const preset = BACKGROUND_PRESETS.find(item => item.id === stored.id);
+      if (preset?.css) scroll.style.backgroundImage = preset.css;
+      return;
+    }
+    scroll.classList.add('has-custom-background');
+    scroll.style.backgroundImage = `url("${stored.dataUrl.replace(/"/g, '%22')}")`;
+  }
+
+  function renderBackgroundSwatches(channel) {
+    if (!elements.settingsBackgroundSwatches) return;
+    const stored = readStoredBackground(channel.id);
+    const swatches = BACKGROUND_PRESETS.map(preset => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'communications-background-swatch';
+      button.dataset.presetId = preset.id;
+      button.title = text(preset.labelKey, preset.label);
+      button.setAttribute('aria-label', text(preset.labelKey, preset.label));
+      const isActive = preset.id === 'default' ? !stored : stored?.type === 'preset' && stored.id === preset.id;
+      button.classList.toggle('is-active', isActive);
+      if (preset.css) button.style.backgroundImage = preset.css;
+      button.addEventListener('click', () => {
+        const saved = storeBackground(channel.id, preset.id === 'default' ? null : { type: 'preset', id: preset.id });
+        if (!saved) {
+          setFeedback(text('channels.backgroundStoreFailed', '背景保存失败，浏览器存储不可用'));
+          return;
+        }
+        applyChannelBackground(channel.id);
+        renderBackgroundSwatches(channel);
+      });
+      return button;
+    });
+    elements.settingsBackgroundSwatches.replaceChildren(...swatches);
+  }
+
+  async function uploadChannelBackground(file) {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel || !file) return;
+    const source = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error(text('channels.backgroundReadFailed', '读取图片失败')));
+      reader.readAsDataURL(file);
+    });
+    let dataUrl = source;
+    if (window.ImageCompress?.compress) {
+      try {
+        const compressed = await window.ImageCompress.compress(source, { maxEdge: 1280, quality: 0.75 });
+        if (compressed?.dataUrl) dataUrl = compressed.dataUrl;
+      } catch (error) {
+        // 压缩失败时退回原图，交给存储上限兜底
+      }
+    }
+    const saved = storeBackground(channel.id, { type: 'image', dataUrl });
+    if (!saved) {
+      setFeedback(text('channels.backgroundTooLarge', '图片过大，无法保存为聊天背景'));
+      return;
+    }
+    applyChannelBackground(channel.id);
+    renderBackgroundSwatches(channel);
+    setFeedback(text('channels.backgroundSaved', '聊天背景已更新'));
   }
 
   async function uploadChannelAvatar(file) {
@@ -748,6 +1134,27 @@
     elements.input.setRangeText(value, start, end, 'end');
     elements.input.focus();
     updateComposer();
+  }
+
+  // 通用剪贴板：优先 Clipboard API，非安全上下文回退隐藏 textarea + execCommand
+  async function copyTextToClipboard(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      try {
+        const helper = document.createElement('textarea');
+        helper.value = value;
+        helper.className = 'visually-hidden';
+        document.body.appendChild(helper);
+        helper.select();
+        const copied = document.execCommand('copy');
+        helper.remove();
+        return copied;
+      } catch {
+        return false;
+      }
+    }
   }
 
   async function copyMessage(message) {
@@ -1528,6 +1935,8 @@
     cancelQuoting();
     clearPendingFiles();
     stopVoicePlayback();
+    closeEmojiPanel();
+    applyChannelBackground(channelId);
     state.loading = true;
     elements.messageList.replaceChildren();
     renderChannels();
@@ -2559,10 +2968,65 @@
   elements.settingsOpen.addEventListener('click', () => openChannelSettings());
   elements.settingsPinned.addEventListener('change', saveChannelPrefsInstant);
   elements.settingsMuted.addEventListener('change', saveChannelPrefsInstant);
+  elements.settingsFavorite.addEventListener('change', saveChannelPrefsInstant);
   elements.settingsClear.addEventListener('click', clearChannelHistoryFromSettings);
   elements.settingsClose.addEventListener('click', () => elements.settingsDialog.close());
   elements.settingsCancel.addEventListener('click', () => elements.settingsDialog.close());
   elements.settingsForm.addEventListener('submit', saveChannelSettings);
+  elements.settingsNameRow.addEventListener('click', () => {
+    if (elements.settingsNameRow.disabled) return;
+    elements.settingsEdit.hidden = false;
+    elements.settingsSave.hidden = false;
+    elements.settingsName.focus();
+  });
+  elements.settingsAvatarBtn.addEventListener('click', () => {
+    if (elements.settingsAvatarBtn.disabled) return;
+    elements.settingsAvatarActions.hidden = !elements.settingsAvatarActions.hidden;
+  });
+  elements.settingsIdRow.addEventListener('click', () => {
+    const value = elements.settingsInfoId.textContent;
+    if (!value || value === '--') return;
+    copyTextToClipboard(value).then(copied => {
+      setFeedback(copied
+        ? text('channels.channelIdCopied', '频道 ID 已复制')
+        : text('channels.channelIdCopyFailed', '复制失败，请手动选择复制'));
+    });
+  });
+  elements.settingsAnnouncementSave.addEventListener('click', saveChannelAnnouncement);
+  elements.settingsNicknameInput.addEventListener('blur', saveMyNickname);
+  elements.settingsNicknameInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      elements.settingsNicknameInput.blur();
+    }
+  });
+  elements.settingsSearchBtn.addEventListener('click', searchChannelHistory);
+  elements.settingsSearchInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchChannelHistory();
+    }
+  });
+  elements.settingsBackgroundInput.addEventListener('change', () => {
+    const file = elements.settingsBackgroundInput.files?.[0];
+    elements.settingsBackgroundInput.value = '';
+    if (file) uploadChannelBackground(file);
+  });
+  elements.settingsBackgroundReset.addEventListener('click', () => {
+    const channel = state.channels.find(item => item.id === state.selectedChannelId);
+    if (!channel) return;
+    storeBackground(channel.id, null);
+    applyChannelBackground(channel.id);
+    renderBackgroundSwatches(channel);
+  });
+  elements.settingsLeave.addEventListener('click', leaveChannelFromSettings);
+  elements.emojiButton.addEventListener('click', () => toggleEmojiPanel());
+  document.addEventListener('pointerdown', event => {
+    if (elements.emojiPanel.hidden) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && (elements.emojiPanel.contains(target) || elements.emojiButton.contains(target))) return;
+    closeEmojiPanel();
+  });
   elements.avatarInput.addEventListener('change', () => {
     const file = elements.avatarInput.files?.[0];
     elements.avatarInput.value = '';
@@ -2588,7 +3052,13 @@
     if (!elements.contextMenu.hidden && !elements.contextMenu.contains(event.target)) closeContextMenu();
   });
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || elements.contextMenu.hidden) return;
+    if (event.key !== 'Escape') return;
+    if (!elements.emojiPanel.hidden) {
+      event.preventDefault();
+      closeEmojiPanel();
+      return;
+    }
+    if (elements.contextMenu.hidden) return;
     event.preventDefault();
     closeContextMenu({ restoreFocus: true });
   });

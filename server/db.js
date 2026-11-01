@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DATA_ROOT } = require('./data-paths');
 
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 39;
 const DB_PATH = process.env.STELLA_DB_PATH || path.join(DATA_ROOT, 'app.db');
 const IN_MEMORY = DB_PATH === ':memory:';
 
@@ -930,6 +930,18 @@ if (currentVersion === 0) {
       db.exec('PRAGMA user_version = 37');
     });
   }
+  if (currentVersion < 38) {
+    withTransaction(() => {
+      migrateDeviceIdentityV38();
+      db.exec('PRAGMA user_version = 38');
+    });
+  }
+  if (currentVersion < 39) {
+    withTransaction(() => {
+      migrateCommunicationMemberExtrasV39();
+      db.exec('PRAGMA user_version = 39');
+    });
+  }
 }
 
 // v31（schema 32）：会话从 app_settings 的 JSON blob 迁到独立表 auth_sessions；
@@ -1272,6 +1284,75 @@ function migrateDeviceSecurityV37() {
       info.type, info.os, String(row.user_agent || '').slice(0, 500),
       row.ip_address || '', row.region || '', row.logged_in_at || 0, now, now
     );
+  }
+}
+
+// v38（schema 38）：设备身份 v3——user_devices 加 traits_json / hostname / device_key_hash 三列；
+// 存量分裂设备按（user_id, device_os）归并：同一账号同一系统的历史设备收敛为一行，
+// 自动登录状态优先保留（其次取最近登录行），租约取最大（永久胜出），创建时间取最早、最近登录取最新。
+// 登录历史表不动（审计留痕）；归并后的行 traits/hostname/密钥留空，由各设备下次登录重新锚定。
+function migrateDeviceIdentityV38() {
+  if (!tableHasColumn('user_devices', 'traits_json')) {
+    db.exec("ALTER TABLE user_devices ADD COLUMN traits_json TEXT NOT NULL DEFAULT ''");
+  }
+  if (!tableHasColumn('user_devices', 'hostname')) {
+    db.exec("ALTER TABLE user_devices ADD COLUMN hostname TEXT NOT NULL DEFAULT ''");
+  }
+  if (!tableHasColumn('user_devices', 'device_key_hash')) {
+    db.exec('ALTER TABLE user_devices ADD COLUMN device_key_hash TEXT');
+  }
+  // 同配置双机在电脑名消歧下需要两行同指纹共存：唯一索引降为普通索引
+  db.exec('DROP INDEX IF EXISTS idx_user_devices_user_fp');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_user_devices_user_fp ON user_devices(user_id, device_fingerprint)');
+  const rows = db.prepare('SELECT * FROM user_devices ORDER BY user_id, device_os, last_login_at').all();
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.user_id}\u0000${row.device_os}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const updateSurvivor = db.prepare(`UPDATE user_devices SET
+    device_name = ?, device_type = ?, device_model = ?, browser = ?, user_agent = ?,
+    network_env = ?, last_ip = ?, last_region = ?, last_login_at = ?,
+    auto_login_enabled = ?, auto_login_token_hash = ?, auto_login_expires_at = ?,
+    lease_until = ?, lease_granted_at = ?, created_at = ?, updated_at = ?
+    WHERE id = ?`);
+  const deleteRow = db.prepare('DELETE FROM user_devices WHERE id = ?');
+  const now = Date.now();
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    // 最近登录行提供档案快照；自动登录开启行优先做存活行，否则最近登录行做存活行
+    const latest = group[group.length - 1];
+    const autoRows = group.filter(row => row.auto_login_enabled === 1);
+    const survivor = autoRows.length
+      ? autoRows.reduce((a, b) => ((b.auto_login_expires_at || 0) > (a.auto_login_expires_at || 0) ? b : a))
+      : latest;
+    const leaseRow = group.reduce((a, b) => ((b.lease_until || 0) > (a.lease_until || 0) ? b : a));
+    const createdAt = group.reduce((min, row) => Math.min(min, row.created_at || 0), Number.MAX_SAFE_INTEGER);
+    const lastLoginAt = group.reduce((max, row) => Math.max(max, row.last_login_at || 0), 0);
+    updateSurvivor.run(
+      latest.device_name, latest.device_type, latest.device_model, latest.browser, latest.user_agent,
+      latest.network_env, latest.last_ip, latest.last_region, lastLoginAt,
+      survivor.auto_login_enabled, survivor.auto_login_token_hash, survivor.auto_login_expires_at,
+      leaseRow.lease_until, leaseRow.lease_until ? (leaseRow.lease_granted_at || now) : null,
+      createdAt === Number.MAX_SAFE_INTEGER ? (survivor.created_at || now) : createdAt,
+      now,
+      survivor.id
+    );
+    for (const row of group) {
+      if (row.id !== survivor.id) deleteRow.run(row.id);
+    }
+  }
+}
+
+// v39（schema 39）：通讯设置页 QQ 化补全——prefs.favorite 承载私聊"特别关心"，
+// members.nickname 承载群聊"我在本群昵称"（空串回落显示名）。
+function migrateCommunicationMemberExtrasV39() {
+  if (!tableHasColumn('communication_channel_prefs', 'favorite')) {
+    db.exec('ALTER TABLE communication_channel_prefs ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1))');
+  }
+  if (!tableHasColumn('communication_channel_members', 'nickname')) {
+    db.exec("ALTER TABLE communication_channel_members ADD COLUMN nickname TEXT NOT NULL DEFAULT '' CHECK (length(nickname) <= 24)");
   }
 }
 

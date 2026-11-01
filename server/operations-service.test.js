@@ -9,6 +9,8 @@ const {
   listPlayers,
   listSchedule,
   listTeams,
+  personalActivityDay,
+  personalSnapshot,
   teamDetail
 } = require('./operations-service');
 
@@ -332,4 +334,96 @@ test('countdown center uses the landscape split and portrait stack layout', () =
   assert.match(countdown, /String\(hours\)\.padStart\(2, '0'\)/);
   assert.match(countdown, /hours > 0/);
   assert.doesNotMatch(countdown, /99 \* 60 \+ 59/);
+});
+
+function personalFixture(t) {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  db.exec(`
+    CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT, display_name TEXT);
+    CREATE TABLE user_duty_logs (user_id TEXT, session_id TEXT, started_at INTEGER, ended_at INTEGER, duration_seconds INTEGER);
+    CREATE TABLE events (id TEXT PRIMARY KEY, name TEXT, division TEXT, date TEXT, sort_order INTEGER);
+    CREATE TABLE matches (id TEXT PRIMARY KEY, event_id TEXT, date TEXT, start_time TEXT,
+      matchup_home TEXT, matchup_away TEXT, winner_team_id TEXT, sort_order INTEGER);
+    CREATE TABLE account_operation_logs (timestamp_ms INTEGER, actor_user_id TEXT, action TEXT, success INTEGER, actor_identity_key TEXT);
+    CREATE TABLE bp_session_history (timestamp_ms INTEGER, actor_user_id TEXT, action TEXT);
+    CREATE TABLE user_login_history (user_id TEXT, logged_in_at INTEGER, ip_address TEXT, region TEXT, device_name TEXT);
+  `);
+  db.prepare(`INSERT INTO users VALUES ('user-1', 'director', '导播小王')`).run();
+  return db;
+}
+
+function localDayKey(timestamp) {
+  const date = new Date(timestamp);
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function localNoon(dayOffset = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + dayOffset);
+  date.setHours(12, 0, 0, 0);
+  return date.getTime();
+}
+
+test('personal snapshot aggregates all, bp and login activity series per local day', t => {
+  const db = personalFixture(t);
+  const insertAction = db.prepare(`INSERT INTO account_operation_logs (timestamp_ms, actor_user_id, action, success, actor_identity_key)
+    VALUES (?, ?, ?, 1, 'director')`);
+  const insertBp = db.prepare(`INSERT INTO bp_session_history (timestamp_ms, actor_user_id, action) VALUES (?, ?, 'slot-updated')`);
+  const insertLogin = db.prepare(`INSERT INTO user_login_history (user_id, logged_in_at, ip_address, region, device_name)
+    VALUES ('user-1', ?, '127.0.0.1', 'LAN', '导播台')`);
+  const today = localNoon(0);
+  const twoDaysAgo = localNoon(-2);
+  insertAction.run(today, 'user-1', '登录系统');
+  insertAction.run(today + 1000, 'user-1', '创建赛事');
+  insertAction.run(today + 2000, 'user-1', '退出系统');
+  insertAction.run(twoDaysAgo, 'user-1', '登录系统');
+  insertAction.run(today, 'user-2', '登录系统');
+  insertBp.run(today, 'user-1');
+  insertBp.run(today + 500, 'user-1');
+  insertLogin.run(today - 86400000);
+
+  const snapshot = personalSnapshot(db, { userId: 'user-1', today: localDayKey(Date.now()) });
+  assert.equal(snapshot.activity.find(row => row.day === localDayKey(today))?.count, 3);
+  assert.equal(snapshot.activity.find(row => row.day === localDayKey(twoDaysAgo))?.count, 1);
+  assert.equal(snapshot.activityBp.find(row => row.day === localDayKey(today))?.count, 2);
+  assert.equal(snapshot.activityLogins.find(row => row.day === localDayKey(today - 86400000))?.count, 1);
+});
+
+test('personal activity day returns per-type records and rejects malformed dates', t => {
+  const db = personalFixture(t);
+  const noon = localNoon(0);
+  const day = localDayKey(noon);
+  db.prepare(`INSERT INTO account_operation_logs (timestamp_ms, actor_user_id, action, success, actor_identity_key)
+    VALUES (?, 'user-1', '登录系统', 1, 'director')`).run(noon);
+  db.prepare(`INSERT INTO account_operation_logs (timestamp_ms, actor_user_id, action, success, actor_identity_key)
+    VALUES (?, 'user-1', '创建赛事', 0, 'director')`).run(noon + 1000);
+  db.prepare(`INSERT INTO bp_session_history (timestamp_ms, actor_user_id, action) VALUES (?, 'user-1', 'slot-updated')`).run(noon);
+  db.prepare(`INSERT INTO user_login_history (user_id, logged_in_at, ip_address, region, device_name)
+    VALUES ('user-1', ?, '127.0.0.1', 'LAN', '导播台')`).run(noon);
+
+  const all = personalActivityDay(db, { userId: 'user-1', date: day, type: 'all' });
+  assert.equal(all.total, 2);
+  assert.equal(all.items[0].action, '创建赛事');
+  assert.equal(all.items[0].success, false);
+
+  const bp = personalActivityDay(db, { userId: 'user-1', date: day, type: 'bp' });
+  assert.equal(bp.total, 1);
+  assert.equal(bp.items[0].action, 'slot-updated');
+
+  const logins = personalActivityDay(db, { userId: 'user-1', date: day, type: 'logins' });
+  assert.equal(logins.total, 1);
+  assert.equal(logins.items[0].device, '导播台');
+
+  const fallback = personalActivityDay(db, { userId: 'user-1', date: day, type: 'nope' });
+  assert.equal(fallback.type, 'all');
+  assert.equal(fallback.total, 2);
+
+  assert.throws(() => personalActivityDay(db, { userId: 'user-1', date: '01/2026', type: 'all' }),
+    error => error.code === 'ACTIVITY_DAY_DATE_INVALID');
+
+  const empty = personalActivityDay(db, { userId: 'user-1', date: '2020-01-01', type: 'all' });
+  assert.equal(empty.total, 0);
+  assert.deepEqual(empty.items, []);
 });

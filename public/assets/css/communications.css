@@ -854,7 +854,7 @@
 
 .communications-composer-footer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto auto auto;
   align-items: center;
   gap: 10px;
   min-height: 40px;
@@ -1219,6 +1219,25 @@
   .communications-dialog {
     width: calc(100vw - 16px);
   }
+
+  /* 移动端表情面板：贴近 QQ 高度，网格独立滚动不挤压输入框 */
+  .communications-emoji-panel {
+    margin-bottom: 6px;
+    padding: 6px;
+  }
+
+  .communications-emoji-grid {
+    max-height: min(32vh, 220px);
+  }
+
+  .communications-emoji-item {
+    height: 38px;
+    font-size: 22px;
+  }
+
+  .communications-settings-body {
+    max-height: 76vh;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1507,6 +1526,372 @@
   color: var(--f2-text-tertiary);
   font-size: 10.5px;
   line-height: 1.5;
+}
+
+/* ===== 设置页 QQ 手机版式：分区标题 / 信息行 / 成员网格 / 公告 / 检索 / 背景 / 退出 ===== */
+.communications-settings-body {
+  max-height: min(72vh, 640px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.communications-settings-members h4,
+.communications-settings-announcement h4,
+.communications-settings-search h4,
+.communications-settings-background h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--f2-text-secondary);
+  font-size: 12px;
+  font-weight: var(--f2-weight-semibold, 600);
+}
+
+.communications-members-count {
+  color: var(--f2-text-tertiary);
+  font-size: 11px;
+  font-weight: var(--f2-weight-regular, 400);
+}
+
+.communications-settings-avatar-btn {
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.communications-settings-avatar-btn:disabled {
+  cursor: default;
+}
+
+.communications-settings-avatar-btn .communications-settings-avatar {
+  pointer-events: none;
+}
+
+.communications-settings-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.communications-settings-name-row svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--f2-text-tertiary);
+}
+
+.communications-settings-name-row.is-static {
+  cursor: default;
+}
+
+.communications-settings-name-row.is-static svg {
+  display: none;
+}
+
+.communications-settings-id-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--f2-text-tertiary);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.communications-settings-id-row svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.communications-settings-id-value {
+  overflow: hidden;
+  font-family: var(--f2-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communications-settings-id-row:hover .communications-settings-id-value {
+  color: var(--f2-primary, #2f6fed);
+}
+
+/* 成员网格（QQ 式头像墙：头像在上、昵称在下、群主徽标缀底） */
+.communications-settings-member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  gap: 10px 6px;
+  max-height: 224px;
+  margin: 0;
+  overflow-y: auto;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.communications-settings-member {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 2px;
+}
+
+.communications-settings-member-cell {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.communications-settings-member-grid .communications-settings-member-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+}
+
+.communications-settings-member-name {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--f2-text-secondary);
+  font-size: 10.5px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communications-settings-announcement {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.communications-settings-announcement textarea {
+  min-height: 54px;
+  resize: vertical;
+}
+
+.communications-settings-announcement textarea:disabled {
+  opacity: 0.72;
+}
+
+.communications-announcement-save {
+  justify-self: start;
+  min-height: 30px;
+}
+
+.communications-settings-search {
+  display: grid;
+  gap: 6px;
+}
+
+.communications-settings-search-bar {
+  display: flex;
+  gap: 6px;
+}
+
+.communications-settings-search-bar .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.communications-settings-search-results {
+  display: grid;
+  gap: 2px;
+  max-height: 200px;
+  margin: 0;
+  overflow-y: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.communications-search-result button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.communications-search-result button:hover {
+  background: rgba(15, 35, 60, 0.05);
+}
+
+.communications-search-result-head {
+  color: var(--f2-text-secondary);
+  font-size: 11px;
+}
+
+.communications-search-result-preview {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communications-search-result.is-recalled .communications-search-result-preview {
+  color: var(--f2-text-tertiary);
+  text-decoration: line-through;
+}
+
+.communications-search-empty {
+  padding: 8px;
+  color: var(--f2-text-tertiary);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.communications-settings-nickname {
+  display: grid;
+}
+
+.communications-settings-background {
+  display: grid;
+  gap: 8px;
+}
+
+.communications-background-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.communications-background-swatch {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background-color: var(--f2-surface-sunken, #e8edf5);
+  background-position: center;
+  background-size: cover;
+  cursor: pointer;
+}
+
+.communications-background-swatch.is-active {
+  border-color: var(--f2-primary, #2f6fed);
+  box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.18);
+}
+
+.communications-background-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.communications-settings-leave {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(196, 43, 28, 0.32);
+  border-radius: 8px;
+  background: rgba(196, 43, 28, 0.08);
+  color: var(--f2-red);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.communications-settings-leave:hover {
+  background: rgba(196, 43, 28, 0.14);
+}
+
+.communications-message-scroll.has-custom-background {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* ===== 表情栏：分类 tabs + 网格，置于 composer 顶部的文档流内 ===== */
+.communications-emoji-panel {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid rgba(15, 35, 60, 0.1);
+  border-radius: 10px;
+  background: var(--f2-surface, #fff);
+  box-shadow: 0 8px 24px rgba(15, 35, 60, 0.08);
+}
+
+.communications-emoji-panel[hidden] {
+  display: none;
+}
+
+.communications-emoji-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.communications-emoji-tab {
+  flex: none;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.communications-emoji-tab:hover {
+  background: rgba(15, 35, 60, 0.06);
+}
+
+.communications-emoji-tab.is-active {
+  background: rgba(47, 111, 237, 0.14);
+}
+
+.communications-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 2px;
+  max-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.communications-emoji-item {
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.communications-emoji-item:hover {
+  background: rgba(15, 35, 60, 0.07);
 }
 
 /* ===== 加急非阻塞弹窗：顶部悬浮、不锁定背景，0.5s 缓冲期吸收背景点击 ===== */

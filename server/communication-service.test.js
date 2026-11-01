@@ -31,7 +31,11 @@ const {
   setChannelAvatar,
   setMessageUrgent,
   toggleMessagePlusOne,
-  updateChannelSettings
+  updateChannelSettings,
+  updateChannelPreferences,
+  updateMyChannelNickname,
+  leaveChannel,
+  searchChannelMessages
 } = require('./communication-service');
 const { createMessageNotification } = require('./notification-service');
 
@@ -524,4 +528,110 @@ test('private channels reject settings edits and avatar changes', () => {
   assert.throws(() => updateChannelSettings(db, alice, channel.id, { name: '改名尝试' }), /私聊频道不支持修改/);
   assert.throws(() => setChannelAvatar(db, alice, channel.id, 'data:image/png;base64,aGVsbG8='), /私聊频道不支持自定义头像/);
   assert.throws(() => clearChannelAvatar(db, alice, channel.id), /私聊频道不支持自定义头像/);
+});
+
+test('channel preferences persist the special-care favorite flag', () => {
+  const channel = createPrivateChannel(db, alice, 'bob');
+  assert.equal(channel.favorite, false);
+  const toggled = updateChannelPreferences(db, alice, channel.id, { pinned: false, muted: true, favorite: true });
+  assert.deepEqual(toggled, { pinned: false, muted: true, favorite: true });
+  const reread = listMessages(db, alice, channel.id, { limit: 5, markRead: false }).channel;
+  assert.equal(reread.favorite, true);
+  assert.equal(reread.muted, true);
+  // 关闭后回落
+  updateChannelPreferences(db, alice, channel.id, { pinned: false, muted: true, favorite: false });
+  assert.equal(listMessages(db, alice, channel.id, { limit: 5, markRead: false }).channel.favorite, false);
+});
+
+test('custom channel members can set their own group nickname', () => {
+  const channel = createCustomChannel(db, alice, { name: '昵称演练组', description: '', memberIds: ['bob'] });
+  const updated = updateMyChannelNickname(db, bob, channel.id, '  场记   小波  ');
+  assert.equal(updated.myNickname, '场记 小波');
+  // 成员列表以群昵称显示（QQ 式），原始显示名保留在兜底字段
+  const memberBob = updated.members.find(member => member.id === 'bob');
+  assert.equal(memberBob.displayName, '场记 小波');
+  assert.equal(memberBob.groupNickname, '场记 小波');
+  // 空串恢复默认显示名
+  const cleared = updateMyChannelNickname(db, bob, channel.id, '');
+  assert.equal(cleared.myNickname, '');
+  assert.equal(cleared.members.find(member => member.id === 'bob').displayName, 'Bob');
+  // 校验门：超长 / 私聊 / 全局 / 非成员
+  assert.throws(() => updateMyChannelNickname(db, bob, channel.id, 'x'.repeat(25)), /24 个字符/);
+  const privateChannel = createPrivateChannel(db, alice, 'bob');
+  assert.throws(() => updateMyChannelNickname(db, bob, privateChannel.id, '昵称'), /仅自建频道/);
+  assert.throws(() => updateMyChannelNickname(db, bob, 'global', '昵称'), /仅自建频道/);
+  assert.throws(() => updateMyChannelNickname(db, carol, channel.id, '昵称'), /无权访问/);
+});
+
+test('leaving a custom channel removes membership but keeps the channel for others', () => {
+  const channel = createCustomChannel(db, alice, { name: '退出演练组', description: '', memberIds: ['bob'] });
+  sendMessage(db, alice, channel.id, '退出前的消息');
+  // 群主不能退出
+  assert.throws(() => leaveChannel(db, alice, channel.id), /群主不能退出/);
+  // 隐式频道不能退出
+  assert.throws(() => leaveChannel(db, alice, 'global'), /仅自建频道支持退出/);
+  assert.throws(() => leaveChannel(db, bob, 'identity:commentator'), /仅自建频道支持退出/);
+  // 无权限的局外人走权限门
+  assert.throws(() => leaveChannel(db, carol, channel.id), /无权访问/);
+  const result = leaveChannel(db, bob, channel.id);
+  assert.equal(result.left, true);
+  assert.deepEqual([...result.remainingUserIds].sort(), ['alice']);
+  assert.throws(() => listMessages(db, bob, channel.id, { markRead: false }), /无权访问/);
+  assert.equal(listMessages(db, alice, channel.id, { limit: 10, markRead: false }).messages.length, 1);
+  // 退出者再进不了频道列表
+  assert.equal(visibleChannelIds(db, bob).includes(channel.id), false);
+});
+
+function visibleChannelIds(database, session) {
+  return communicationBootstrap(database, session).channels.map(channel => channel.id);
+}
+
+test('channel message search honors visibility, escaping and deleted-for-me filtering', () => {
+  const channel = createCustomChannel(db, alice, { name: '检索演练组', description: '', memberIds: ['bob'] });
+  const first = sendMessage(db, alice, channel.id, '赛程 100% 已确认');
+  sendMessage(db, bob, channel.id, '第二场待定');
+  const hidden = sendMessage(db, alice, channel.id, '仅我可见的备注');
+  deleteMessageForUser(db, bob, hidden.id);
+
+  const hits = searchChannelMessages(db, bob, channel.id, '赛程');
+  assert.equal(hits.total, 1);
+  assert.equal(hits.messages[0].id, first.id);
+  assert.equal(hits.messages[0].content, '赛程 100% 已确认');
+
+  // LIKE 通配符按字面匹配，不当作通配符展开
+  const percent = searchChannelMessages(db, bob, channel.id, '100%');
+  assert.equal(percent.total, 1);
+  const wildcard = searchChannelMessages(db, bob, channel.id, '100,x');
+  assert.equal(wildcard.total, 0);
+
+  // 被检索者"仅为我删除"的消息不出现，检索者本人仍可见
+  assert.equal(searchChannelMessages(db, bob, channel.id, '仅我可见').total, 0);
+  assert.equal(searchChannelMessages(db, alice, channel.id, '仅我可见').total, 1);
+
+  // 私聊可检索；无权限频道拒绝；关键词校验
+  const privateChannel = createPrivateChannel(db, alice, 'bob');
+  sendMessage(db, alice, privateChannel.id, '私聊里的检索词');
+  assert.equal(searchChannelMessages(db, bob, privateChannel.id, '检索词').total, 1);
+  assert.throws(() => searchChannelMessages(db, carol, channel.id, '赛程'), /无权访问/);
+  assert.throws(() => searchChannelMessages(db, bob, channel.id, ''), /1 至 50/);
+  assert.throws(() => searchChannelMessages(db, bob, channel.id, 'x'.repeat(51)), /1 至 50/);
+});
+
+test('listMessages around loads a symmetric window for search jumps', () => {
+  const channel = createCustomChannel(db, alice, { name: '跳转演练组', description: '', memberIds: ['bob'] });
+  const sent = [];
+  for (let index = 1; index <= 12; index += 1) {
+    sent.push(sendMessage(db, alice, channel.id, `跳转消息 ${index}`));
+  }
+  const anchor = sent[5].id;
+  const page = listMessages(db, alice, channel.id, { around: anchor, limit: 6, markRead: false });
+  const ids = page.messages.map(message => message.id);
+  assert.equal(ids.includes(anchor), true);
+  // 窗口以锚点为界前 3 后 3（anchor 本身占 1 位）
+  assert.equal(ids.filter(id => id < anchor).length, 3);
+  assert.equal(ids.filter(id => id > anchor).length, 3);
+  // 锚点消息不可见时窗口静默降级
+  deleteMessageForUser(db, alice, anchor);
+  const degraded = listMessages(db, alice, channel.id, { around: anchor, limit: 6, markRead: false });
+  assert.equal(degraded.messages.some(message => message.id === anchor), false);
 });

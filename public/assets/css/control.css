@@ -3332,20 +3332,28 @@
 }
 
 @media (max-width: 760px) {
-  .app-main {
+  /* body 前缀提特异性：本块必须稳定压过 control-character.css（更晚加载）的 ≤900 自动收窄块 */
+  body .app-main,
+  body.sidebar-collapsed .app-main {
     margin-left: 0;
   }
 
-  .app-header {
+  body .app-header {
+    flex-direction: row;
+    align-items: center;
+    min-height: 0;
     gap: var(--f2-space-3);
     padding: var(--f2-space-3) var(--f2-space-4) var(--f2-space-2);
   }
 
-  .app-header h1 {
+  body .app-header h1 {
+    overflow: hidden;
     font-size: 20px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
-  .app-header p {
+  body .app-header p {
     display: none;
   }
 
@@ -3353,17 +3361,19 @@
     display: grid;
   }
 
-  .content-grid {
+  body .content-grid {
     padding: var(--f2-space-3);
   }
 
-  .countdown-input-row,
-  .countdown-secondary-column {
+  body .countdown-input-row,
+  body .countdown-secondary-column {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* 侧栏变抽屉：默认移出屏幕，nav-open 滑入，scrim 点击关闭 */
-  .sidebar {
+  /* 侧栏变抽屉：始终以完整展开态渲染，默认移出屏幕，nav-open 滑入，scrim 点击关闭 */
+  body .sidebar {
+    width: var(--f2-sidebar-width);
+    padding: 14px 12px;
     transform: translateX(calc(-100% - var(--nav-inset) - 16px));
     transition: transform 0.28s var(--nav-ease), width 0.32s var(--nav-ease), padding 0.32s var(--nav-ease);
   }
@@ -3384,6 +3394,128 @@
     z-index: 25;
     background: rgba(15, 25, 40, 0.4);
     backdrop-filter: blur(2px);
+  }
+
+  /* 还原 ≤900 收窄块在抽屉里隐藏的元素（品牌名/标签/分组/徽标定位） */
+  body .sidebar-header {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 2px 4px 12px;
+  }
+
+  body .sidebar-heading {
+    display: block;
+    flex: 1;
+    max-width: none;
+    opacity: 1;
+  }
+
+  body .nav-btn,
+  body .nav-group-toggle {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 10px;
+  }
+
+  body .nav-label,
+  body .nav-chevron {
+    display: block;
+    max-width: none;
+    opacity: 1;
+  }
+
+  body .nav-chevron {
+    flex-basis: 14px;
+  }
+
+  body .nav-soon {
+    display: block;
+    flex-basis: 12px;
+    width: 12px;
+    opacity: 1;
+  }
+
+  body .nav-group-body {
+    display: grid;
+  }
+
+  /* 收起偏好被持久化时，抽屉内同样保持展开态 */
+  body.sidebar-collapsed .sidebar {
+    bottom: var(--nav-inset);
+    width: var(--f2-sidebar-width);
+    padding: 14px 12px;
+  }
+
+  body.sidebar-collapsed .sidebar-header {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 2px 4px 12px;
+  }
+
+  body.sidebar-collapsed .sidebar-heading {
+    display: block;
+    flex: 1;
+    max-width: none;
+    overflow: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  body.sidebar-collapsed .sidebar-logout {
+    gap: 10px;
+    padding: 0 10px;
+  }
+
+  body.sidebar-collapsed .nav-btn,
+  body.sidebar-collapsed .nav-group-toggle {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 10px;
+  }
+
+  body.sidebar-collapsed .nav-label,
+  body.sidebar-collapsed .nav-chevron {
+    display: block;
+    max-width: none;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  body.sidebar-collapsed .nav-chevron {
+    flex-basis: 14px;
+  }
+
+  body.sidebar-collapsed .nav-soon,
+  body.sidebar-collapsed .nav-development {
+    display: block;
+    flex-basis: 12px;
+    width: 12px;
+    opacity: 1;
+  }
+
+  body.sidebar-collapsed .nav-ico {
+    transform: none;
+  }
+
+  body.sidebar-collapsed .nav-btn.has-notification .nav-notification-dot,
+  body.sidebar-collapsed .nav-btn.has-notification .nav-notification-count,
+  body.sidebar-collapsed .nav-group-toggle.has-notification .nav-notification-dot {
+    position: relative;
+    top: auto;
+    right: auto;
+  }
+
+  body.sidebar-collapsed .nav-btn.has-notification .nav-notification-count {
+    min-width: 19px;
+    width: auto;
+    height: 19px;
+    padding: 0 5px;
+    color: #fff;
+    line-height: 19px;
+  }
+
+  body.sidebar-collapsed .nav-group-body {
+    display: grid;
   }
 
   .nav-toast {

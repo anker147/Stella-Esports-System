@@ -231,7 +231,9 @@
       userCell.append(user);
       const role = document.createElement('td');
       role.textContent = roleLabel(account);
+      role.dataset.label = t('accounts.identity');
       const presence = document.createElement('td');
+      presence.dataset.label = t('accounts.presence');
       const presenceText = document.createElement('span');
       const presenceStatus = account.presenceStatus || 'offline';
       presenceText.className = `presence-status account-presence-status presence-${presenceStatus}`;
@@ -239,9 +241,12 @@
       presence.append(presenceText);
       const region = document.createElement('td');
       region.textContent = account.region;
+      region.dataset.label = t('accounts.region');
       const expiry = document.createElement('td');
       expiry.textContent = formatDate(account.accountExpiresAt);
+      expiry.dataset.label = t('accounts.expiry');
       const status = document.createElement('td');
+      status.dataset.label = t('accounts.status');
       const statusText = document.createElement('span');
       statusText.className = `account-status-label ${account.status}`;
       statusText.textContent = account.status === 'active' ? t('accounts.active') : t('accounts.disabled');

@@ -522,6 +522,7 @@ CREATE TABLE IF NOT EXISTS communication_channel_prefs (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
   muted INTEGER NOT NULL DEFAULT 0 CHECK (muted IN (0, 1)),
+  favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
   PRIMARY KEY (channel_id, user_id)
 );
 
@@ -530,6 +531,7 @@ CREATE TABLE IF NOT EXISTS communication_channel_members (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   joined_at INTEGER NOT NULL,
   last_read_message_id INTEGER NOT NULL DEFAULT 0 CHECK (last_read_message_id >= 0),
+  nickname TEXT NOT NULL DEFAULT '' CHECK (length(nickname) <= 24),
   PRIMARY KEY (channel_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_communication_members_user ON communication_channel_members(user_id, channel_id);
@@ -960,10 +962,13 @@ CREATE TABLE IF NOT EXISTS user_devices (
   auto_login_expires_at INTEGER,
   lease_until INTEGER,
   lease_granted_at INTEGER,
+  traits_json TEXT NOT NULL DEFAULT '',
+  hostname TEXT NOT NULL DEFAULT '',
+  device_key_hash TEXT,
   created_at INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL DEFAULT 0
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_fp ON user_devices(user_id, device_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_user_devices_user_fp ON user_devices(user_id, device_fingerprint);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_auto_token ON user_devices(auto_login_token_hash);
 
 CREATE VIEW IF NOT EXISTS v_team_candidates AS

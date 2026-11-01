@@ -241,7 +241,7 @@ test('删除设备移除行；加密密钥复用同一把', () => {
   assert.notEqual(cipherA, cipherB, '每次加密使用新 iv');
 });
 
-test('v37 迁移：从登录历史种子回填设备，unknown 指纹忽略', t => {
+test('v37+v38 迁移：登录历史回填设备、unknown 指纹忽略、同系统多行归并', t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-device-migration-'));
   const dbPath = path.join(directory, 'legacy.db');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
@@ -283,9 +283,13 @@ test('v37 迁移：从登录历史种子回填设备，unknown 指纹忽略', t 
     .run(seedUser, crypto.scryptSync('legacy-password', salt, 64).toString('hex'), salt, Date.now(), Date.now());
   const fpPhone = fingerprint('legacy-phone');
   const fpDesktop = fingerprint('legacy-desktop');
+  const fpDesktop2 = fingerprint('legacy-desktop-2');
+  const fpDesktop3 = fingerprint('legacy-desktop-3');
   addLegacyHistory(legacy, seedUser, fpPhone, 1000, 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Mobile Safari');
   addLegacyHistory(legacy, seedUser, fpPhone, 2000, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile Safari');
   addLegacyHistory(legacy, seedUser, fpDesktop, 1500, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36');
+  addLegacyHistory(legacy, seedUser, fpDesktop2, 2500, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/132.0 Safari/537.36');
+  addLegacyHistory(legacy, seedUser, fpDesktop3, 400, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/110.0 Safari/537.36');
   addLegacyHistory(legacy, seedUser, 'unknown', 3000, 'Mozilla/5.0 (compatible)');
   legacy.exec('PRAGMA user_version = 36');
   legacy.close();
@@ -300,18 +304,21 @@ test('v37 迁移：从登录历史种子回填设备，unknown 指纹忽略', t 
 
   const migrated = new DatabaseSync(dbPath);
   try {
-    assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, 37);
+    assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, 39);
     assert.equal(migrated.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'user_devices'").get().n, 1);
     assert.equal(migrated.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'user_security_credentials'").get().n, 1);
     const devices = migrated.prepare('SELECT * FROM user_devices ORDER BY device_fingerprint').all();
-    assert.equal(devices.length, 2, 'unknown 指纹不入表，其余指纹各一行');
+    // 3 条 Windows 历史指纹在 v38 归并为一行，iOS 一行独立，unknown 不入表
+    assert.equal(devices.length, 2, '同系统历史设备归并、unknown 指纹不入表');
     const phone = devices.find(row => row.device_fingerprint === fpPhone);
     assert.ok(phone, '手机设备已登记');
     assert.equal(phone.device_type, 'mobile');
     assert.equal(phone.last_login_at, 2000, '同指纹取最近一次登录时间');
-    const desktop = devices.find(row => row.device_fingerprint === fpDesktop);
-    assert.equal(desktop.device_type, 'desktop');
-    assert.equal(desktop.device_os, 'Windows');
+    const desktop = devices.find(row => row.device_os === 'Windows');
+    assert.ok(desktop, '桌面设备已登记');
+    assert.equal(desktop.device_fingerprint, fpDesktop2, '归并存活行取最近登录的指纹');
+    assert.equal(desktop.last_login_at, 2500, '归并后最近登录取最大值');
+    assert.equal(migrated.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'index' AND name = 'idx_user_devices_user_fp'").get().n, 1, '指纹索引仍存在');
   } finally {
     migrated.close();
   }
@@ -322,4 +329,266 @@ test('v37 迁移：从登录历史种子回填设备，unknown 指纹忽略', t 
       VALUES (?, ?, 'hash', '9.9.9.9', '种子地区', ?, '种子机', ?, ?)`)
       .run(crypto.randomUUID(), userId, fp, userAgent, at);
   }
+});
+
+test('v38 迁移：归并保留自动登录与租约状态', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zfb-device-merge-'));
+  const dbPath = path.join(directory, 'legacy.db');
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+
+  const legacy = new DatabaseSync(dbPath);
+  legacy.exec(`
+    CREATE TABLE users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      display_name TEXT,
+      password_hash TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      permissions_json TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'active',
+      expires_at INTEGER,
+      last_login_at INTEGER,
+      last_login_ip_hash TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);
+    CREATE TABLE user_devices (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      device_fingerprint TEXT NOT NULL,
+      device_name TEXT NOT NULL DEFAULT '',
+      device_type TEXT NOT NULL DEFAULT 'desktop',
+      device_os TEXT NOT NULL DEFAULT '',
+      device_model TEXT NOT NULL DEFAULT '',
+      browser TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      network_env TEXT NOT NULL DEFAULT '',
+      last_ip TEXT NOT NULL DEFAULT '',
+      last_region TEXT NOT NULL DEFAULT '',
+      last_login_at INTEGER NOT NULL DEFAULT 0,
+      auto_login_enabled INTEGER NOT NULL DEFAULT 0,
+      auto_login_token_hash TEXT,
+      auto_login_expires_at INTEGER,
+      lease_until INTEGER,
+      lease_granted_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  const seedUser = crypto.randomUUID();
+  const salt = crypto.randomBytes(16).toString('hex');
+  legacy.prepare(`INSERT INTO users (id, username, display_name, password_hash, salt, role, permissions_json, status, created_at, updated_at)
+    VALUES (?, 'merge-user', '归并用户', ?, ?, 'user', '[]', 'active', ?, ?)`)
+    .run(seedUser, crypto.scryptSync('merge-password', salt, 64).toString('hex'), salt, Date.now(), Date.now());
+  const insertDevice = legacy.prepare(`INSERT INTO user_devices
+    (id, user_id, device_fingerprint, device_name, device_os, device_type, last_ip, last_region,
+     last_login_at, auto_login_enabled, auto_login_token_hash, auto_login_expires_at,
+     lease_until, lease_granted_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'Windows', 'desktop', '1.1.1.1', 'r', ?, ?, ?, ?, ?, ?, ?, ?)`);
+  insertDevice.run(crypto.randomUUID(), seedUser, fingerprint('m-a'), '自动登录机', 500, 1, 'token-hash', Date.now() + 86400000, null, null, 100, 500);
+  insertDevice.run(crypto.randomUUID(), seedUser, fingerprint('m-b'), '租约机', 300, 0, null, null, deviceSecurity.PERMANENT_LEASE_AT, 200, 200, 300);
+  insertDevice.run(crypto.randomUUID(), seedUser, fingerprint('m-c'), '最近机器', 900, 0, null, null, null, null, 300, 900);
+  legacy.exec('PRAGMA user_version = 37');
+  legacy.close();
+
+  const result = spawnSync(process.execPath, ['-e', "require('./server/db').db.close()"], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, STELLA_DB_PATH: dbPath, STELLA_DATA_DIR: directory },
+    encoding: 'utf8',
+    windowsHide: true
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const migrated = new DatabaseSync(dbPath);
+  try {
+    assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, 39);
+    const devices = migrated.prepare('SELECT * FROM user_devices').all();
+    assert.equal(devices.length, 1, '同系统三行归并为一行');
+    const survivor = devices[0];
+    assert.equal(survivor.auto_login_enabled, 1, '自动登录状态优先保留');
+    assert.equal(survivor.auto_login_token_hash, 'token-hash');
+    assert.equal(survivor.lease_until, deviceSecurity.PERMANENT_LEASE_AT, '租约取最大（永久胜出）');
+    assert.equal(survivor.created_at, 100, '创建时间取最早');
+    assert.equal(survivor.last_login_at, 900, '最近登录取最新');
+    assert.equal(survivor.device_name, '最近机器', '档案快照取最近登录行');
+  } finally {
+    migrated.close();
+  }
+});
+
+test('指纹 v2：GPU 归一跨浏览器一致、服务端重算确定、大版本外显', () => {
+  const edgeTraits = deviceSecurity.normalizeTraits({
+    platform: 'Win32',
+    gpu: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    cores: 16, memory: 8, language: 'zh-CN', timezone: 'Asia/Shanghai',
+    brand: 'Microsoft Edge', hostname: 'STUDIO-01'
+  });
+  const firefoxTraits = deviceSecurity.normalizeTraits({
+    platform: 'Win32',
+    gpu: 'NVIDIA GeForce RTX 3060/PCIe/SSE2',
+    cores: '16', memory: '8', language: 'zh-CN', timezone: 'Asia/Shanghai',
+    brand: 'Mozilla Firefox'
+  });
+  assert.equal(edgeTraits.gpu, 'NVIDIA GeForce RTX 3060', 'ANGLE 包装剥离');
+  assert.equal(firefoxTraits.gpu, 'NVIDIA GeForce RTX 3060', 'PCIe 尾巴剥离');
+  assert.equal(deviceSecurity.computeMachineFingerprint(edgeTraits),
+    deviceSecurity.computeMachineFingerprint(firefoxTraits), '同机不同浏览器同指纹');
+  assert.notEqual(deviceSecurity.computeMachineFingerprint(edgeTraits),
+    deviceSecurity.computeMachineFingerprint({ ...edgeTraits, cores: 8 }), '核数变化换指纹');
+  assert.equal(deviceSecurity.normalizeTraits(null), null);
+  assert.equal(deviceSecurity.normalizeTraits({}), null, '全空特征无效');
+  const ua = deviceSecurity.parseUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0');
+  assert.deepEqual([ua.browser, ua.browserVersion], ['Edge', '132']);
+  const safari = deviceSecurity.parseUserAgent(
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+  assert.deepEqual([safari.browser, safari.browserVersion], ['Safari', '17']);
+});
+
+test('upsert 身份链：密钥优先、hostname 认回轮换、指纹收编、同指纹异名新建', () => {
+  const userId = createTestUser('identity-chain');
+  const traits = { platform: 'Win32', gpu: 'NVIDIA GeForce RTX 3060', cores: 16, memory: 8, language: 'zh-CN', timezone: 'Asia/Shanghai' };
+  const fp = deviceSecurity.computeMachineFingerprint(deviceSecurity.normalizeTraits(traits));
+  const keyHashOf = value => deviceSecurity.hashDeviceKey(value);
+  const rowCount = () => db.prepare('SELECT COUNT(*) AS n FROM user_devices WHERE user_id = ?').get(userId).n;
+
+  // 新建：锚定客户端密钥，电脑名成为设备名
+  const first = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-A', deviceFingerprint: fp,
+    deviceTraits: { ...traits, brand: 'Microsoft Edge', hostname: 'STUDIO-01' },
+    hostname: 'STUDIO-01', deviceName: 'Win32 · Edge',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Edg/120.0', ipAddress: '1.1.1.1', region: 'r'
+  });
+  assert.equal(first.device_key_hash, keyHashOf('key-A'), '新建锚定终端密钥');
+  assert.equal(first.hostname, 'STUDIO-01');
+  assert.equal(first.device_name, 'STUDIO-01', '电脑名优先作为设备名');
+  assert.equal(first.device_fingerprint, fp);
+
+  // 密钥命中：UA/浏览器版本升级仍是同一行
+  const second = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-A', deviceFingerprint: fp,
+    deviceTraits: { ...traits, brand: 'Microsoft Edge', hostname: 'STUDIO-01' },
+    hostname: 'STUDIO-01', deviceName: 'Win32 · Edge',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/132.0 Edg/132.0', ipAddress: '1.1.1.1', region: 'r'
+  });
+  assert.equal(second.id, first.id, '终端密钥优先命中');
+  assert.equal(second.user_agent, 'Mozilla/5.0 (Windows NT 10.0) Chrome/132.0 Edg/132.0');
+  assert.equal(rowCount(), 1);
+
+  // 新浏览器档案（新密钥）经电脑名认回同一行并轮换密钥
+  const third = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-B', deviceFingerprint: fp,
+    deviceTraits: { ...traits, brand: 'Google Chrome', hostname: 'STUDIO-01' },
+    hostname: 'STUDIO-01', deviceName: 'Win32 · Chrome',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/132.0', ipAddress: '1.1.1.1', region: 'r'
+  });
+  assert.equal(third.id, first.id, '同机跨浏览器经电脑名归并');
+  assert.equal(third.device_key_hash, keyHashOf('key-B'), 'hostname 路径轮换密钥');
+  assert.equal(rowCount(), 1);
+
+  // 密钥与电脑名都缺失（清数据 + 解析失败）：指纹收编，不轮换已有密钥
+  const fourth = deviceSecurity.upsertDevice(db, userId, {
+    deviceFingerprint: fp,
+    deviceTraits: { ...traits, brand: 'Microsoft Edge', hostname: 'STUDIO-01' },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Edg/120.0', ipAddress: '1.1.1.1', region: 'r'
+  });
+  assert.equal(fourth.id, first.id, '指纹收编');
+  assert.equal(fourth.device_key_hash, keyHashOf('key-B'), '弱路径不轮换密钥');
+
+  // 指纹相同但电脑名不同 = 同配置的另一台机器，新建消歧
+  const other = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-C', deviceFingerprint: fp,
+    deviceTraits: { ...traits, brand: 'Microsoft Edge', hostname: 'STUDIO-02' },
+    hostname: 'STUDIO-02', deviceName: 'Win32 · Edge',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Edg/120.0', ipAddress: '2.2.2.2', region: 'r'
+  });
+  assert.notEqual(other.id, first.id, '同配置双机按电脑名消歧');
+  assert.equal(other.device_key_hash, keyHashOf('key-C'));
+  assert.equal(rowCount(), 2);
+
+  // 同机换显卡：电脑名认回 + 指纹更新
+  const upgraded = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-C', deviceFingerprint: 'stale'.padEnd(64, '0'),
+    deviceTraits: { ...traits, gpu: 'NVIDIA GeForce RTX 5090', brand: 'Microsoft Edge', hostname: 'STUDIO-02' },
+    hostname: 'STUDIO-02', deviceName: 'Win32 · Edge',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Edg/120.0', ipAddress: '2.2.2.2', region: 'r'
+  });
+  assert.equal(upgraded.id, other.id, '换硬件经电脑名认回');
+  assert.equal(upgraded.device_fingerprint,
+    deviceSecurity.computeMachineFingerprint(deviceSecurity.normalizeTraits({ ...traits, gpu: 'NVIDIA GeForce RTX 5090' })));
+});
+
+test('upsert GPU 采集漂移恢复与旧版收编', () => {
+  const userId = createTestUser('gpu-drift');
+  const traits = { platform: 'Win32', cores: 16, memory: 8, language: 'zh-CN', timezone: 'Asia/Shanghai' };
+  // 首次 WebGL 采集失败（gpu 空）
+  const first = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-E',
+    deviceFingerprint: deviceSecurity.computeMachineFingerprint(deviceSecurity.normalizeTraits(traits)),
+    deviceTraits: { ...traits, gpu: '', brand: 'Google Chrome', hostname: '' },
+    deviceName: 'Win32 · Chrome',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0', ipAddress: '5.5.5.5', region: 'r'
+  });
+  assert.ok(first.device_fingerprint);
+  // WebGL 恢复后：特征模糊匹配收编（gpu 一方为空允许）
+  const second = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-E',
+    deviceTraits: { ...traits, gpu: 'NVIDIA GeForce RTX 3060', brand: 'Google Chrome', hostname: '' },
+    deviceName: 'Win32 · Chrome',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0', ipAddress: '5.5.5.5', region: 'r'
+  });
+  assert.equal(second.id, first.id, 'GPU 采集漂移经特征收编');
+  assert.equal(second.device_fingerprint,
+    deviceSecurity.computeMachineFingerprint(deviceSecurity.normalizeTraits({ ...traits, gpu: 'NVIDIA GeForce RTX 3060' })));
+
+  // 旧版收编：无特征历史行按系统认回并锚定密钥
+  const legacyUserId = createTestUser('legacy-adopt');
+  db.prepare(`INSERT INTO user_devices
+    (id, user_id, device_fingerprint, device_name, device_os, device_type, last_login_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(crypto.randomUUID(), legacyUserId, 'f'.repeat(64), '旧机器', 'Windows', 'desktop', 1000, 1000, 1000);
+  const adopted = deviceSecurity.upsertDevice(db, legacyUserId, {
+    deviceId: 'key-D', deviceFingerprint: 'e'.repeat(64),
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36',
+    ipAddress: '3.3.3.3', region: 'r'
+  });
+  assert.equal(adopted.device_name, '旧机器', '无 hostname 无上报名时保留旧名');
+  assert.equal(adopted.device_key_hash, deviceSecurity.hashDeviceKey('key-D'), '收编时锚定密钥');
+  assert.equal(adopted.traits_json, '');
+  // 杂行（空系统名）不互相吞并
+  const junk = deviceSecurity.upsertDevice(db, legacyUserId, {
+    deviceFingerprint: 'd'.repeat(64), userAgent: '', ipAddress: '4.4.4.4', region: 'r'
+  });
+  assert.notEqual(junk.device_fingerprint, 'e'.repeat(64), '空系统名不参与收编');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM user_devices WHERE user_id = ?').get(legacyUserId).n, 2);
+});
+
+test('findLeaseDevice 电脑名消歧与 deviceView 敏感字段扩展', () => {
+  const userId = createTestUser('lease-disambiguate');
+  const traits = { platform: 'Win32', gpu: 'NVIDIA GeForce RTX 3060', cores: 16, memory: 8, language: 'zh-CN', timezone: 'Asia/Shanghai' };
+  const fp = deviceSecurity.computeMachineFingerprint(deviceSecurity.normalizeTraits(traits));
+  const rowA = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-A', deviceTraits: { ...traits, brand: 'Edge', hostname: 'STUDIO-01' },
+    hostname: 'STUDIO-01', userAgent: 'UA', ipAddress: '1.1.1.1', region: 'r'
+  });
+  const rowB = deviceSecurity.upsertDevice(db, userId, {
+    deviceId: 'key-B', deviceTraits: { ...traits, brand: 'Edge', hostname: 'STUDIO-02' },
+    hostname: 'STUDIO-02', userAgent: 'UA', ipAddress: '2.2.2.2', region: 'r'
+  });
+  assert.notEqual(rowA.id, rowB.id, '同配置双机两行');
+  deviceSecurity.setLease(db, userId, rowA.id, 'permanent');
+  // 指纹相同（同配置），电脑名消歧：STUDIO-02 的请求拿不到 STUDIO-01 的租约
+  assert.equal(deviceSecurity.findLeaseDevice(db, userId, fp, 'STUDIO-02'), null, '电脑名消歧拒绝');
+  assert.equal(deviceSecurity.findLeaseDevice(db, userId, fp, 'STUDIO-01').id, rowA.id, '电脑名命中租约');
+  assert.equal(deviceSecurity.findLeaseDevice(db, userId, fp, '').id, rowA.id, '解析失败退回指纹匹配');
+
+  const fullView = deviceSecurity.deviceView(deviceSecurity.getDevice(db, userId, rowA.id), { includeSensitive: true });
+  assert.equal(fullView.hostname, 'STUDIO-01');
+  assert.equal(fullView.gpu, 'NVIDIA GeForce RTX 3060');
+  const plainView = deviceSecurity.deviceView(deviceSecurity.getDevice(db, userId, rowA.id));
+  assert.equal(plainView.hostname, undefined, '非开发者视角不含电脑名');
+  assert.equal(plainView.gpu, undefined, '非开发者视角不含 GPU');
+  assert.equal(plainView.browserVersion !== undefined, true, '浏览器版本所有视角可见');
 });

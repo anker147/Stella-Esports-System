@@ -54,9 +54,25 @@
     Object.entries(forms).forEach(([name, form]) => {
       form.classList.toggle('is-active', name === next);
     });
+    applyFormsHeight();
     status.textContent = '';
     status.className = 'login-status';
   }
+
+  // 卡片高度跟随活动表单：切换身份、文案装载、字段显隐（初始化向导）时平滑伸缩
+  function applyFormsHeight() {
+    const activeForm = forms[active];
+    if (!activeForm) return;
+    formsBox.style.height = `${activeForm.offsetHeight}px`;
+  }
+
+  if (typeof ResizeObserver === 'function') {
+    const formsObserver = new ResizeObserver(applyFormsHeight);
+    Object.values(forms).forEach(form => formsObserver.observe(form));
+  } else {
+    window.addEventListener('resize', applyFormsHeight);
+  }
+  applyFormsHeight();
 
   tabs.forEach(tab => {
     tab.addEventListener('click', () => switchTo(tab.dataset.loginTab));
@@ -164,6 +180,24 @@
     return '浏览器';
   }
 
+  // GPU model via the standard WebGL renderer string; empty when unavailable.
+  function gpuRenderer() {
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      if (!gl) return '';
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      const renderer = info
+        ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL)
+        : gl.getParameter(gl.RENDERER);
+      return String(renderer || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  // Machine-level traits only: no deviceId (it is the device key, anchored separately),
+  // no full UA / browser version (self-drifting), no screen metrics (monitor changes).
   async function readDeviceContext() {
     const storageKey = 'stella.device.id';
     let deviceId = '';
@@ -178,27 +212,33 @@
     }
 
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+    const deviceTraits = {
+      platform: navigator.platform || '',
+      gpu: gpuRenderer(),
+      cores: navigator.hardwareConcurrency || 0,
+      memory: navigator.deviceMemory || 0,
+      language: navigator.language || '',
+      timezone: timeZone,
+      brand: browserName()
+    };
     const traits = [
-      deviceId,
-      navigator.userAgent,
-      navigator.platform,
-      navigator.language,
-      (navigator.languages || []).join(','),
-      timeZone,
-      navigator.hardwareConcurrency || 0,
-      navigator.deviceMemory || 0,
-      `${screen.width}x${screen.height}x${screen.colorDepth}`,
-      navigator.maxTouchPoints || 0
+      deviceTraits.platform,
+      deviceTraits.gpu,
+      deviceTraits.cores,
+      deviceTraits.memory,
+      deviceTraits.language,
+      deviceTraits.timezone
     ].join('|');
     let deviceFingerprint = '';
     if (crypto.subtle) {
-      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(traits));
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`v2|${traits}`));
       deviceFingerprint = [...new Uint8Array(digest)]
         .map(byte => byte.toString(16).padStart(2, '0')).join('');
     }
     return {
       deviceId,
       deviceFingerprint,
+      deviceTraits,
       deviceName: `${navigator.platform || '未知平台'} · ${browserName()}`,
       networkEnv: networkEnvironment()
     };

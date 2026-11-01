@@ -375,14 +375,17 @@ body {
   font-size: 11px;
 }
 
-/* 表单切换容器：方向感知的线性变速过渡（两个表单同层叠放，visibility 延迟收起保证动画完整） */
+/* 表单切换容器：方向感知的线性变速过渡（两个表单同层叠放，visibility 延迟收起保证动画完整）。
+   容器高度由 login.js 按活动表单实测驱动，卡片随内容增减平滑伸缩。 */
 .login-forms {
   position: relative;
   display: grid;
+  transition: height 0.28s var(--nav-ease);
 }
 
 .login-form {
   grid-area: 1 / 1;
+  align-self: start;
   display: grid;
   align-content: start;
   gap: 14px;

@@ -148,10 +148,23 @@ function updateReadTracker(database, session, channel, messageId) {
 }
 
 function membersForChannel(database, channelId) {
-  const ids = database.prepare(`SELECT user_id FROM communication_channel_members
-    WHERE channel_id = ? ORDER BY joined_at, user_id`).all(channelId).map(row => row.user_id);
-  const cards = userCards(database, ids);
-  return ids.map(id => cards.get(id)).filter(Boolean);
+  const rows = database.prepare(`SELECT user_id, nickname FROM communication_channel_members
+    WHERE channel_id = ? ORDER BY joined_at, user_id`).all(channelId);
+  const cards = userCards(database, rows.map(row => row.user_id));
+  return rows.map(row => {
+    const card = cards.get(row.user_id);
+    // QQ 式成员列表：设了群昵称的成员以群昵称显示，原始名保留在 account 兜底
+    if (card && row.nickname) {
+      return { ...card, displayName: row.nickname, groupNickname: row.nickname };
+    }
+    return card || null;
+  }).filter(Boolean);
+}
+
+function channelMemberNickname(database, channelId, userId) {
+  const row = database.prepare(`SELECT nickname FROM communication_channel_members
+    WHERE channel_id = ? AND user_id = ?`).get(channelId, userId);
+  return row?.nickname || '';
 }
 
 function canAuditMessages(session) {
@@ -327,7 +340,7 @@ function prepareChannelContext(database, session, channels) {
     const from = observerPath ? observerRows : memberRows;
     trackers.set(channel.id, { kind, lastReadMessageId: from.get(channel.id) || 0 });
   }
-  const prefs = new Map(database.prepare(`SELECT channel_id, pinned, muted FROM communication_channel_prefs
+  const prefs = new Map(database.prepare(`SELECT channel_id, pinned, muted, favorite FROM communication_channel_prefs
     WHERE user_id = ? AND channel_id IN (${placeholders})`).all(session.userId, ...ids)
     .map(row => [row.channel_id, row]));
   const lastMessages = new Map();
@@ -362,7 +375,7 @@ function serializeChannel(database, session, channel, context = null) {
         SELECT 1 FROM communication_message_deletions deletions
         WHERE deletions.message_id = communication_messages.id AND deletions.user_id = ?
       )`).get(channel.id, tracker.lastReadMessageId, session.userId, session.userId);
-  const prefs = prepared.prefs.get(channel.id) || { pinned: 0, muted: 0 };
+  const prefs = prepared.prefs.get(channel.id) || { pinned: 0, muted: 0, favorite: 0 };
   const ownAvatarUrl = channel.avatar
     ? `/api/communications/channels/${encodeURIComponent(channel.id)}/avatar?v=${channel.avatar_updated_at || 0}` : null;
   return {
@@ -378,6 +391,9 @@ function serializeChannel(database, session, channel, context = null) {
     announcement: channel.announcement || '',
     pinned: Boolean(prefs.pinned),
     muted: Boolean(prefs.muted),
+    favorite: Boolean(prefs.favorite),
+    myNickname: channel.kind === 'custom' && !developerObserver
+      ? channelMemberNickname(database, channel.id, session.userId) : '',
     ownerUserId: channel.owner_user_id || null,
     mine: channel.owner_user_id === session.userId,
     developerObserver,
@@ -465,6 +481,19 @@ function listMessages(database, session, channelId, options = {}) {
     rows = database.prepare(`SELECT * FROM communication_messages
       WHERE ${visibleWhere} AND id > ? ORDER BY id LIMIT ?`)
       .all(channel.id, session.userId, after, limit);
+  } else if (Number.isInteger(options.around) && options.around > 0) {
+    // 搜索跳转：以目标消息为中心的前后窗口（目标行不可见时静默跳过）
+    const halfBefore = Math.max(1, Math.floor(limit / 2));
+    const halfAfter = Math.max(1, limit - halfBefore);
+    const olderRows = database.prepare(`SELECT * FROM communication_messages
+      WHERE ${visibleWhere} AND id < ? ORDER BY id DESC LIMIT ?`)
+      .all(channel.id, session.userId, options.around, halfBefore).reverse();
+    const anchorRow = database.prepare(`SELECT * FROM communication_messages
+      WHERE ${visibleWhere} AND id = ?`).get(channel.id, session.userId, options.around);
+    const newerRows = database.prepare(`SELECT * FROM communication_messages
+      WHERE ${visibleWhere} AND id > ? ORDER BY id LIMIT ?`)
+      .all(channel.id, session.userId, options.around, halfAfter);
+    rows = [...olderRows, ...(anchorRow ? [anchorRow] : []), ...newerRows];
   } else if (Number.isInteger(before) && before > 0) {
     rows = database.prepare(`SELECT * FROM communication_messages
       WHERE ${visibleWhere} AND id < ? ORDER BY id DESC LIMIT ?`)
@@ -627,11 +656,73 @@ function updateChannelPreferences(database = defaultDb, session, channelId, inpu
   const record = input && typeof input === 'object' ? input : {};
   const pinned = record.pinned ? 1 : 0;
   const muted = record.muted ? 1 : 0;
-  database.prepare(`INSERT INTO communication_channel_prefs (channel_id, user_id, pinned, muted)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT (channel_id, user_id) DO UPDATE SET pinned = excluded.pinned, muted = excluded.muted`)
-    .run(channelId, session.userId, pinned, muted);
-  return { pinned: Boolean(pinned), muted: Boolean(muted) };
+  const favorite = record.favorite ? 1 : 0;
+  database.prepare(`INSERT INTO communication_channel_prefs (channel_id, user_id, pinned, muted, favorite)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (channel_id, user_id) DO UPDATE SET
+      pinned = excluded.pinned, muted = excluded.muted, favorite = excluded.favorite`)
+    .run(channelId, session.userId, pinned, muted, favorite);
+  return { pinned: Boolean(pinned), muted: Boolean(muted), favorite: Boolean(favorite) };
+}
+
+// 「我在本群昵称」：仅自建频道成员可设，空串表示恢复显示名
+function updateMyChannelNickname(database = defaultDb, session, channelId, nickname) {
+  const channel = requireChannel(database, session, channelId);
+  assert(channel.kind === 'custom', '仅自建频道支持群昵称', 'CHANNEL_FORBIDDEN');
+  assert(isChannelMember(database, channelId, session.userId), '只有频道成员可以设置群昵称', 'CHANNEL_FORBIDDEN');
+  const value = String(nickname ?? '').trim().replace(/\s+/g, ' ');
+  assert(Array.from(value).length <= 24, '群昵称不能超过 24 个字符');
+  database.prepare('UPDATE communication_channel_members SET nickname = ? WHERE channel_id = ? AND user_id = ?')
+    .run(value, channelId, session.userId);
+  return serializeChannel(database, session, channelById(database, channelId));
+}
+
+// 退出频道：仅自建频道的普通成员可以退出；群主与隐式成员（全局/身份频道）不适用
+function leaveChannel(database = defaultDb, session, channelId) {
+  const channel = requireChannel(database, session, channelId);
+  assert(channel.kind === 'custom', '仅自建频道支持退出', 'CHANNEL_FORBIDDEN');
+  assert(channel.owner_user_id !== session.userId, '群主不能退出自己创建的频道', 'CHANNEL_FORBIDDEN');
+  assert(isChannelMember(database, channelId, session.userId), '你不是该频道的成员', 'CHANNEL_FORBIDDEN');
+  database.prepare('DELETE FROM communication_channel_members WHERE channel_id = ? AND user_id = ?')
+    .run(channelId, session.userId);
+  database.prepare('DELETE FROM communication_channel_observers WHERE channel_id = ? AND user_id = ?')
+    .run(channelId, session.userId);
+  const remaining = database.prepare('SELECT user_id FROM communication_channel_members WHERE channel_id = ?')
+    .all(channelId).map(row => row.user_id);
+  return {
+    left: true,
+    channelId,
+    remainingUserIds: remaining,
+    broadcastTargets: [...new Set([session.userId, ...remaining])]
+  };
+}
+
+const SEARCH_QUERY_MAX = 50;
+
+// 频道内聊天记录检索：与时间线同一条可见性规则（仅为我删除的行被排除），
+// 撤回消息仍可被搜到但以撤回态展示
+function searchChannelMessages(database = defaultDb, session, channelId, query, limit = 30) {
+  const channel = requireChannel(database, session, channelId);
+  const trimmed = String(query ?? '').trim();
+  assert(trimmed.length >= 1 && trimmed.length <= SEARCH_QUERY_MAX, '搜索关键词应为 1 至 50 个字符');
+  const capped = Math.min(50, Math.max(1, Number(limit) || 30));
+  const escaped = trimmed.replace(/[\\%_]/g, match => `\\${match}`);
+  const rows = database.prepare(`SELECT * FROM communication_messages
+    WHERE channel_id = ? AND content LIKE '%' || ? || '%' ESCAPE '\\'
+      AND NOT EXISTS (
+        SELECT 1 FROM communication_message_deletions deletions
+        WHERE deletions.message_id = communication_messages.id AND deletions.user_id = ?
+      )
+    ORDER BY id DESC LIMIT ?`).all(channel.id, escaped, session.userId, capped);
+  const stats = plusOneStats(database, rows.map(row => row.id), session.userId);
+  const senders = userCards(database, rows.map(row => row.sender_user_id));
+  const extras = loadMessageExtras(database, rows, session.userId);
+  return {
+    channel: serializeChannel(database, session, channel),
+    query: trimmed,
+    total: rows.length,
+    messages: rows.map(row => messageRow(database, row, session, stats, senders, extras))
+  };
 }
 
 function createCustomChannel(database = defaultDb, session, input = {}) {
@@ -1152,6 +1243,8 @@ module.exports = {
   markChannelRead,
   recallMessage,
   readMessageMedia,
+  leaveChannel,
+  searchChannelMessages,
   sendMessage,
   sendMediaMessage,
   setMessageUrgent,
@@ -1160,5 +1253,6 @@ module.exports = {
   clearChannelAvatar,
   readChannelAvatar,
   updateChannelSettings,
-  updateChannelPreferences
+  updateChannelPreferences,
+  updateMyChannelNickname
 };

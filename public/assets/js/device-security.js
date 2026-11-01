@@ -409,6 +409,10 @@
           secret: value,
           windowMinutes: Number(windowSelect.value)
         });
+        // Auto-verify once with the fresh secret so the user lands on the manage view
+        try {
+          await mutate('/api/security/challenge-security', 'POST', { secret: value, scope: 'devices' });
+        } catch { /* fall back to the regular verify view */ }
         status.textContent = text('devices.saved');
         status.className = 'ds-status is-ok';
         await loadOverview(currentQueryUserId());
@@ -523,7 +527,8 @@
       return card;
     }
     const grid = el('div', 'ds-meta-grid');
-    grid.appendChild(metaRow(text('devices.credentialType'), text(CREDENTIAL_TYPE_LABELS[credential.type] || credential.type)));
+    grid.appendChild(metaRow(text('devices.credentialType'),
+      el('span', '', text(CREDENTIAL_TYPE_LABELS[credential.type] || credential.type))));
     if (credential.secret != null) {
       const secretValueNode = el('strong', 'ds-secret-value', '••••••');
       secretValueNode.dataset.value = credential.secret;
@@ -564,7 +569,8 @@
       }
     });
     grid.appendChild(metaRow(text('devices.windowLabel'), windowSelect));
-    grid.appendChild(metaRow(text('devices.credentialType'), text(CREDENTIAL_TYPE_LABELS[data.credential.type] || '')));
+    grid.appendChild(metaRow(text('devices.credentialType'),
+      el('span', '', text(CREDENTIAL_TYPE_LABELS[data.credential.type] || ''))));
     const reset = el('button', 'btn btn-secondary', text('devices.resetCredential'));
     reset.type = 'button';
     reset.addEventListener('click', () => {
@@ -621,7 +627,10 @@
     meta.appendChild(metaRow(text('devices.deviceType'), el('span', '', text(`devices.type.${device.deviceType || 'desktop'}`))));
     if (device.deviceOs) meta.appendChild(metaRow(text('devices.deviceOs'), el('span', '', device.deviceOs)));
     if (device.deviceModel) meta.appendChild(metaRow(text('devices.deviceModel'), el('span', '', device.deviceModel)));
-    if (device.browser) meta.appendChild(metaRow(text('devices.browser'), el('span', '', device.browser)));
+    if (device.browser) {
+      const browserLabel = [device.browser, device.browserVersion].filter(Boolean).join(' ');
+      meta.appendChild(metaRow(text('devices.browser'), el('span', '', browserLabel)));
+    }
     meta.appendChild(metaRow(text('devices.lastLogin'), el('span', '', formatTime(device.lastLoginAt))));
     if (data.viewer.isDeveloper) {
       if (device.lastIp) meta.appendChild(metaRow(text('devices.dev.ip'), el('span', '', device.lastIp)));
@@ -747,9 +756,10 @@
 
   // ---- lease page gate + unlock dialog ----
 
+  let showPagesVerifyMode = null;
+
   function buildPagesDialog() {
     const dialog = el('dialog', 'profile-dialog ds-pages-dialog');
-    const form = el('form', 'ds-form');
     const header = el('div', 'ds-dialog-header');
     header.appendChild(el('h2', 'ds-dialog-title', text('devices.pagesTitle')));
     const close = el('button', 'icon-button profile-dialog-close');
@@ -757,43 +767,188 @@
     close.setAttribute('aria-label', text('common.close'));
     close.appendChild(icon('x'));
     header.appendChild(close);
-    const desc = el('p', 'ds-card-desc', text('devices.pagesDesc'));
-    const secretHost = el('div', 'ds-secret-host');
-    const status = statusLine();
-    const actions = el('div', 'ds-actions');
-    const cancel = el('button', 'btn btn-secondary', text('common.cancel'));
-    cancel.type = 'button';
-    const verify = el('button', 'btn btn-primary', text('devices.pagesVerify'));
-    verify.type = 'submit';
-    actions.append(cancel, verify);
-    form.append(header, desc, secretHost, status, actions);
-    dialog.appendChild(form);
+    const bodyHost = el('div', 'ds-dialog-body');
+    dialog.append(header, bodyHost);
     document.body.appendChild(dialog);
 
     close.addEventListener('click', () => dialog.close());
-    cancel.addEventListener('click', () => dialog.close());
     dialog.addEventListener('cancel', event => event.preventDefault());
     dialog.addEventListener('click', event => {
       if (event.target === dialog) dialog.close();
     });
 
-    form.addEventListener('submit', async event => {
-      event.preventDefault();
-      verify.disabled = true;
-      status.textContent = text('devices.checking');
-      status.className = 'ds-status';
-      try {
-        await mutate('/api/security/challenge-security', 'POST', { secret: secretValue(pagesSecretControl), scope: 'pages' });
-        if (cachedSecurity) cachedSecurity.unlocked.pages = true;
-        dialog.close();
-        retryPendingPage();
-      } catch (error) {
-        status.textContent = error.message;
-        status.className = 'ds-status is-error';
-      } finally {
-        verify.disabled = false;
+    // Verify mode: unlock the sensitive page with the current security password
+    function showVerifyMode() {
+      const form = el('form', 'ds-form');
+      const desc = el('p', 'ds-card-desc', text('devices.pagesDesc'));
+      const secret = secretInput(dialog.dataset.credentialType || 'numeric');
+      pagesSecretControl = secret;
+      const secretHost = el('div', 'ds-secret-host');
+      secretHost.appendChild(secret.node || secret);
+      const status = statusLine();
+      const actions = el('div', 'ds-actions');
+      const cancel = el('button', 'btn btn-secondary', text('common.cancel'));
+      cancel.type = 'button';
+      cancel.addEventListener('click', () => dialog.close());
+      const forgot = el('button', 'btn btn-secondary', text('devices.forgot'));
+      forgot.type = 'button';
+      forgot.addEventListener('click', () => showResetMode());
+      const verify = el('button', 'btn btn-primary', text('devices.pagesVerify'));
+      verify.type = 'submit';
+      actions.append(cancel, forgot, verify);
+      form.append(desc, secretHost, status, actions);
+      bodyHost.replaceChildren(form);
+      window.PageText?.apply?.(form);
+
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        verify.disabled = true;
+        status.textContent = text('devices.checking');
+        status.className = 'ds-status';
+        try {
+          await mutate('/api/security/challenge-security', 'POST', { secret: secretValue(pagesSecretControl), scope: 'pages' });
+          if (cachedSecurity) cachedSecurity.unlocked.pages = true;
+          dialog.close();
+          retryPendingPage();
+        } catch (error) {
+          status.textContent = error.message;
+          status.className = 'ds-status is-error';
+        } finally {
+          verify.disabled = false;
+        }
+      });
+    }
+
+    // Forgot flow inside the dialog: prove the account password (related info),
+    // define a fresh security password, then continue into the locked page.
+    function showResetMode() {
+      const host = el('div', 'ds-stack');
+      const status = statusLine();
+      host.appendChild(status);
+      bodyHost.replaceChildren(host);
+
+      function showChallengeStep() {
+        const form = el('form', 'ds-form');
+        form.append(
+          el('h3', 'ds-card-title', text('devices.resetTitle')),
+          el('p', 'ds-card-desc', text('devices.resetDesc'))
+        );
+        const password = el('input', 'input');
+        password.type = 'password';
+        password.autocomplete = 'current-password';
+        password.required = true;
+        const submit = el('button', 'btn btn-primary', text('devices.verifyIdentity'));
+        submit.type = 'submit';
+        form.append(fieldRow(text('devices.accountPassword'), password), submit);
+        form.addEventListener('submit', async event => {
+          event.preventDefault();
+          submit.disabled = true;
+          status.textContent = text('devices.checking');
+          status.className = 'ds-status';
+          try {
+            await mutate('/api/security/devices/challenge-account', 'POST', { password: password.value });
+            showDefineStep();
+          } catch (error) {
+            status.textContent = error.message;
+            status.className = 'ds-status is-error';
+          } finally {
+            submit.disabled = false;
+          }
+        });
+        host.replaceChildren(status, form);
       }
-    });
+
+      function showDefineStep() {
+        let credentialType = 'numeric';
+        const form = el('form', 'ds-form');
+        form.appendChild(el('h3', 'ds-card-title', text('devices.defineTitle')));
+        const typeGroup = el('div', 'ds-type-grid');
+        const secretHost = el('div', 'ds-secret-host');
+        const hint = el('p', 'ds-secret-hint', '');
+        const confirmHost = el('div');
+        const windowSelect = selectControl(
+          WINDOW_OPTIONS.map(option => ({ value: String(option.minutes), label: text(option.key) })),
+          '60'
+        );
+        const stepStatus = statusLine();
+        const submit = el('button', 'btn btn-primary', text('devices.setCredential'));
+        submit.type = 'submit';
+
+        let secretControl = null;
+        let confirmInput = null;
+        function mountSecret() {
+          secretControl = secretInput(credentialType, { placeholder: text(`devices.secretPlaceholder.${credentialType}`) });
+          secretHost.replaceChildren(secretControl.node || secretControl);
+          confirmInput = null;
+          confirmHost.replaceChildren();
+          if (credentialType !== 'pattern') {
+            confirmInput = el('input', 'input');
+            confirmInput.type = 'password';
+            confirmInput.autocomplete = 'off';
+            if (credentialType === 'numeric') confirmInput.inputMode = 'numeric';
+            confirmHost.appendChild(fieldRow(text('devices.confirmSecret'), confirmInput));
+          }
+          confirmHost.appendChild(fieldRow(text('devices.windowLabel'), windowSelect));
+          hint.textContent = text(`devices.secretHint.${credentialType}`);
+        }
+        mountSecret();
+        for (const [value, key] of Object.entries(CREDENTIAL_TYPE_LABELS)) {
+          const option = el('button', 'ds-type-option', text(key));
+          option.type = 'button';
+          option.classList.toggle('is-active', value === credentialType);
+          option.addEventListener('click', () => {
+            credentialType = value;
+            typeGroup.querySelectorAll('.ds-type-option').forEach(node => node.classList.toggle('is-active', node === option));
+            mountSecret();
+          });
+          typeGroup.appendChild(option);
+        }
+        form.append(typeGroup, hint, secretHost, confirmHost, stepStatus, submit);
+        form.addEventListener('submit', async event => {
+          event.preventDefault();
+          const value = secretValue(secretControl);
+          if (credentialType === 'pattern' && value.length < 4) {
+            stepStatus.textContent = text('devices.secretTooShort');
+            stepStatus.className = 'ds-status is-error';
+            return;
+          }
+          if (confirmInput && value !== confirmInput.value) {
+            stepStatus.textContent = text('devices.secretMismatch');
+            stepStatus.className = 'ds-status is-error';
+            return;
+          }
+          submit.disabled = true;
+          stepStatus.textContent = text('devices.saving');
+          stepStatus.className = 'ds-status';
+          try {
+            await mutate('/api/security/credential', 'PUT', {
+              type: credentialType,
+              secret: value,
+              windowMinutes: Number(windowSelect.value)
+            });
+            if (cachedSecurity) {
+              cachedSecurity.configured = true;
+              cachedSecurity.type = credentialType;
+            }
+            // The fresh secret was just set by this user: verify pages scope and continue
+            await mutate('/api/security/challenge-security', 'POST', { secret: value, scope: 'pages' });
+            if (cachedSecurity) cachedSecurity.unlocked.pages = true;
+            dialog.close();
+            retryPendingPage();
+          } catch (error) {
+            stepStatus.textContent = error.message;
+            stepStatus.className = 'ds-status is-error';
+            submit.disabled = false;
+          }
+        });
+        host.replaceChildren(status, form);
+        window.PageText?.apply?.(form);
+      }
+
+      showChallengeStep();
+    }
+
+    showPagesVerifyMode = showVerifyMode;
     return dialog;
   }
 
@@ -805,18 +960,9 @@
       });
       return;
     }
-    const type = cachedSecurity.type || 'numeric';
     if (!pagesDialog) pagesDialog = buildPagesDialog();
-    pagesDialog.dataset.credentialType = type;
-    const host = pagesDialog.querySelector('.ds-secret-host');
-    const control = secretInput(type);
-    pagesSecretControl = control;
-    host.replaceChildren(control.node || control);
-    const status = pagesDialog.querySelector('.ds-status');
-    if (status) {
-      status.textContent = '';
-      status.className = 'ds-status';
-    }
+    pagesDialog.dataset.credentialType = cachedSecurity.type || 'numeric';
+    showPagesVerifyMode();
     pagesDialog.showModal();
   }
 

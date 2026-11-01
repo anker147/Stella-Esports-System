@@ -1096,8 +1096,16 @@
     padding: 12px 12px 20px;
   }
 
+  /* Wrap the titlebar instead of letting the action row's min-content
+     widen the grid track beyond the viewport. */
   .schedule-titlebar {
+    flex-wrap: wrap;
+    gap: 10px;
     padding: 12px 14px;
+  }
+
+  .schedule-titlebar-actions {
+    flex-wrap: wrap;
   }
 
   .schedule-stage-card-head,

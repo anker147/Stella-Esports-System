@@ -10,6 +10,7 @@ migrateLegacyData();
 const { db, withTransaction } = require('./db');
 const { MANAGEMENT_VIEWS, operationsView, personalActivityDay, teamDetail } = require('./operations-service');
 const deviceSecurity = require('./device-security-service');
+const { resolveClientHostname } = require('./lan-hostname');
 const {
   applyEventAction,
   createTournamentStage,
@@ -58,6 +59,8 @@ const {
   markChannelRead,
   recallMessage,
   readMessageMedia,
+  leaveChannel,
+  searchChannelMessages,
   sendMessage,
   sendMediaMessage,
   setMessageUrgent,
@@ -66,7 +69,8 @@ const {
   readChannelAvatar,
   setChannelAvatar,
   updateChannelPreferences,
-  updateChannelSettings
+  updateChannelSettings,
+  updateMyChannelNickname
 } = require('./communication-service');
 const { StoreZipWriter } = require('./zip-store-writer');
 const {
@@ -1235,18 +1239,20 @@ async function resolveRequestLocation(req) {
   }
 }
 
-function deviceContext(body, req, location) {
+function deviceContext(body, req, location, hostname = '') {
   const userAgent = String(req.headers['user-agent'] || '').slice(0, 500);
   const suppliedFingerprint = String(body.deviceFingerprint || '').trim().toLowerCase();
   const suppliedDeviceId = String(body.deviceId || '').trim().slice(0, 128);
+  // 兜底指纹不再掺 IP：换网络不应分裂设备。设备身份由 v2 特征指纹 + 终端密钥 + 电脑名分级判定
   const deviceFingerprint = /^[a-f0-9]{64}$/.test(suppliedFingerprint)
     ? suppliedFingerprint
-    : crypto.createHash('sha256').update(`${suppliedDeviceId}|${userAgent}|${location.ipAddress}`).digest('hex');
+    : crypto.createHash('sha256').update(`${suppliedDeviceId}|${userAgent}`).digest('hex');
   const deviceName = String(body.deviceName || '').trim().slice(0, 80)
     || (userAgent ? userAgent.split(/[;(]/)[0].trim() : '未知设备');
   const networkEnv = String(body.networkEnv || '').trim().slice(0, 24);
   const deviceModel = String(body.deviceModel || '').trim().slice(0, 40);
-  return { ...location, deviceFingerprint, deviceName, userAgent, networkEnv, deviceModel };
+  const deviceTraits = deviceSecurity.normalizeTraits(body.deviceTraits) || null;
+  return { ...location, deviceFingerprint, deviceName, userAgent, networkEnv, deviceModel, deviceTraits, hostname };
 }
 
 function applyRequestContext(session, req) {
@@ -2083,6 +2089,9 @@ const ROUTE_PERMISSIONS = {
   'DELETE /api/communications/channels/:id/avatar': 'communication.use',
   'PUT /api/communications/channels/:id/settings': 'communication.use',
   'PUT /api/communications/channels/:id/prefs': 'communication.use',
+  'PUT /api/communications/channels/:id/nickname': 'communication.use',
+  'POST /api/communications/channels/:id/leave': 'communication.use',
+  'GET /api/communications/channels/:id/search': 'communication.use',
   'POST /api/communications/channels/:id/clear': 'communication.use',
   'POST /api/communications/private': 'communication.use',
   'POST /api/communications/channels': 'communication.use',
@@ -2304,7 +2313,9 @@ route('POST', '/api/auth/login', async ({ req, res }) => {
       rejectClosedSystemLogin();
       return;
     }
-    context = deviceContext(body, req, await resolveRequestLocation(req));
+    const finalLocation = await resolveRequestLocation(req);
+    const clientHostname = await resolveClientHostname(finalLocation.ipAddress);
+    context = deviceContext(body, req, finalLocation, clientHostname);
     if (!systemAccessOpen() && !hasSystemManagementEntitlement(user)) {
       rejectClosedSystemLogin();
       return;
@@ -2364,8 +2375,9 @@ route('POST', '/api/auth/auto-login', async ({ req, res }) => {
       sendJson(res, 403, { ok: false, code: 'SYSTEM_ACCESS_CLOSED', error: '系统暂未开放用户登录，请联系管理员' });
       return;
     }
-    let context = deviceContext(body, req, requestLocation(req));
-    context = deviceContext(body, req, await resolveRequestLocation(req));
+    const finalLocation = await resolveRequestLocation(req);
+    const clientHostname = await resolveClientHostname(finalLocation.ipAddress);
+    const context = deviceContext(body, req, finalLocation, clientHostname);
     const user = {
       id: device.user_id,
       account: device.username,
@@ -2400,8 +2412,10 @@ route('POST', '/api/auth/lease-login', async ({ req, res }) => {
       return;
     }
     const body = JSON.parse((await readBody(req)) || '{}');
-    let context = deviceContext(body, req, requestLocation(req));
-    const device = deviceSecurity.findLeaseDevice(db, String(body.userId || '').trim(), context.deviceFingerprint);
+    const initialLocation = requestLocation(req);
+    const initialHostname = await resolveClientHostname(initialLocation.ipAddress);
+    let context = deviceContext(body, req, initialLocation, initialHostname);
+    const device = deviceSecurity.findLeaseDevice(db, String(body.userId || '').trim(), context.deviceFingerprint, initialHostname);
     if (!device) {
       sendJson(res, 401, { ok: false, code: 'LEASE_LOGIN_INVALID', error: '本设备没有生效中的租约' });
       return;
@@ -2413,7 +2427,7 @@ route('POST', '/api/auth/lease-login', async ({ req, res }) => {
       sendJson(res, 403, { ok: false, code: 'SYSTEM_ACCESS_CLOSED', error: '系统暂未开放用户登录，请联系管理员' });
       return;
     }
-    context = deviceContext(body, req, await resolveRequestLocation(req));
+    context = deviceContext(body, req, await resolveRequestLocation(req), initialHostname);
     const user = {
       id: device.user_id,
       account: device.username,
@@ -3197,6 +3211,7 @@ route('GET', '/api/communications/channels/:id/messages', ({ res, url, requestSe
     sendJson(res, 200, listMessages(db, requestSession, params.id, {
       before: url.searchParams.get('before'),
       after: url.searchParams.get('after'),
+      around: url.searchParams.get('around'),
       unread: url.searchParams.get('unread') === '1',
       limit: url.searchParams.get('limit'),
       markRead: url.searchParams.get('markRead') !== '0'
@@ -3485,6 +3500,38 @@ route('POST', '/api/communications/channels/:id/clear', async ({ req, res, reque
     sendJson(res, 200, result);
   } catch (error) {
     sendJson(res, 400, { error: error.message, code: error.code });
+  }
+});
+
+route('PUT', '/api/communications/channels/:id/nickname', async ({ req, res, requestSession, params }) => {
+  try {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const channel = updateMyChannelNickname(db, requestSession, params.id, body.nickname);
+    sendJson(res, 200, { channel });
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('POST', '/api/communications/channels/:id/leave', ({ res, requestSession, params }) => {
+  try {
+    const result = leaveChannel(db, requestSession, params.id);
+    recordAuditLog('account', requestSession, '退出通讯频道', { channelId: params.id });
+    broadcastCommunication({
+      type: 'channel-left', channelId: params.id, messageId: null,
+      targetUserIds: result.broadcastTargets
+    });
+    sendJson(res, 200, { left: true, channelId: params.id });
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
+  }
+});
+
+route('GET', '/api/communications/channels/:id/search', ({ res, url, requestSession, params }) => {
+  try {
+    sendJson(res, 200, searchChannelMessages(db, requestSession, params.id, url.searchParams.get('q'), url.searchParams.get('limit')));
+  } catch (error) {
+    sendJson(res, error.code === 'CHANNEL_FORBIDDEN' ? 403 : 400, { code: error.code, error: error.message });
   }
 });
 
