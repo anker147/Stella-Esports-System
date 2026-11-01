@@ -395,7 +395,7 @@
 }
 
 .event-editor-dialog[open] {
-  animation: event-dialog-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: event-dialog-enter 220ms var(--f2-ease-out) both;
 }
 
 @keyframes event-dialog-enter {
@@ -622,7 +622,7 @@
 }
 
 .event-editor-step.is-active {
-  animation: event-step-enter 230ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: event-step-enter 230ms var(--f2-ease-out) both;
 }
 
 /* 团队步骤：整页不滚动，滚动只发生在两个战队列表内部 */
@@ -1672,7 +1672,7 @@
 }
 
 .event-close-guard[open] {
-  animation: event-dialog-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: event-dialog-enter 220ms var(--f2-ease-out) both;
 }
 
 .event-close-guard.dialog-closing {

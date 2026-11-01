@@ -725,7 +725,7 @@
 }
 
 dialog.operations-team-dialog[open] .operations-team-shell {
-  animation: dialog-theme-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: dialog-theme-enter 220ms var(--f2-ease-out) both;
 }
 
 .operations-team-header,
